@@ -10,6 +10,7 @@ server.use(express.urlencoded({ extended: true }));
 server.use('/products', routes.products);
 server.use('/users', routes.users);
 server.use('/persons', routes.persons);
+server.use('/customers', routes.customers);
 
 
 server.listen(PORT, () => console.log('Server listing on port ' + PORT));
