@@ -3,9 +3,9 @@
   "name": "ks-engineering-works-api",
   "version": "1.0.0",
   "description": "KS engineering billing software",
-  "main": "index.js",
+  "main": "src/index.js",
   "scripts": {
-    "start": "nodemon index.js",
+    "start": "nodemon src/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
