@@ -1,4 +1,4 @@
-const pool = require('../db');
+const pool = require('../../../config/database.js');
 
 exports.getPerson = (req, res) => {
     pool.query("SELECT * FROM persons", (error, result) => {
