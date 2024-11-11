@@ -1,16 +1,20 @@
+// Server base url
+const BASE_URL = process.env.BASE_URL
+
 // DB constants
 const DATABASE = {
-    DB_HOST: 'localhost',
-    DB_NAME: 'k_s_engineering_works',
-    DB_USER: 'postgres',
-    DB_PASSWORD: 'root',
-    DB_PORT: 5432
+    DB_HOST: BASE_URL,
+    DB_NAME: process.env.DB_NAME,
+    DB_USER: process.env.DB_USER,
+    DB_PASSWORD: process.env.DB_PASSWORD,
+    DB_PORT: process.env.DB_PORT
 }
 
 // Server port
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 module.exports = {
     DATABASE,
-    PORT
+    PORT,
+    BASE_URL
 }
