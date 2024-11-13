@@ -1,4 +1,4 @@
-const { DATABASE } = require('../../../config/constant');
+const { DATABASE } = require('../../../config/config');
 const Pool = require('pg').Pool;
 
 const connectDB = async () => {

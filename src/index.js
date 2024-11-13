@@ -1,35 +1,13 @@
-require("dotenv").config({path: '.env'});
-const express = require('express');
-const app = express();
-
+require("dotenv").config({path: `${process.cwd()}/.env`});
+const { app } = require('./app')
 const { PORT } = require('./config');
-
+const connectDB = require("./api/v1/database");
 // Middleware
 
 
-const useMiddleWare = require('./api/v1/middlewares/index');
-const connectDB = require("./api/v1/database");
-// const connectDB = require('./api/v1/database/index');
-useMiddleWare(app)
+// const useMiddleWare = require('./api/v1/middlewares/index');
+// useMiddleWare(app)
 
-
-// ;(async () => {
-//     try {
-
-//         // Listen on error
-//         app.on('error', (error) => {
-//             console.log('ERR: ', error);
-//             throw error
-//         })
-
-//         // Listen server with port
-//         app.listen(PORT, () => console.log('Server listing on port ' + PORT));
-//     } catch (error) {
-//         // Throw error when something went wrong
-//         console.log('PostgreSql connection error: ', error);
-//         throw error
-//     }
-// })()
 
 connectDB()
 .then(() => {
@@ -38,6 +16,3 @@ connectDB()
 .catch((err) => {
     console.log('POSTGRESQL connection FAILED!!!', err);
 })
-
-
-// app.listen(PORT, () => console.log('Server listing on port ' + PORT));

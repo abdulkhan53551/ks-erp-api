@@ -1,4 +1,4 @@
-const { PORT } = require("./constant");
+const { PORT } = require("./config");
 const pool = require("../api/v1/database");
 
 
