@@ -2125,14 +2125,14 @@ const isPasswordCorrect = async (password) => {
     return await bcrypt.compare(password, hashedPassword)
 }
 
-const generateToken = () => {
+const generateToken = (data) => {
     // Static data for testing
-    const data = {
-        id: 1,
-        email: 'test@gmail.com',
-        userName: 'test123',
-        fullName: 'Abdul Khan'
-    }
+    // const data = {
+    //     id: 1,
+    //     email: 'test@gmail.com',
+    //     userName: 'test123',
+    //     fullName: 'Abdul Khan'
+    // }
 
     return jwt.sign(
         {
@@ -2141,24 +2141,24 @@ const generateToken = () => {
             userName: data.userName,
             fullName: data.fullName
         },
-        JWT.ACCESS_TOKEN,
+        JWT.ACCESS_TOKEN_SECRET,
         {
             expiresIn: JWT.ACCESS_TOKEN_EXPIRE
         }
     )
 }
 
-const generateRefreshToken = () => {
+const generateRefreshToken = (data) => {
     // Static data for testing
-    const data = {
-        id: 1,
-    }
+    // const data = {
+    //     id: 1,
+    // }
 
     return jwt.sign(
         {
             id: data.id,
         },
-        JWT.REFRESH_TOKEN,
+        JWT.REFRESH_TOKEN_SECRET,
         {
             expiresIn: JWT.REFRESH_TOKEN_EXPIRE
         }
@@ -2166,5 +2166,8 @@ const generateRefreshToken = () => {
 }
 
 module.exports = {
-    isUserExist
+    isUserExist,
+    isPasswordCorrect,
+    generateToken,
+    generateRefreshToken
 }
