@@ -1,6 +1,6 @@
 const {asyncHandler} = require('./../services/asyncHandler.js')
 const {ApiError} = require('./../services/ApiError.js');
-const { isUserExist, isPasswordCorrect, generateToken, generateRefreshToken } = require('../models/user.model.js');
+const { isUserExist, isPasswordCorrect, generateToken, generateRefreshToken, updatePassword } = require('../models/user.model.js');
 const {uploadOnCloudinary} = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
 const { ApiResponse } = require('../services/ApiResponse.js');
@@ -174,7 +174,7 @@ const logoutUser = asyncHandler(async (req, res) => {
         .json(new ApiResponse(200, {}, 'User logged out'))
 })
 
-const refreshAccessToken = asyncHandler(async () => {
+const refreshAccessToken = asyncHandler(async (req, res) => {
     try {
         // Get refresh token from request
         const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
@@ -222,6 +222,85 @@ const refreshAccessToken = asyncHandler(async () => {
     }
 })
 
+const changeCurrentPassword = asyncHandler(async (req, res) => {
+    // Get old and new password from request
+    const {oldPassword, newPassword} = req.body
+    if (!oldPassword || !newPassword) {
+        throw new ApiError(400, 'old password and new password are required')
+    }
+
+    // Get user data from request which is put by middleware when user loged in successfully
+    // Get user by id
+    const user = userData.find(user => user.id == req.user.id)
+
+    // Check the old password is correct with db user password
+    // If password is not correct, throw error
+    const isPasswordCorrect = await isPasswordCorrect(oldPassword)
+    if (!isPasswordCorrect) {
+        throw new ApiError(400, 'Invalid old password')
+    }
+
+    // Set new password to db
+    user.password = newPassword
+    // updatePassword(oldPassword, newPassword)
+
+    // Return response
+    return res
+        .status(200)
+        .json(new ApiResponse(200, {}, 'Password changed successfully'))
+})
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+    // Get current user data from request which is put by middleware when user loged in successfully
+    return res
+        .status(200)
+        .json(new ApiResponse(200, req.user, 'Current user fetched successfully'))
+})
+
+const updateAccountDetail = asyncHandler(async (req, res) => {
+    // Get update data from request
+    const {fullName, email} = req.body
+
+    if (!fullName || !email) {
+        throw new ApiError(400, 'All fields are required')
+    }
+
+    // Find user by id
+    const user = userData.find(user => user.id == req.user?.id)
+
+    // Update user data in db and get updated data from db
+
+    // Return response
+    return res
+        .status(200)
+        .json(new ApiResponse(200, user , 'Account detail updated successfully'))
+})
+
+const updateUserAvatar = asyncHandler(async (req, res) => {
+    // Get file from request
+    const avatarLocalPath = req.file?.path
+
+    if (!avatarLocalPath) {
+        throw new ApiError(400, 'Avatar file is missing')
+    }
+
+    // Upload on server or cloudinary
+    const avatar = await uploadOnCloudinary(avatarLocalPath)
+
+    if (!avatar.url) {
+        throw new ApiError(400, 'Error while uploading avatar')
+    }
+
+    // Update avatar in db
+    const user = userData.find(user => user.id == req.user?.id)
+    user.avatar = avatar.url
+
+    // Return response
+    return res
+        .status(200)
+        .json(new ApiResponse(200, user, 'Avatar updated successfully'))
+})
+
 const generateAccessAndRefreshTokens = async (userId) => {
     try {
         const foundUser = await userData.find((user) => user.id === userId)
@@ -243,5 +322,9 @@ module.exports = {
     registerUser,
     loginUser,
     logoutUser,
-    refreshAccessToken
+    refreshAccessToken,
+    changeCurrentPassword,
+    getCurrentUser,
+    updateAccountDetail,
+    updateUserAvatar
 }

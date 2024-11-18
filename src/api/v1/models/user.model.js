@@ -1,6 +1,7 @@
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const { JWT } = require('../../../config/config')
+const { ApiError } = require('../services/ApiError')
 
 const isUserExist = (username, email) => {
     let users = [
@@ -2111,12 +2112,21 @@ const isUserExist = (username, email) => {
     return users
 }
 
-const encryptPassword = async () => {
-    const password = '123'
-
-    // In case of password string modified
-    if (password) {
-        const encPass = await bcrypt.hash(password, 10)
+const updatePassword = async (oldPassword, newPassword) => {
+    try {
+        // Check if the old password and new password is present
+        if (!oldPassword || !newPassword) return
+    
+        // If the old password is the same as the new password, return 
+        if (oldPassword != newPassword) return 
+    
+        // If the old password is different from the new password
+        // In case of password string modified
+        const encPass = await bcrypt.hash(newPassword, 10)
+    
+        // Update password in database
+    } catch (error) {
+        new ApiError(400, 'Error updating password')
     }
 }
 
@@ -2167,6 +2177,7 @@ const generateRefreshToken = (data) => {
 
 module.exports = {
     isUserExist,
+    updatePassword,
     isPasswordCorrect,
     generateToken,
     generateRefreshToken

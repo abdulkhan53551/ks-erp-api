@@ -43,7 +43,7 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
         // Pass to next middleware
         next()
     } catch (error) {
-        throw new ApiError(401, error?.message || 'Invalid access token')
+        throw error instanceof ApiError ? error : new ApiError(401, 'Invalid access token')
     }
 })
 
