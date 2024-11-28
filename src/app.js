@@ -40,7 +40,8 @@ app.get('/generate-pdf', async (req, res) => {
         const page = await browser.newPage();
 
         // Navigate the page to a URL.
-        await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'invoice.template.html')}`, { waitUntil: 'load' });
+        // await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'invoice.template.html')}`, { waitUntil: 'load' });
+        await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'dummy-invoice-template.html')}`, { waitUntil: 'load' });
 
 
 
