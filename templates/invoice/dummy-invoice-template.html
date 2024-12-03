@@ -9,6 +9,7 @@
       font-family: Arial, sans-serif;
       margin: 0;
       padding: 0;
+      font-size: 2.7mm;
     }
     .table-container {
       width: 210mm; /* A4 width */
@@ -52,21 +53,23 @@
     }
     .tax-invoice-block .tax-invoice {
       letter-spacing: 0.8mm;
+      font-size: 4.2mm;
     }
     .original-for-receipient {
-      font-size: 2.65mm;
+      font-size: 2mm;
       font-weight: bold;
       opacity: 0.6;
       position: absolute;
       right: 0;
       color: #4d4d4d;
+      padding-right: 1mm;
     }
     /* End: Invoice heading */
 
     /* Start: Invoice details */
     .invoice-detail-block {
       /* background-color: #FF5733; */
-      height: 83mm;
+      height: 72mm;
       display: flex;
     }
 
@@ -79,7 +82,7 @@
     }
     .firm-owner-detail {
       display: flex;
-      height: 36mm;
+      height: 30mm;
       /* background-color: #FF33A1; */
       padding: 1mm;
       border: 1px solid black;
@@ -88,11 +91,12 @@
     }
     .firm-logo {
       /* background-color: #FFC300; */
-      width: 21.2mm;
+      width: 16mm;
       overflow: hidden;
       display: flex; 
       align-items: start;
       justify-content: center;
+      padding: 0 2mm 0 0;
     }
     .firm-logo img {
       width: 100%; 
@@ -101,11 +105,11 @@
     .firm-detail {
       flex: 1;
       /* background-color: #00B894; */
-      padding: 0 2mm 0 2mm;
-      font-size: 3.3mm;
+      padding: 0 2mm 0 0;
+      font-size: 2.7mm;
       line-height: 120%;
     }
-    .firm-detail .name {font-size: 4mm; margin: 0;}
+    .firm-detail .name {font-size: 3.1mm; margin: 0;}
     .firm-detail .gst {color: #333333; font-weight: 600;}
     .firm-detail .addrs-1 {}
     .firm-detail .addrs-2 {}
@@ -116,7 +120,7 @@
       flex: 1;
       /* background-color: #A133FF; */
       padding: 1mm;
-      font-size: 3.3mm;
+      font-size: 2.7mm;
       line-height: 120%;
       border-right: 1px solid black;
     }
@@ -124,10 +128,10 @@
       margin: 0px;
       padding: 0px
     }
-    .customer-detail .customer-detail-txt {font-size: 2.8mm; font-weight: 600;}
-    .customer-detail .name {font-size: 3.7mm; font-weight: 600;}
+    .customer-detail .customer-detail-txt {font-size: 2.5mm; font-weight: 600;}
+    .customer-detail .name {font-size: 2.9mm; font-weight: 600;}
     .customer-detail .gst {color: #333333; font-weight: 600; margin-bottom: 2mm;}
-    .customer-detail .billing-address {font-size: 3.4mm; font-weight: 600;}
+    .customer-detail .billing-address {font-size: 2.9mm; font-weight: 600;}
     /* End: Firm info block */
 
     /* Start: Order info block */
@@ -139,8 +143,7 @@
       /* height: 170px; */
       /* background-color: #FFC300; */
       /* border: 1px solid black; */
-      font-size: 3.3mm;
-      line-height: 120%;
+      font-size: 2.7mm;
     }
     .inv-doc {
       table-layout: fixed; /* Enforce fixed layout */
@@ -162,22 +165,22 @@
     }
     .inv-doc p:first-child {
       font-weight: 100;
-      font-size: 3mm;
+      font-size: 2.5mm;
       font-weight: 600;
       color: #444444;
     }
     .inv-doc p:nth-child(2) {
       line-height: 1.5;
       font-weight: bold;
-      font-size: 3.2mm;
+      font-size: 2.7mm;
     }
     .shipping-address {
       /* background-color: #00B894; */
       padding: 1mm;
-      font-size: 3.3mm;
+      font-size: 2.7mm;
       line-height: 120%;
     }
-    .shipping-address h5 {font-size: 3.4mm; font-weight: 600;}
+    .shipping-address h5 {font-size: 2.9mm; font-weight: 600;}
     /* End: Order info block */
 
     /* End: Invoice details */
@@ -210,16 +213,38 @@
     .inv-item-section td:first-child {
       border-left: none;
     }
-    .inv-item-section td:nth-child(2) {
+    .inv-item-section td:nth-child(2),
+    .inv-item-section tr.total-row {
       font-weight: bold;
     }
 
     /* Apply styles from the 2nd column onwards */
     .inv-item-section td:nth-child(n+3),
-    .inv-item-section th:nth-child(n+3) {
+    .inv-item-section th:nth-child(n+3),
+    .inv-item-section td.end-of-item {
       text-align: right;
     }
 
+    .inv-item-section tr.total-row td {
+      font-size: 2.9mm;
+    }
+    .inv-item-section tr.total-row {
+      border: 1.2px solid;
+      border-left: none;
+      border-right: none;
+    }
+
+    .amount-word {
+      margin: 0;
+      padding: 0.5mm 1mm;
+      border-bottom: 1px solid black;
+      font-size: 2.5mm;
+      display: flex;
+      flex-direction: 'row';
+    }
+    .amount-word p {flex: 1; margin: 0 0 0 1mm;}
+    .amount-word span {font-weight: bold;}
+    .amount-word p span.eoe {margin-left: 2mm;}
     /* End: Invoice Item Table */
   </style>
 </head>
@@ -235,7 +260,6 @@
         <div class="firm-info-block">
           <div class="firm-owner-detail">
             <div class="firm-logo">
-              <!-- <img src="./unilever-logo.png" alt="Firm Logo"> -->
               <img src="./../../public/image/unilever-logo.png" alt="Firm Logo">
             </div>
             <div class="firm-detail">
@@ -422,7 +446,7 @@
             <td>5</td>
             <td>253.39</td>
             <td>NOS</td>
-            <td>1266.95</td>
+            <td>1,266.95</td>
           </tr>
           <tr>
             <td></td>
@@ -466,7 +490,17 @@
           </tr>
           <tr>
             <td></td>
-            <td>Discount 2.0%</td>
+            <td class="end-of-item">Discount 2.0%</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td>2,172.03</td>
+          </tr>
+          <tr>
+            <td></td>
+            <td class="end-of-item">Taxable Amount</td>
             <td></td>
             <td></td>
             <td></td>
@@ -476,17 +510,7 @@
           </tr>
           <tr>
             <td></td>
-            <td>Taxable Amount</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>2172.03</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td>CGST 9.0%</td>
+            <td class="end-of-item">CGST 9.0%</td>
             <td></td>
             <td></td>
             <td></td>
@@ -496,7 +520,7 @@
           </tr>
           <tr>
             <td></td>
-            <td>SGST 9.0%</td>
+            <td class="end-of-item">SGST 9.0%</td>
             <td></td>
             <td></td>
             <td></td>
@@ -504,29 +528,28 @@
             <td></td>
             <td>₹195.49</td>
           </tr>
-          <tr>
-            <td colspan="2">Total</td>
+          <tr class="total-row">
+            <td class="end-of-item" colspan="2">Total</td>
             <td colspan="2"></td>
             <td>22.000</td>
-            <td colspan="3">₹2563.00</td>
+            <td colspan="3">₹2,563.00</td>
           </tr>
         </tbody>
       </table>
       <div class="amount-word">
-        <p>
-          Amount Chargeable (in words): INR Two Thousand Five Hundred and Sixty Three Only. <span>E & O.E</span>
-        </p>
+        <span>Amount Chargeable (in words):</span> 
+        <p>Two Thousand, Five Hundred and Sixty Three Rupees Only. <span class="eoe">E & O.E</span></p>
       </div>
-      <table>
+      <table class="table">
         <tbody>
           <tr>
-            <td>HSN/SAC</td>
-            <td>Taxable Value</td>
-            <td>Central Tax</td>
-            <td>State Tax</td>
-            <td>Total Tax Amount</td>
+            <td rowspan="2">HSN/SAC</td>
+            <td rowspan="2">Taxable Value</td>
+            <td colspan="2">Central Tax</td>
+            <td colspan="2">State Tax</td>
+            <td rowspan="2">Total Tax Amount</td>
           </tr>
-          <!-- <tr>
+          <tr>
             <td>Rate</td>
             <td>Amount</td>
             <td>Rate</td>
@@ -577,53 +600,46 @@
             <td>195.49</td>
             <td>390.97</td>
           </tr>
-          <tr>
-            <td>
-              <span>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">!Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.<path fill="#63E6BE" d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L335 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"/></svg>
-              </span>
-              <span>Amount Paid</span>
-              <p>₹2563 Paid via UPI on 17-06-2023</p>
-            </td>
-          </tr>
-          <tr>
-            <td>
-              <div class="inv-bank-detail-and-sign-section">
-                <div class="bank-detail-block">
-                  <h5 class="bank-detail">Bank Details</h5>
-                  <p class="bank-name">Bank: YES BANK</p>
-                  <p class="account">Account #: 66789999222445</p>
-                  <p class="ifsc">IFSC: YESBBIN4567</p>
-                  <p class="branch">Branch: Kodihalli</p>
-                </div>
-                <div class="inv-sign-block">
-                  <p>For Hindustan Unilever</p>
-                </div>
-              </div>
-            </td>
-          </tr>
-
-          <tr>
-            <td>
-              <div class="inv-note-and-tnc-section">
-                <div class="note-block">
-                  <p class="note-title">Notes:</p>
-                  <p class="note-msg">Thank you for the Business</p>
-                </div>
-                <div class="tnc">
-                  <p class="tnc-title">Terms and Conditions:</p>
-                  <ol class="tnc-detail">
-                    <li>Goolds once sold cannot be taken back or exchanged.</li>
-                    <li>We are not the manufacturers, company will stand for warranty as per their terms and conditions.</li>
-                    <li>Interest @24% p.a. will be charged for uncleared bill beyond 15 days.</li>
-                    <li>Subject to local jurisdiction.</li>
-                  </ol>
-                </div>
-              </div>
-            </td>
-          </tr> -->
         </tbody>
       </table>
+      <div>
+        <span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">!Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.<path fill="#63E6BE" d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L335 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"/></svg>
+        </span>
+        <span>Amount Paid</span>
+        <p>₹2563 Paid via UPI on 17-06-2023</p>
+      </div>
+      <div>
+        <div class="inv-bank-detail-and-sign-section">
+          <div class="bank-detail-block">
+            <h5 class="bank-detail">Bank Details</h5>
+            <p class="bank-name">Bank: YES BANK</p>
+            <p class="account">Account #: 66789999222445</p>
+            <p class="ifsc">IFSC: YESBBIN4567</p>
+            <p class="branch">Branch: Kodihalli</p>
+          </div>
+          <div class="inv-sign-block">
+            <p>For Hindustan Unilever</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="inv-note-and-tnc-section">
+          <div class="note-block">
+            <p class="note-title">Notes:</p>
+            <p class="note-msg">Thank you for the Business</p>
+          </div>
+          <div class="tnc">
+            <p class="tnc-title">Terms and Conditions:</p>
+            <ol class="tnc-detail">
+              <li>Goolds once sold cannot be taken back or exchanged.</li>
+              <li>We are not the manufacturers, company will stand for warranty as per their terms and conditions.</li>
+              <li>Interest @24% p.a. will be charged for uncleared bill beyond 15 days.</li>
+              <li>Subject to local jurisdiction.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </body>
