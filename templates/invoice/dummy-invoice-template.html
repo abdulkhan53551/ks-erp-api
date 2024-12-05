@@ -210,17 +210,23 @@
     .inv-item-section th {
       border-left: 1px solid #cccccc; 
     }
-    .inv-item-section td:first-child {
+    .inv-item-section td:first-child,
+    .inv-tax-section td:first-child,
+    .inv-tax-section th:first-child {
       border-left: none;
     }
     .inv-item-section td:nth-child(2),
-    .inv-item-section tr.total-row {
+    .inv-item-section tr.total-row,
+    .inv-tax-section tr.total-row {
       font-weight: bold;
     }
 
     /* Apply styles from the 2nd column onwards */
     .inv-item-section td:nth-child(n+3),
     .inv-item-section th:nth-child(n+3),
+    .inv-tax-section th:nth-child(n+2),
+    .inv-tax-section td:nth-child(n+2),
+    .inv-tax-section th.rate,
     .inv-item-section td.end-of-item {
       text-align: right;
     }
@@ -233,11 +239,10 @@
       border-left: none;
       border-right: none;
     }
-
     .amount-word {
       margin: 0;
       padding: 0.5mm 1mm;
-      border-bottom: 1px solid black;
+      /* border-bottom: 1px solid black; */
       font-size: 2.5mm;
       display: flex;
       flex-direction: 'row';
@@ -246,6 +251,51 @@
     .amount-word span {font-weight: bold;}
     .amount-word p span.eoe {margin-left: 2mm;}
     /* End: Invoice Item Table */
+
+    /* Start: Invoice Tax Table */
+    .inv-tax-section :nth-child(1) {width: 30%;}
+    .inv-tax-section :nth-child(2) {width: 15%;}
+    .inv-tax-section th.rate {width: 6%;}
+    .inv-tax-section th.amount {width: 13%;}
+    .inv-tax-section :nth-child(5) {width: 5%;}
+    .inv-tax-section :nth-child(6) {width: 10%;}
+    .inv-tax-section :nth-child(7) {width: 20%;}
+    .inv-tax-section th:last-child,
+    .inv-tax-section td:last-child {border-right: none;}
+    .inv-tax-section th,
+    .inv-tax-section td {padding: 0.2mm 1mm; font-size: 2.5mm;}
+    .inv-tax-section th.central-tax,
+    .inv-tax-section th.state-tax {text-align: center;}
+    /* End: Invoice Tax Table */
+
+    /* Start: Amount paid check */
+    .amount-paid-section { display: flex; flex-direction: column; align-items: flex-end; padding: 1mm; row-gap: 1mm; font-weight: bold; border-bottom: 1px solid black; }
+    .amount-paid-check { display: flex; align-items: center; }
+    .amount-paid-check svg { width: 3mm; }
+    .amount-paid-check span.amount-paid-txt { padding: 0px 0 0 1.2mm; }
+    /* End: Amount paid check */
+
+    /* Start: Bank detail sign and section */
+    .inv-bank-detail-and-sign-section {display: flex; flex: 1; height: 30mm;}
+    .inv-bank-detail-and-sign-section h5,
+    .inv-bank-detail-and-sign-section p {margin: 0; padding: 0;}
+    .inv-bank-detail-and-sign-section h5 {margin-bottom: 1mm;}
+    .bank-detail-block,
+    .tnc-block,
+    .inv-sign-block {width: 30%; border-right: 1px solid black; border-bottom: 1px solid black; padding: 1mm;}
+    .bank-detail-block {width: 35%;}
+    /* .bank-detail-block .block {display: flex; flex: 1; font-size: 2.5mm; line-height: 140%;} */
+    .bank-detail-block .bank-detail-table {font-size: 2.5mm; line-height: 140%;}
+    .bank-detail-block .bank-detail-table th,
+    .bank-detail-block .bank-detail-table td {margin: 0; padding: 0; border: none;}
+    .bank-detail-block .bank-detail-table td:first-child {width: 20%;}
+    /* .bank-detail-block .bank-detail-table .label { background: pink; } */
+    .bank-detail-block .bank-detail-table .value {font-weight: bold;}
+    .tnc-block {width: 35%;}
+    .tnc-block .tnc-detail {font-size: 2.2mm; line-height: 120%;}
+    .inv-sign-block {display: flex;flex-direction: column;justify-content: space-between;text-align: right; border-right: none;}
+    .inv-sign-block h5.signature {align-self: center;}
+    /* End: Bank detail sign and section */
   </style>
 </head>
 <body>
@@ -540,23 +590,23 @@
         <span>Amount Chargeable (in words):</span> 
         <p>Two Thousand, Five Hundred and Sixty Three Rupees Only. <span class="eoe">E & O.E</span></p>
       </div>
-      <table class="table">
+      <table class="table inv-tax-section">
         <tbody>
           <tr>
-            <td rowspan="2">HSN/SAC</td>
-            <td rowspan="2">Taxable Value</td>
-            <td colspan="2">Central Tax</td>
-            <td colspan="2">State Tax</td>
-            <td rowspan="2">Total Tax Amount</td>
+            <th rowspan="2">HSN/SAC</th>
+            <th rowspan="2">Taxable Value</th>
+            <th class="central-tax" colspan="2">Central Tax</th>
+            <th class="state-tax" colspan="2">State Tax</th>
+            <th rowspan="2">Total Tax Amount</th>
           </tr>
           <tr>
-            <td>Rate</td>
-            <td>Amount</td>
-            <td>Rate</td>
-            <td>Amount</td>
+            <th class="rate">Rate</th>
+            <th class="amount">Amount</th>
+            <th class="rate">Rate</th>
+            <th class="amount">Amount</th>
           </tr>
           <tr>
-            <td>33061020</td>
+            <td></td>
             <td>322.03</td>
             <td>9%</td>
             <td>28.98</td>
@@ -565,7 +615,7 @@
             <td>57.97</td>
           </tr>
           <tr>
-            <td>340119</td>
+            <td></td>
             <td>252.54</td>
             <td>9%</td>
             <td>22.73</td>
@@ -574,7 +624,7 @@
             <td>45.46</td>
           </tr>
           <tr>
-            <td>34011919</td>
+            <td></td>
             <td>330.51</td>
             <td>9%</td>
             <td>29.75</td>
@@ -583,7 +633,7 @@
             <td>59.49</td>
           </tr>
           <tr>
-            <td>3304</td>
+            <td></td>
             <td>1266.95</td>
             <td>9%</td>
             <td>114.03</td>
@@ -591,39 +641,61 @@
             <td>114.03</td>
             <td>228.05</td>
           </tr>
-          <tr>
+          <tr class="total-row">
             <td>TOTAL</td>
             <td>2172.03</td>
-            <td></td>
-            <td>195.49</td>
-            <td>9%</td>
-            <td>195.49</td>
+            <td colspan="2">195.49</td>
+            <td colspan="2">195.49</td>
             <td>390.97</td>
           </tr>
         </tbody>
       </table>
-      <div>
-        <span>
+      <div class="amount-paid-section">
+        <div class="amount-paid-check">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">!Font Awesome Free 6.7.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.<path fill="#63E6BE" d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 337c-9.4 9.4-24.6 9.4-33.9 0l-64-64c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0l47 47L335 175c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9z"/></svg>
-        </span>
-        <span>Amount Paid</span>
-        <p>₹2563 Paid via UPI on 17-06-2023</p>
+          <span class="amount-paid-txt">Amount Paid</span>
+        </div>
+        <div>₹2563 Paid via UPI on 17-06-2023</div>
       </div>
-      <div>
-        <div class="inv-bank-detail-and-sign-section">
-          <div class="bank-detail-block">
-            <h5 class="bank-detail">Bank Details</h5>
-            <p class="bank-name">Bank: YES BANK</p>
-            <p class="account">Account #: 66789999222445</p>
-            <p class="ifsc">IFSC: YESBBIN4567</p>
-            <p class="branch">Branch: Kodihalli</p>
-          </div>
-          <div class="inv-sign-block">
-            <p>For Hindustan Unilever</p>
+      <div class="inv-bank-detail-and-sign-section">
+        <div class="bank-detail-block">
+          <h5 class="bank-detail">Bank Details</h5>
+          <table class="table bank-detail-table">
+            <tbody>
+              <tr class="bank-name">
+                <td class="label">Bank:</td>
+                <td class="value">YES BANK</td>
+              </tr>
+              <tr class="account">
+                <td class="label">Account #:</td>
+                <td class="value">66789999222445</td>
+              </tr>
+              <tr class="ifsc">
+                <td class="label">IFSC:</td>
+                <td class="value">YESBBIN4567</td>
+              </tr>
+              <tr class="branch">
+                <td class="label">Branch:</td>
+                <td class="value">Kodihalli</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="tnc-block">
+          <h5 class="tnc-title">Terms and Conditions:</h5>
+          <div class="tnc-detail">
+            <p>1. Goolds once sold cannot be taken back or exchanged.</p>
+            <p>2. We are not the manufacturers, company will stand for warranty as per their terms and conditions.</p>
+            <p>3. Interest @24% p.a. will be charged for uncleared bill beyond 15 days.</p>
+            <p>4. Subject to local jurisdiction.</p>
           </div>
         </div>
+        <div class="inv-sign-block">
+          <h5>For Hindustan Unilever</h5>
+          <h5 class="signature">Authorised Signatory</h5>
+        </div>
       </div>
-      <div>
+      <!-- <div>
         <div class="inv-note-and-tnc-section">
           <div class="note-block">
             <p class="note-title">Notes:</p>
@@ -639,7 +711,7 @@
             </ol>
           </div>
         </div>
-      </div>
+      </div> -->
     </div>
   </div>
 </body>
