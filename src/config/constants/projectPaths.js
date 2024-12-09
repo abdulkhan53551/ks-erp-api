@@ -1,4 +1,4 @@
-const { BASE_URL } = require("./config")
+const { BASE_URL } = require("../config")
 
 // URI
 const PUBLIC_URI = `${BASE_URL}/public`

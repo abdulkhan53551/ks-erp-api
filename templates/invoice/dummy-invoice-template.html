@@ -193,9 +193,9 @@
       font-size: 2.7mm;
       line-height: 140%;
     }
-    .inv-item-section tr:nth-child(even) {
-      background-color: #f9f9f9; /* Zebra-striping for rows */
-    }
+    /* .inv-item-section tr:nth-child(even) {
+      background-color: #f9f9f9;
+    } */
     .inv-item-section th {
       background-color: #f4f4f4;
       font-weight: bold;
@@ -203,7 +203,7 @@
       border-right: none;
     }
     .inv-item-section td {
-      border: none;
+      /* border: none; */
       border-left: 1px solid #cccccc; 
       /* height: 4.1mm; */
     }
@@ -239,6 +239,15 @@
       border-left: none;
       border-right: none;
     }
+
+    .inv-item-section tbody tr {
+      height: calc(100% / 20);
+    }
+
+    .inv-item-section tbody tr:empty td {
+      visibility: hidden;
+    }
+    
     .amount-word {
       margin: 0;
       padding: 0.5mm 1mm;
@@ -424,168 +433,310 @@
           </div>
         </div>
       </div>
-      <table class="table inv-item-section">
-        <colgroup>
-          <col style="width: 2%;">
-          <col style="width: 33%;">
-          <col style="width: 7%;">
-          <col style="width: 4%;">
-          <col style="width: 6%;">
-          <col style="width: 9%;">
-          <col style="width: 4%;">
-          <col style="width: 10%;">
-        </colgroup>
-        <thead class="inv-item-header">
-          <tr>
-            <th>#</th>
-            <th>Item</th>
-            <th>HSN/SAC</th>
-            <th>Tax</th>
-            <th>Qty</th>
-            <th>Rate/Item</th>
-            <th>Per</th>
-            <th>Amount</th>
-          </tr>
-        </thead>
-        <tbody>
-          <!-- <tr>
-            <td>#</td>
-            <td>Item</td>
-            <td>HSN/SAC</td>
-            <td>Tax</td>
-            <td>Qty</td>
-            <td>Rate/Item</td>
-            <td>Per</td>
-            <td>Amount</td>
-          </tr> -->
-          <tr>
-            <td>1</td>
-            <td>Colgate 200 gm</td>
-            <td>33061020</td>
-            <td>18%</td>
-            <td>5 NOS</td>
-            <td>64.41</td>
-            <td>NOS</td>
-            <td>322.03</td>
-          </tr>
-          <tr>
-            <td>2</td>
-            <td>Surf Excel Easy Wash Detergent Powder 1kg</td>
-            <td>340119</td>
-            <td>18%</td>
-            <td>2 NOS</td>
-            <td>126.27</td>
-            <td>NOS</td>
-            <td>252.54</td>
-          </tr>
-          <tr>
-            <td>3</td>
-            <td>Dove Soap</td>
-            <td>34011919</td>
-            <td>18%</td>
-            <td>10 NOS</td>
-            <td>33.05</td>
-            <td>NOS</td>
-            <td>330.51</td>
-          </tr>
-          <tr>
-            <td>4</td>
-            <td>Head & Shoulders Shampoo</td>
-            <td>3304</td>
-            <td>18%</td>
-            <td>5</td>
-            <td>253.39</td>
-            <td>NOS</td>
-            <td>1,266.95</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr>
-            <td></td>
-            <td class="end-of-item">Discount 2.0%</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>2,172.03</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td class="end-of-item">Taxable Amount</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>2172.03</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td class="end-of-item">CGST 9.0%</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>₹195.49</td>
-          </tr>
-          <tr>
-            <td></td>
-            <td class="end-of-item">SGST 9.0%</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td>₹195.49</td>
-          </tr>
-          <tr class="total-row">
-            <td class="end-of-item" colspan="2">Total</td>
-            <td colspan="2"></td>
-            <td>22.000</td>
-            <td colspan="3">₹2,563.00</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="inv-table">
+        <table class="table inv-item-section">
+          <colgroup>
+            <col style="width: 2%;">
+            <col style="width: 33%;">
+            <col style="width: 7%;">
+            <col style="width: 4%;">
+            <col style="width: 6%;">
+            <col style="width: 9%;">
+            <col style="width: 4%;">
+            <col style="width: 10%;">
+          </colgroup>
+          <thead class="inv-item-header">
+            <tr>
+              <th>#</th>
+              <th>Item</th>
+              <th>HSN/SAC</th>
+              <th>Tax</th>
+              <th>Qty</th>
+              <th>Rate/Item</th>
+              <th>Per</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- <tr>
+              <td>#</td>
+              <td>Item</td>
+              <td>HSN/SAC</td>
+              <td>Tax</td>
+              <td>Qty</td>
+              <td>Rate/Item</td>
+              <td>Per</td>
+              <td>Amount</td>
+            </tr> -->
+            <tr>
+              <td>1</td>
+              <td class="colgate">Colgate 200 gm</td>
+              <td>33061020</td>
+              <td>18%</td>
+              <td>5 NOS</td>
+              <td>64.41</td>
+              <td>NOS</td>
+              <td>322.03</td>
+            </tr>
+            <tr>
+              <td>2</td>
+              <td>Surf Excel Easy Wash Detergent Powder 1kg</td>
+              <td>340119</td>
+              <td>18%</td>
+              <td>2 NOS</td>
+              <td>126.27</td>
+              <td>NOS</td>
+              <td>252.54</td>
+            </tr>
+            <tr>
+              <td>3</td>
+              <td>Dove Soap</td>
+              <td>34011919</td>
+              <td>18%</td>
+              <td>10 NOS</td>
+              <td>33.05</td>
+              <td>NOS</td>
+              <td>330.51</td>
+            </tr>
+            <tr>
+              <td>4</td>
+              <td>Head & Shoulders Shampoo</td>
+              <td>3304</td>
+              <td>18%</td>
+              <td>5</td>
+              <td>253.39</td>
+              <td>NOS</td>
+              <td>1,266.95</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td class="empty-td">&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+              <td>&nbsp;</td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="end-of-item">Discount 2.0%</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>2,172.03</td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="end-of-item">Taxable Amount</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>2172.03</td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="end-of-item">CGST 9.0%</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>₹195.49</td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="end-of-item">SGST 9.0%</td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>₹195.49</td>
+            </tr>
+            <tr class="total-row">
+              <td class="end-of-item" colspan="2">Total</td>
+              <td colspan="2"></td>
+              <td>22.000</td>
+              <td colspan="3">₹2,563.00</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div class="amount-word">
         <span>Amount Chargeable (in words):</span> 
         <p>Two Thousand, Five Hundred and Sixty Three Rupees Only. <span class="eoe">E & O.E</span></p>

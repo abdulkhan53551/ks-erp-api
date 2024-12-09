@@ -1,13 +1,13 @@
 const multer = require("multer");
 const fs = require('fs');
 const path = require('path');
-const { ROOT_DIR } = require("../../../config/constant");
+const { projectPaths } = require("../../../config/constants");
 
 const storage = multer.diskStorage({
     destination: function (req, file, cb) {
         // Define the folder path under the public directory
         // const folderPath = path.join(__dirname, 'public', 'temp');
-        const folderPath = path.join(ROOT_DIR, 'public', 'temp');
+        const folderPath = path.join(projectPaths.ROOT_DIR, 'public', 'temp');
 
         // check and create folder if it doesn't exist
         if (!fs.existsSync(folderPath)) {

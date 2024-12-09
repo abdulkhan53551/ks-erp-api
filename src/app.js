@@ -4,7 +4,7 @@ const cookieParser = require('cookie-parser')
 const globalErrorHandler = require('./api/v1/middlewares/globalErrorHandler.middleware')
 const path = require('path')
 const puppeteer = require('puppeteer');
-const {ROOT_DIR} = require('./config/constant')
+const { projectPaths } = require('./config/constants')
 const htmlPdf = require('html-pdf')
 const fs = require('fs')
 
@@ -41,12 +41,15 @@ app.get('/generate-pdf', async (req, res) => {
 
         // Navigate the page to a URL.
         // await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'invoice.template.html')}`, { waitUntil: 'load' });
-        await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'dummy-invoice-template.html')}`, { waitUntil: 'load' });
+        await page.goto(`file://${path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'dummy-invoice-template.html')}`, { waitUntil: 'load' });
 
 
 
         // await page.setContent('<h1>Hello World</h1>')
 
+        // page.setViewport({
+        //   height: 
+        // })
 
         // Save the PDF to a file
         await page.pdf({
