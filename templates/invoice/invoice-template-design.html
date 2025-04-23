@@ -23,8 +23,6 @@
       flex: 1;
     }
     .table-wrapper {
-       /* Allocate A4 size border */
-       /* Remove border after completion */
       border: 1px solid #000;
       flex: 1;
     }
@@ -68,7 +66,6 @@
 
     /* Start: Invoice details */
     .invoice-detail-block {
-      /* background-color: #FF5733; */
       height: 72mm;
       display: flex;
     }
@@ -78,19 +75,16 @@
       display: flex;
       flex-direction: column;
       flex: 1;
-      /* background-color: #33FF57; */
     }
     .firm-owner-detail {
       display: flex;
       height: 30mm;
-      /* background-color: #FF33A1; */
       padding: 1mm;
       border: 1px solid black;
       border-top: none;
       border-left: none;
     }
     .firm-logo {
-      /* background-color: #FFC300; */
       width: 16mm;
       overflow: hidden;
       display: flex; 
@@ -104,7 +98,6 @@
     }
     .firm-detail {
       flex: 1;
-      /* background-color: #00B894; */
       padding: 0 2mm 0 0;
       font-size: 2.7mm;
       line-height: 120%;
@@ -118,7 +111,6 @@
     .firm-detail .email .label {color: #333333;  font-weight: bold;}
     .customer-detail {
       flex: 1;
-      /* background-color: #A133FF; */
       padding: 1mm;
       font-size: 2.7mm;
       line-height: 120%;
@@ -137,12 +129,8 @@
     /* Start: Order info block */
     .order-info-block {
       flex: 1;
-      /* background-color: #3357FF; */
     }
     .inv-doc-detail {
-      /* height: 170px; */
-      /* background-color: #FFC300; */
-      /* border: 1px solid black; */
       font-size: 2.7mm;
     }
     .inv-doc {
@@ -175,7 +163,6 @@
       font-size: 2.7mm;
     }
     .shipping-address {
-      /* background-color: #00B894; */
       padding: 1mm;
       font-size: 2.7mm;
       line-height: 120%;
@@ -193,9 +180,10 @@
       font-size: 2.7mm;
       line-height: 140%;
     }
-    /* .inv-item-section tr:nth-child(even) {
-      background-color: #f9f9f9;
-    } */
+    .empty-row td {
+      padding: 0;
+      margin: 0;
+    }
     .inv-item-section th {
       background-color: #f4f4f4;
       font-weight: bold;
@@ -204,8 +192,7 @@
     }
     .inv-item-section td {
       /* border: none; */
-      border-left: 1px solid #cccccc; 
-      /* height: 4.1mm; */
+      border-left: 1px solid #cccccc;
     }
     .inv-item-section th {
       border-left: 1px solid #cccccc; 
@@ -251,7 +238,6 @@
     .amount-word {
       margin: 0;
       padding: 0.5mm 1mm;
-      /* border-bottom: 1px solid black; */
       font-size: 2.5mm;
       display: flex;
       flex-direction: 'row';
@@ -293,12 +279,10 @@
     .tnc-block,
     .inv-sign-block {width: 30%; border-right: 1px solid black; border-bottom: 1px solid black; padding: 1mm;}
     .bank-detail-block {width: 35%;}
-    /* .bank-detail-block .block {display: flex; flex: 1; font-size: 2.5mm; line-height: 140%;} */
     .bank-detail-block .bank-detail-table {font-size: 2.5mm; line-height: 140%;}
     .bank-detail-block .bank-detail-table th,
     .bank-detail-block .bank-detail-table td {margin: 0; padding: 0; border: none;}
     .bank-detail-block .bank-detail-table td:first-child {width: 20%;}
-    /* .bank-detail-block .bank-detail-table .label { background: pink; } */
     .bank-detail-block .bank-detail-table .value {font-weight: bold;}
     .tnc-block {width: 35%;}
     .tnc-block .tnc-detail {font-size: 2.2mm; line-height: 120%;}
@@ -458,16 +442,6 @@
             </tr>
           </thead>
           <tbody>
-            <!-- <tr>
-              <td>#</td>
-              <td>Item</td>
-              <td>HSN/SAC</td>
-              <td>Tax</td>
-              <td>Qty</td>
-              <td>Rate/Item</td>
-              <td>Per</td>
-              <td>Amount</td>
-            </tr> -->
             <tr>
               <td>1</td>
               <td class="colgate">Colgate 200 gm</td>
@@ -846,23 +820,6 @@
           <h5 class="signature">Authorised Signatory</h5>
         </div>
       </div>
-      <!-- <div>
-        <div class="inv-note-and-tnc-section">
-          <div class="note-block">
-            <p class="note-title">Notes:</p>
-            <p class="note-msg">Thank you for the Business</p>
-          </div>
-          <div class="tnc">
-            <p class="tnc-title">Terms and Conditions:</p>
-            <ol class="tnc-detail">
-              <li>Goolds once sold cannot be taken back or exchanged.</li>
-              <li>We are not the manufacturers, company will stand for warranty as per their terms and conditions.</li>
-              <li>Interest @24% p.a. will be charged for uncleared bill beyond 15 days.</li>
-              <li>Subject to local jurisdiction.</li>
-            </ol>
-          </div>
-        </div>
-      </div> -->
     </div>
   </div>
 </body>

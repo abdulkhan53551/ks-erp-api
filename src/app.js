@@ -7,15 +7,16 @@ const puppeteer = require('puppeteer');
 const { projectPaths } = require('./config/constants')
 const htmlPdf = require('html-pdf')
 const fs = require('fs')
+const { generateInvoicePDF } = require('./api/v1/controllers/invoice.controller')
 
 const app = express()
 
 app.use(cors({
-    origin: process.env.CORS_ORIGIN,
-    credentials: true
+  origin: process.env.CORS_ORIGIN,
+  credentials: true
 }))
 
-app.use(express.json({limit: '16kb'}));
+app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(express.static('public'))
 app.use(cookieParser())
@@ -23,61 +24,47 @@ app.use(cookieParser())
 // Routes import
 const userRoutes = require('./api/v1/routes/user.routes')
 const { ApiError } = require('./api/v1/services/ApiError')
+const { productRoutes } = require('./api/v1/routes/product')
+const { ApiResponse } = require('./api/v1/services/ApiResponse')
 
 // Routes declaration
-app.use('/users', userRoutes)
+// app.use('/users', userRoutes)
+app.use('/products', productRoutes)
+// app.use('/api', (req, res, next) => {
+//   console.log('Request to /api');
+//   next();
+// });
+
 
 // Generate PDF
-app.get('/generate-pdf', async (req, res) => {
-    try {
-       // Launch the browser and open a new blank page
-        // const browser = await puppeteer.launch();
-        const browser = await puppeteer.launch({
-            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Path to Chrome
-            // headless: false,
-            // args: ['--no-sandbox', '--disable-setuid-sandbox'],
-          });
-        const page = await browser.newPage();
+app.get('/generate-pdf', async (req, res, next) => {
+  try {
+    // Get the path to the generated PDF file
+    const filePath = path.join(projectPaths.ROOT_DIR, './invoice.pdf');
 
-        // Navigate the page to a URL.
-        // await page.goto(`file://${path.join(`${ROOT_DIR}/templates/invoice/`, 'invoice.template.html')}`, { waitUntil: 'load' });
-        await page.goto(`file://${path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'dummy-invoice-template.html')}`, { waitUntil: 'load' });
+    // Generate the PDF
+    await generateInvoicePDF("", puppeteer); // generates the PDF and saves it
 
+    // Set the headers for the response as a PDF file
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="invoice.pdf"');
 
+    // Stream the PDF file to the response
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
 
-        // await page.setContent('<h1>Hello World</h1>')
-
-        // page.setViewport({
-        //   height: 
-        // })
-
-        // Save the PDF to a file
-        await page.pdf({
-          format: 'A4',
-          path: 'table.pdf', // Save to file
-          printBackground: true,
-        });
-
-        await browser.close();
-
-        // Set proper headers for downloading the PDF
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename="table.pdf"');
-
-        // res.status(200).send({message: 'PDF generated successfully'})
-          // Stream the generated PDF to the client
-      fs.createReadStream('table.pdf').pipe(res);
-      // return res.status(200).send({message: 'PDF generated successfully'})
-    } catch (error) {
-        console.log('error => ', error);
-        
-        throw new ApiError(500, 'Error generating PDF')
-    }
+    // Handle errors during the streaming
+    fileStream.on('end', () => {
+      fs.unlink(filePath, () => { }); // optional: clean up after download
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // Global error-handling middleware (must be last)
 app.use(globalErrorHandler);
 
 module.exports = {
-    app
+  app
 }

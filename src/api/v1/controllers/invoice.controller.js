@@ -1,174 +1,114 @@
-const { USER_DPI } = require("../../../config/constants/app");
-const { pixelsToMm } = require("../services/conversion");
+const { projectPaths } = require("../../../config/constants");
 const { sampleInvoiceData } = require("./sampleInvoiceData");
+const path = require('path')
+const ejs = require('ejs')
+const { ApiError } = require('./../services/ApiError');
 
-const paymentMethod = {
-    CASH: 'Cash',
-    UPI: 'UPI',
-    BANK_CHEQUE: 'Bank Cheque',
-    BANK_TRANSFER: 'Bank Transfer',
-}
-
+// Generate invoice PDF
 const generateInvoicePDF = async (invoiceData, puppeteer) => {
-    // sampleInvoiceData
-    const browser = await puppeteer.launch();
-    const page = await browser.newPage();
+    try {
+        /* 
+            =========================================
+            Pass 1: render with estimated filler rows
+            =========================================
+        */
 
-    // Load invoice template or HTML content
-    await page.setContent('<html><body><table><tr><td>Invoice Content</td></tr></table></body></html>');
+        // Get invoice template file
+        const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'invoice-template.ejs');
 
-    // Get row heights and convert to mm
-    const rowHeightsInMm = await page.evaluate(evaluatePage, USER_DPI);
+        // Fill the template with invoice data
+        const filledHtml = await ejs.renderFile(templatePath, sampleInvoiceData);
 
-    // Check invoice item will fit to the invoice item table
+        // Launch the browser and open a new blank page
+        // const browser = await puppeteer.launch();
+        const browser = await puppeteer.launch({
+            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Path to Chrome
+            // headless: false,
+        });
 
-    console.log('Row Heights in mm:', rowHeightsInMm);
+        // Initialize a new page
+        const page = await browser.newPage();
 
-    // Generate PDF
-    await page.pdf({ path: 'invoice.pdf', format: 'A4', printBackground: true });
-    await browser.close();
+        // Set the content of the page to the filled HTML
+        await page.setContent(filledHtml, { waitUntil: 'networkidle0' });
+
+        // Measure rendered table height
+        const { invoiceHeight, invoiceOccupiedHeight } = await page.evaluate(evaluatePage);
+
+        // Check if the occupied height exceeds the allowed height
+        if (invoiceOccupiedHeight > invoiceHeight) {
+            // Throw an error if the occupied height exceeds the allowed height
+            throw new ApiError(
+                422,
+                'Invoice content exceeds allowed page height',
+                [{
+                    maxHeight: invoiceHeight,
+                    actualHeight: invoiceOccupiedHeight
+                }]
+            )
+
+        }
+
+        // Calculate the remaining height
+        const remainingHeight = invoiceHeight - invoiceOccupiedHeight;
+
+        // Close the browser
+        await browser.close();
+
+        /* 
+            =========================================
+            Pass 2: re-render with correct blank rows
+            =========================================
+        */
+        // Update the remaining height in the sample invoice data
+        sampleInvoiceData.emptyRowHeightNeededInPx = remainingHeight;
+
+        // Fill the template again with updated data
+        const html = await ejs.renderFile(templatePath, sampleInvoiceData);
+
+        // Launch the browser and open a new blank page
+        const browser2 = await puppeteer.launch({
+            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Path to Chrome
+            headless: false,
+        });
+
+        // Initialize a new page
+        const page2 = await browser2.newPage();
+
+        // Set the content of the page to the filled HTML
+        await page2.setContent(html, { waitUntil: 'networkidle0' });
+
+        // Save the PDF to a file
+        await page2.pdf({
+            format: 'A4',
+            path: 'invoice.pdf', // Save to file
+            printBackground: true,
+            width: `210mm`,
+            height: `297mm`,
+            margin: { top: '3mm', bottom: '3mm', left: '3mm', right: '3mm' },
+        });
+
+        // Close the browser
+        await browser2.close();
+    } catch (error) {
+        throw error instanceof ApiError ? error : new ApiError(500, 'Error generating PDF')
+    }
 };
 
 // Evaluate page
-const evaluatePage = (dpi) => {
-    // Get invoice height
-    const invoiceHeight = getInvoiceBlockHeight()
+const evaluatePage = () => {
+    // Get total invoice height
+    const table = document.querySelector('.table-container');
+    const invoiceHeight = table.getBoundingClientRect().height;
 
-    // Get invoice amount paid height
-    const invoiceAmountPaidHeight = getInvoiceAmountPaidHeight()
-
-    // Get invoice height
-    const { invoiceItemTableHeight, invoiceAmountToWordHeight, invoiceTaxTableHeight } = getInvoiceHeight()
-
-    // Get table row height
-    getTableTrHeiht()
-
-    /*
-        Note: invoice item & invoice tax section height should be calculated based on the invoice item & invoice tax section height
-        - There are 4 invoice item sections and 4 invoice tax sections
-        - Each new tax of invoice item section will reflect the height of the invoice tax section
-          Ex: 
-            1. invoice item have 3 taxes (i.e.: 5%, 12%, 18%) then tax section have 3 rows of taxes (i.e: 5%, 12%, 18%)
-            2. invoice item have 5 taxes (i.e.: 5%, 12%, 12%, 18%, 18%) then tax section have 3 rows of taxes (i.e: 5%, 12%, 18%) and so on..
-            
-
-    */
-
-    // Get height of invoice item section
-
-    // Get height of amount in words section
-
-    // Get height of invoice tax section
-
-    // Get heigh of amount paid section
-
-
-
-    return 1
-}
-
-// Get invoice height
-const getInvoiceHeight = () => {
-    // Get invoice item table height
-    const invoiceItemTableHeight = getInvoiceItemTableHeight()
-
-    // Get invoice amount to word height
-    const invoiceAmountToWordHeight = getInvoiceAmountToWordHeight()
-
-    // Get invoice tax table height
-    const invoiceTaxTableHeight = getInvoiceTaxTableHeight()
+    // Get invoice occupied height
+    const invoiceOccupiedHeightDiv = document.querySelector('.table-invoice-wrapper');
+    const invoiceOccupiedHeight = invoiceOccupiedHeightDiv.getBoundingClientRect().height;
 
     return {
-        invoiceItemTableHeight,
-        invoiceAmountToWordHeight,
-        invoiceTaxTableHeight
+        invoiceHeight,
+        invoiceOccupiedHeight
     }
-}
-
-// Get invoice block height
-const getInvoiceBlockHeight = () => {
-    const invoice = document.querySelectorAll('div.table-wrapper');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get invoice amount paid height
-const getInvoiceAmountPaidHeight = () => {
-    const invoice = document.querySelectorAll('div.amount-paid-section');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get invoice item table height
-const getInvoiceItemTableHeight = () => {
-    const invoice = document.querySelectorAll('table.inv-item-section');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get invoice block height
-const getInvoiceItemTableRowHeight = () => {
-    const invoice = document.querySelectorAll('div.table-wrapper');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get invoice amount to word height
-const getInvoiceAmountToWordHeight = () => {
-    const invoice = document.querySelectorAll('div.amount-word');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get invoice tax table height
-const getInvoiceTaxTableHeight = () => {
-    const invoice = document.querySelectorAll('div.table-wrapper');
-    return getHeightOfHtmlElement(invoice)
-}
-
-// Get row height
-function getTableTrHeiht() {
-    const rows = document.querySelectorAll('table.inv-item-section');
-    return Array.from(rows).map(getHeightOfHtmlElement);
-}
-
-// Get height of html element
-const getHeightOfHtmlElement = (ele) => {
-    try {
-        const rect = ele.getBoundingClientRect();
-        return rect.height;   // Conversion formula
-    } catch (error) {
-        console.log('Unable to get element height => ', error);
-    }
-}
-
-// Restructure invoice item tax wise
-const restructureInvoiceItemTaxWise = (invoiceData = []) => {
-    try {
-        // Check if invoice data is empty
-        if (invoiceData.length > 0) {
-            return invoiceData.map(item => {
-
-            })
-        }
-    } catch (error) {
-        console.log('Unable to restructure invoice item tax wise => ', error);
-        
-    }
-}
-
-/*
-    Calculation of invoice
-*/
-
-// Get total of invoice
-const getInvoiceTotal = () => {
-    // Get total discount
-    const discountedAmount = getTotalDiscount()
-
-    // Get total taxable amount
-    const taxableAmount = getTotalTaxableAmount()
-
-    // Get total gst amount
-    const {cgst, sgst} = getTotalGstAmount(taxableAmount, taxPercentage)
-
-    // Get total of invoice amount / billing amount
-    const invoiceTotalAmount = getInvoiceTotalAmount()
 }
 
 module.exports = { generateInvoicePDF };
