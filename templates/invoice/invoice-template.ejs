@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTML Table</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      font-size: 2.7mm;
+    }
+    .table-container {
+      width: 210mm; /* A4 width */
+      height: 297mm; /* A4 height */
+      /* padding: 3mm; */
+      box-sizing: border-box;
+      border: 1px solid #ccc;
+      background: #f9f9f9;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .table-wrapper {
+      border: 1px solid #000;
+      flex: 1;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .table th, .table td {
+      margin: 0;
+      padding: 0;
+      border: 1px solid #000;
+      text-align: left;
+    }
+
+    /* Start: Invoice heading */
+    .tax-invoice-block {
+      display: flex;
+      flex: 1;
+      justify-content: center;
+      align-items: center;
+      height: 6.7mm;
+      position: relative;
+      font-weight: bold;
+      border-bottom: 1px solid black;
+    }
+    .tax-invoice-block .tax-invoice {
+      letter-spacing: 0.8mm;
+      font-size: 4.2mm;
+    }
+    .original-for-receipient {
+      font-size: 2mm;
+      font-weight: bold;
+      opacity: 0.6;
+      position: absolute;
+      right: 0;
+      color: #4d4d4d;
+      padding-right: 1mm;
+    }
+    /* End: Invoice heading */
+
+    /* Start: Invoice details */
+    .invoice-detail-block {
+      height: 72mm;
+      display: flex;
+    }
+
+    /* Start: Firm info block */
+    .firm-info-block {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+    }
+    .firm-owner-detail {
+      display: flex;
+      height: 30mm;
+      padding: 1mm;
+      border: 1px solid black;
+      border-top: none;
+      border-left: none;
+    }
+    .firm-logo {
+      width: 16mm;
+      overflow: hidden;
+      display: flex; 
+      align-items: start;
+      justify-content: center;
+      padding: 0 2mm 0 0;
+    }
+    .firm-logo img {
+      width: 100%; 
+      object-fit: contain; /* Ensures the image covers the parent area */
+    }
+    .firm-detail {
+      flex: 1;
+      padding: 0 2mm 0 0;
+      font-size: 2.7mm;
+      line-height: 120%;
+    }
+    .firm-detail .name {font-size: 3.1mm; margin: 0;}
+    .firm-detail .gst {color: #333333; font-weight: 600;}
+    .firm-detail .addrs-1 {}
+    .firm-detail .addrs-2 {}
+    .firm-detail .mobile .label {color: #333333;  font-weight: bold;}
+    .firm-detail .mobile .number {}
+    .firm-detail .email .label {color: #333333;  font-weight: bold;}
+    .customer-detail {
+      flex: 1;
+      padding: 1mm;
+      font-size: 2.7mm;
+      line-height: 120%;
+      border-right: 1px solid black;
+    }
+    .customer-detail p, .customer-detail h5, .shipping-address h5, .shipping-address p {
+      margin: 0px;
+      padding: 0px
+    }
+    .customer-detail .customer-detail-txt {font-size: 2.5mm; font-weight: 600;}
+    .customer-detail .name {font-size: 2.9mm; font-weight: 600;}
+    .customer-detail .gst {color: #333333; font-weight: 600; margin-bottom: 2mm;}
+    .customer-detail .billing-address {font-size: 2.9mm; font-weight: 600;}
+    /* End: Firm info block */
+
+    /* Start: Order info block */
+    .order-info-block {
+      flex: 1;
+    }
+    .inv-doc-detail {
+      font-size: 2.7mm;
+    }
+    .inv-doc {
+      table-layout: fixed; /* Enforce fixed layout */
+    }
+    .inv-doc td {
+      width: 50%; /* Equal width for 2 columns */
+      overflow: hidden; /* Prevent content overflow */
+      padding: 1mm;
+      border: none;
+      border-bottom: 1px solid black;
+      line-height: 1.4;
+    }
+    .inv-doc td:first-child {
+      border-right: 1px solid black;;
+    }
+    .inv-doc p {
+      margin: 0px;
+      padding: 0px;
+    }
+    .inv-doc p:first-child {
+      font-weight: 100;
+      font-size: 2.5mm;
+      font-weight: 600;
+      color: #444444;
+    }
+    .inv-doc p:nth-child(2) {
+      line-height: 1.5;
+      font-weight: bold;
+      font-size: 2.7mm;
+    }
+    .shipping-address {
+      padding: 1mm;
+      font-size: 2.7mm;
+      line-height: 120%;
+    }
+    .shipping-address h5 {font-size: 2.9mm; font-weight: 600;}
+    /* End: Order info block */
+
+    /* End: Invoice details */
+    /* Start: Invoice Item Table */
+    .inv-item-section {
+      table-layout: fixed;
+    }
+    .inv-item-section th, .inv-item-section td {
+      padding: 0.5mm 1mm;
+      font-size: 2.7mm;
+      line-height: 140%;
+    }
+    .empty-row td {
+      padding: 0;
+      margin: 0;
+    }
+    .inv-item-section th {
+      background-color: #f4f4f4;
+      font-weight: bold;
+      border-left: none;
+      border-right: none;
+    }
+    .inv-item-section td {
+      border: none;
+      border-left: 1px solid #cccccc;
+    }
+    .inv-item-section th {
+      border-left: 1px solid #cccccc; 
+    }
+    .inv-item-section td:first-child,
+    .inv-tax-section td:first-child,
+    .inv-tax-section th:first-child {
+      border-left: none;
+    }
+    .inv-item-section td:nth-child(2),
+    .inv-item-section tr.total-row,
+    .inv-tax-section tr.total-row {
+      font-weight: bold;
+    }
+
+    /* Apply styles from the 2nd column onwards */
+    .inv-item-section td:nth-child(n+3),
+    .inv-item-section th:nth-child(n+3),
+    .inv-tax-section th:nth-child(n+2),
+    .inv-tax-section td:nth-child(n+2),
+    .inv-tax-section th.rate,
+    .inv-item-section td.end-of-item {
+      text-align: right;
+    }
+
+    .inv-item-section tr.total-row td {
+      font-size: 2.9mm;
+    }
+    .inv-item-section tr.total-row {
+      border: 1.2px solid;
+      border-left: none;
+      border-right: none;
+    }
+
+    .inv-item-section tbody tr {
+      height: calc(100% / 20);
+    }
+
+    .inv-item-section tbody tr:empty td {
+      visibility: hidden;
+    }
+    
+    .amount-word {
+      margin: 0;
+      padding: 0.5mm 1mm;
+      font-size: 2.5mm;
+      display: flex;
+      flex-direction: 'row';
+    }
+    .amount-word p {flex: 1; margin: 0 0 0 1mm;}
+    .amount-word span {font-weight: bold;}
+    .amount-word p span.eoe {margin-left: 2mm;}
+    /* End: Invoice Item Table */
+
+    /* Start: Invoice Tax Table */
+    .inv-tax-section :nth-child(1) {width: 30%;}
+    .inv-tax-section :nth-child(2) {width: 15%;}
+    .inv-tax-section th.rate {width: 6%;}
+    .inv-tax-section th.amount {width: 13%;}
+    .inv-tax-section :nth-child(5) {width: 5%;}
+    .inv-tax-section :nth-child(6) {width: 10%;}
+    .inv-tax-section :nth-child(7) {width: 20%;}
+    .inv-tax-section th:last-child,
+    .inv-tax-section td:last-child {border-right: none;}
+    .inv-tax-section th,
+    .inv-tax-section td {padding: 0.2mm 1mm; font-size: 2.5mm;}
+    .inv-tax-section th.central-tax,
+    .inv-tax-section th.state-tax {text-align: center;}
+    /* End: Invoice Tax Table */
+
+    /* Start: Amount paid check */
+    .amount-paid-section { display: flex; flex-direction: column; align-items: flex-end; padding: 1mm; row-gap: 1mm; font-weight: bold; border-bottom: 1px solid black; }
+    .amount-paid-check { display: flex; align-items: center; }
+    .amount-paid-check svg { width: 3mm; }
+    .amount-paid-check span.amount-paid-txt { padding: 0px 0 0 1.2mm; }
+    /* End: Amount paid check */
+
+    /* Start: Bank detail sign and section */
+    .inv-bank-detail-and-sign-section {display: flex; flex: 1; height: 30mm;}
+    .inv-bank-detail-and-sign-section h5,
+    .inv-bank-detail-and-sign-section p {margin: 0; padding: 0;}
+    .inv-bank-detail-and-sign-section h5 {margin-bottom: 1mm;}
+    .bank-detail-block,
+    .tnc-block,
+    .inv-sign-block {width: 30%; border-right: 1px solid black; border-bottom: 1px solid black; padding: 1mm;}
+    .bank-detail-block {width: 35%;}
+    .bank-detail-block .bank-detail-table {font-size: 2.5mm; line-height: 140%;}
+    .bank-detail-block .bank-detail-table th,
+    .bank-detail-block .bank-detail-table td {margin: 0; padding: 0; border: none;}
+    .bank-detail-block .bank-detail-table td:first-child {width: 20%;}
+    .bank-detail-block .bank-detail-table .value {font-weight: bold;}
+    .tnc-block {width: 35%;}
+    .tnc-block .tnc-detail {font-size: 2.2mm; line-height: 120%;}
+    .inv-sign-block {display: flex;flex-direction: column;justify-content: space-between;text-align: right; border-right: none;}
+    .inv-sign-block h5.signature {align-self: center;}
+    /* End: Bank detail sign and section */
+  </style>
+</head>
+<body>
+  <div class="table-container">
+    <div class="table-wrapper">
+      <div class="table-invoice-wrapper">        
+        <div class="tax-invoice-block">
+          <span class="tax-invoice">TAX INVOICE</span>
+          <span class="original-for-receipient">ORIGINAL FOR RECEIPIENT</span>
+        </div>
+  
+        <div class="invoice-detail-block">
+          <div class="firm-info-block">
+            <div class="firm-owner-detail">
+              <div class="firm-logo">
+                <img src="https://dummyimage.com/100x100/000/fff.png&text=U" alt="Firm Logo">
+              </div>
+              <div class="firm-detail">
+                <h4 class="name"><%= company.name %></h4>
+                <div class="gst">GSTIN <%= company.gstNo %></div>
+                <div class="addrs-1"><%- company.address %></div>
+                <div class="mobile">
+                  <span class="label">Mobile</span>
+                  <span class="number"><%= company.mobile %></span>
+                </div>
+                <div class="email">
+                  <span class="label">Email</span>
+                  <span class="email-id"><%= company.email %></span>
+                </div>
+              </div>
+            </div>
+            <div class="customer-detail">
+              <p class="customer-detail-txt">Customer Details:</p>
+              <h5 class="name"><%= customer.name %></h5>
+              <% if (customer.gstNo) { %>
+                <p class="gst">GSTIN <%= customer.gstNo %></p>
+              <% } %>
+              <p class="billing-address">Billing address:</p>
+              <p><%- customer.billingAddress %></p>
+              <% if (customer.mobile) { %>
+                <p>Ph: <%= customer.mobile %></p>
+              <% } %>
+              <% if (customer.email) { %>
+                <p>Email: <%= customer.email %></p>
+              <% } %>
+            </div>
+          </div>
+          <div class="order-info-block">
+            <div class="inv-doc-detail">
+              <table class="table inv-doc">
+                <tbody>
+                  <tr>
+                    <td class="inv-no">
+                      <div>
+                        <p>Invoice #:</p>
+                        <p><%= invoiceDetails.invoiceNo %></p>
+                      </div>
+                    </td>
+                    <td class="inv-date">
+                      <div>
+                        <p>Invoice Date:</p>
+                        <p><%= invoiceDetails.invoiceDate %></p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="place-of-supply">
+                      <div>
+                        <p>Place of Supply:</p>
+                        <p><%= invoiceDetails.placeOfSupply %></p>
+                      </div>
+                    </td>
+                    <td class="due-date">
+                      <div>
+                        <p>Due Date:</p>
+                        <p><%= invoiceDetails.dueDate %></p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="challan-no">
+                      <div>
+                        <p>Challan No:</p>
+                        <p><%= invoiceDetails.challanNo %></p>
+                      </div>
+                    </td>
+                    <td class="challan-date">
+                      <div>
+                        <p>Challan Date:</p>
+                        <p><%= invoiceDetails.challanDate %></p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="po-no">
+                      <div>
+                        <p>PO No:</p>
+                        <p><%= invoiceDetails.poNumber %></p>
+                      </div>
+                    </td>
+                    <td class="po-date">
+                      <div>
+                        <p>PO Date:</p>
+                        <p><%= invoiceDetails.poDate %></p>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="eway-no">
+                      <div>
+                        <p>E-Way No.</p>
+                        <p><%= invoiceDetails.ewayBillNo %></p>
+                      </div>
+                    </td>
+                    <td class="mode-of-payment">
+                      <div>
+                        <p>Mode/Term of Payment:</p>
+                        <p><%= invoiceDetails.modeOfPayment %></p>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="shipping-address">
+              <h5>Shipping address:</h5>
+              <p><%- customer.shippingAddress %></p>
+              <% if (customer.mobile) { %>
+                <p>Ph: <%= customer.mobile %></p>
+              <% } %>
+              <% if (customer.email) { %>
+                <p>Email: <%= customer.email %></p>
+              <% } %>
+            </div>
+          </div>
+        </div>
+        <div class="inv-table">
+          <table class="table inv-item-section">
+            <colgroup>
+              <col style="width: 2%;">
+              <col style="width: 33%;">
+              <col style="width: 7%;">
+              <col style="width: 4%;">
+              <col style="width: 6%;">
+              <col style="width: 9%;">
+              <col style="width: 4%;">
+              <col style="width: 10%;">
+            </colgroup>
+            <thead class="inv-item-header">
+              <tr>
+                <th>#</th>
+                <th>Item</th>
+                <th>HSN/SAC</th>
+                <th>Tax</th>
+                <th>Qty</th>
+                <th>Rate/Item</th>
+                <th>Per</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% items.forEach(function(item, index) { %>
+              <tr>
+                <td><%= index + 1 %></td>
+                <td><%= item.name %></td>
+                <td><%= item.hsnAndSacCode %></td>
+                <td><%= item.taxPercentage %></td>
+                <td><%= item.qty %></td>
+                <td><%= item.price %></td>
+                <td><%= item.unit %></td>
+                <td><%= item.totalAmount %></td>
+              </tr>
+              <% }); %>
+              <% if (emptyRowHeightNeededInPx > 0) { %>
+                <tr class="empty-row" style="height: <%= emptyRowHeightNeededInPx || 0 %>px;">
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              <% } %>
+              <% subTotal.forEach(function(item, index) { %>
+                <tr>
+                  <td></td>
+                  <td class="end-of-item"><%= item.name %></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td></td>
+                  <td><%= item.totalAmount %></td>
+                </tr>
+              <% }); %>
+              <tr class="total-row">
+                <td class="end-of-item" colspan="2">Totadfdfl</td>
+                <td colspan="2"></td>
+                <td><%= total.qty %></td>
+                <td colspan="3"><%= total.totalAmount %></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="amount-word">
+          <span>Amount Chargeable (in words):</span> 
+          <p><%= total.totalAmountInWords %> <span class="eoe">E & O.E</span></p>
+        </div>
+        <table class="table inv-tax-section">
+          <tbody>
+            <tr>
+              <th rowspan="2">HSN/SAC</th>
+              <th rowspan="2">Taxable Value</th>
+              <th class="central-tax" colspan="2">Central Tax</th>
+              <th class="state-tax" colspan="2">State Tax</th>
+              <th rowspan="2">Total Tax Amount</th>
+            </tr>
+            <tr>
+              <th class="rate">Rate</th>
+              <th class="amount">Amount</th>
+              <th class="rate">Rate</th>
+              <th class="amount">Amount</th>
+            </tr>
+            <% taxDetail.items.forEach(function(item, index) { %>
+            <tr>
+              <td></td>
+              <td><%= item.taxableValue %></td>
+              <td><%= item.centralTaxPercentage %></td>
+              <td><%= item.centralTaxAmount %></td>
+              <td><%= item.stateTaxPercentage %></td>
+              <td><%= item.stateTaxAmount %></td>
+              <td><%= item.totalTaxAmount %></td>
+            </tr>
+            <% }); %>
+            <tr class="total-row">
+              <td>TOTAL</td>
+              <td><%= taxDetail.total.taxableValue %></td>
+              <td colspan="2"><%= taxDetail.total.centralTaxAmount %></td>
+              <td colspan="2"><%= taxDetail.total.stateTaxAmount %></td>
+              <td><%= taxDetail.total.totalTaxAmount %></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="inv-bank-detail-and-sign-section">
+          <div class="bank-detail-block">
+            <h5 class="bank-detail">Bank Details</h5>
+            <table class="table bank-detail-table">
+              <tbody>
+                <tr class="bank-name">
+                  <td class="label">Bank:</td>
+                  <td class="value"><%= bank.bankName %></td>
+                </tr>
+                <tr class="account">
+                  <td class="label">Account #:</td>
+                  <td class="value"><%= bank.accountNumber %></td>
+                </tr>
+                <tr class="ifsc">
+                  <td class="label">IFSC:</td>
+                  <td class="value"><%= bank.ifscCode %></td>
+                </tr>
+                <tr class="branch">
+                  <td class="label">Branch:</td>
+                  <td class="value"><%= bank.branch %></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="tnc-block">
+            <h5 class="tnc-title">Terms and Conditions:</h5>
+            <div class="tnc-detail">
+              <% termsAndConditions.forEach(function(item, index) { %>
+                <p><%= item %></p>
+              <% }); %>
+            </div>
+          </div>
+          <div class="inv-sign-block">
+            <h5><%= company.name %></h5>
+            <h5 class="signature">Authorised Signatory</h5>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
