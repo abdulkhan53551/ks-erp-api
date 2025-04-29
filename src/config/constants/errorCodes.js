@@ -1,5 +1,14 @@
+const ERROR_CODES = {
+    VALIDATION_ERROR: 'VALIDATION_ERROR',
+    AUTH_FAILED: 'AUTH_FAILED',
+    NOT_FOUND: 'NOT_FOUND',
+    INTERNAL_ERROR: 'INTERNAL_ERROR',
+    BAD_REQUEST: 'BAD_REQUEST',
+    FORBIDDEN: 'FORBIDDEN',
+    UNAUTHORIZED: 'UNAUTHORIZED',
+    UNKNOWN_ERROR: 'UNKNOWN_ERROR'
+};
+
 module.exports = {
-    NOT_FOUND: 'Resource not found',
-    SERVER_ERROR: 'Internal server error',
-    UNAUTHORIZED: 'Unauthorized access',
+    ERROR_CODES
 };

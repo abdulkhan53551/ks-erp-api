@@ -2126,7 +2126,7 @@ const updatePassword = async (oldPassword, newPassword) => {
     
         // Update password in database
     } catch (error) {
-        new ApiError(400, 'Error updating password')
+        new ApiError({stateCode: 400, message: 'Error updating password'})
     }
 }
 

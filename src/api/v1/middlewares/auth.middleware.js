@@ -25,7 +25,7 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
         const token = req.cookies?.accessToken || req.header('Authorization')?.replace('Bearer ', '')
     
         if (!token) {
-            throw new ApiError(401, 'Unauthorized request')
+            throw new ApiError({statusCode: 401, message: 'Unauthorized request'})
         }
     
         // Verify token
@@ -34,7 +34,7 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
         // Get user from db
         const user = await userData.find(user => user.id == decodeToken.id)
         if (!user) {
-            throw new ApiError(401, 'Invalid access token')
+            throw new ApiError({statusCode: 401, message: 'Invalid access token'})
         }
     
         // Append data to request
@@ -43,7 +43,7 @@ const verifyJWT = asyncHandler(async (req, res, next) => {
         // Pass to next middleware
         next()
     } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError(401, 'Invalid access token')
+        throw error instanceof ApiError ? error : new ApiError({statusCode: 401, message: 'Invalid access token'})
     }
 })
 

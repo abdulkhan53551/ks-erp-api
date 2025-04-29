@@ -1,16 +1,19 @@
+const { ERROR_CODES } = require("../../../config/constants/errorCodes");
+const { STATUS_CODE_MAP } = require("../../../config/constants/statusCodeMap");
 class ApiError extends Error {
-    constructor(statusCode, message = 'Something went wrong', errors = [], stack = '') {
+    constructor({ statusCode, message = 'Something went wrong', errors = [], stack = '', errorCode = '' }) {
         super(message)
         this.statusCode = statusCode
         this.data = null
         this.message = message
         this.success = false
         this.errors = errors
+        this.errorCode = errorCode || STATUS_CODE_MAP[statusCode] || ERROR_CODES.UNKNOWN_ERROR;
 
         if (stack) {
             this.stack = stack
         } else {
-           Error.captureStackTrace(this, this.constructor) 
+            Error.captureStackTrace(this, this.constructor)
         }
 
     }
@@ -65,4 +68,4 @@ class ServiceUnavailableError extends ApiError {
     }
 }
 
-module.exports = {ApiError}
+module.exports = { ApiError }

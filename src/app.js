@@ -5,9 +5,9 @@ const globalErrorHandler = require('./api/v1/middlewares/globalErrorHandler.midd
 const path = require('path')
 const puppeteer = require('puppeteer');
 const { projectPaths } = require('./config/constants')
-const htmlPdf = require('html-pdf')
 const fs = require('fs')
 const { generateInvoicePDF } = require('./api/v1/controllers/invoice.controller')
+const dbTransaction = require('./api/v1/middlewares/dbTransaction.middleware')
 
 const app = express()
 
@@ -20,16 +20,17 @@ app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(express.static('public'))
 app.use(cookieParser())
+app.use(dbTransaction); // <-- USE TRANSACTION MIDDLEWARE
 
 // Routes import
 const userRoutes = require('./api/v1/routes/user.routes')
-const { ApiError } = require('./api/v1/services/ApiError')
+const demoRoutes = require('./api/v1/routes/demo.routes')
 const { productRoutes } = require('./api/v1/routes/product')
-const { ApiResponse } = require('./api/v1/services/ApiResponse')
 
 // Routes declaration
-// app.use('/users', userRoutes)
-app.use('/products', productRoutes)
+app.use('/users', userRoutes)
+app.use('/demo', demoRoutes)
+// app.use('/products', productRoutes)
 // app.use('/api', (req, res, next) => {
 //   console.log('Request to /api');
 //   next();
