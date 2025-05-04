@@ -8,7 +8,7 @@ module.exports = (req, res, next) => {
     const authHeader = req.headers.authorization || '';
     const token = authHeader.replace(/^Bearer\s+/i, '');
 
-    let userId = 10;
+    let userId = 1;
 
     // try {
     //     if (token) {

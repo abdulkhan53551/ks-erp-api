@@ -11,6 +11,10 @@ const knexConfig = {
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
     },
+    migrations: {
+        // directory: './migrations',
+        directory: '../../../../migrations',
+    },
     pool: { min: 2, max: 10 },
 };
 
@@ -32,4 +36,4 @@ const connectDB = () => {
     });
 };
 
-module.exports = { db, connectDB };
+module.exports = { db, connectDB, knexConfig };

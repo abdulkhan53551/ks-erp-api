@@ -10,24 +10,27 @@ function patchKnex(knex) {
     const now = new Date();
     const { userId = 0 } = getContext();
 
-    if (Array.isArray(data)) {
-      data = data.map((record) => ({
-        ...record,
-        created_at: record.created_at || now,
-        updated_at: record.updated_at || now,
-        created_by: record.created_by || userId,
-        updated_by: record.updated_by || userId,
-        is_active: record.is_active !== undefined ? record.is_active : true,
-      }));
-    } else {
-      data = {
-        ...data,
-        created_at: data.created_at || now,
-        updated_at: data.updated_at || now,
-        created_by: data.created_by || userId,
-        updated_by: data.updated_by || userId,
-        is_active: data.is_active !== undefined ? data.is_active : true,
-      };
+    // Skip patching knex_migrations_lock table
+    if (this.tableName !== 'knex_migrations_lock') {
+      if (Array.isArray(data)) {
+        data = data.map((record) => ({
+          ...record,
+          created_at: record.created_at || now,
+          updated_at: record.updated_at || now,
+          created_by: record.created_by || userId,
+          updated_by: record.updated_by || userId,
+          is_active: record.is_active !== undefined ? record.is_active : true,
+        }));
+      } else {
+        data = {
+          ...data,
+          created_at: data.created_at || now,
+          updated_at: data.updated_at || now,
+          created_by: data.created_by || userId,
+          updated_by: data.updated_by || userId,
+          is_active: data.is_active !== undefined ? data.is_active : true,
+        };
+      }
     }
 
     return originalInsert.call(this, data, returning);
@@ -39,12 +42,15 @@ function patchKnex(knex) {
     const now = new Date();
     const { userId = 0 } = getContext();
 
-    if (typeof data === 'object' && data !== null) {
-      data = {
-        ...data,
-        updated_at: now,
-        updated_by: userId,
-      };
+    // Skip patching knex_migrations_lock table
+    if (this.tableName !== 'knex_migrations_lock') {
+      if (typeof data === 'object' && data !== null) {
+        data = {
+          ...data,
+          updated_at: now,
+          updated_by: userId,
+        };
+      }
     }
 
     return originalUpdate.call(this, data, returning);

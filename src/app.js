@@ -21,11 +21,13 @@ app.use(cookieParser())
 app.use(dbTransaction); // <-- USE TRANSACTION MIDDLEWARE
 
 // Routes import
+const authRoutes = require('./api/v1/routes/auth.routes')
 const userRoutes = require('./api/v1/routes/user.routes')
 const demoRoutes = require('./api/v1/routes/demo.routes')
 const { productRoutes } = require('./api/v1/routes/product')
 
 // Routes declaration
+app.use('/auth', authRoutes)
 app.use('/users', userRoutes)
 app.use('/demo', demoRoutes)
 // app.use('/products', productRoutes)
