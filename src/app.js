@@ -9,9 +9,9 @@ const fs = require('fs')
 const { generateInvoicePDF } = require('./api/v1/controllers/invoice.controller')
 const dbTransaction = require('./api/v1/middlewares/dbTransaction.middleware')
 const setUserContext = require('./api/v1/middlewares/setUserContext')
+const routes = require('./api/v1/routes/index')
 
 const app = express()
-
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
 app.use(express.json({ limit: '16kb' }));
 app.use(setUserContext);  
@@ -20,22 +20,8 @@ app.use(express.static('public'))
 app.use(cookieParser())
 app.use(dbTransaction); // <-- USE TRANSACTION MIDDLEWARE
 
-// Routes import
-const authRoutes = require('./api/v1/routes/auth.routes')
-const userRoutes = require('./api/v1/routes/user.routes')
-const demoRoutes = require('./api/v1/routes/demo.routes')
-const { productRoutes } = require('./api/v1/routes/product')
-
 // Routes declaration
-app.use('/auth', authRoutes)
-app.use('/users', userRoutes)
-app.use('/demo', demoRoutes)
-// app.use('/products', productRoutes)
-// app.use('/api', (req, res, next) => {
-//   console.log('Request to /api');
-//   next();
-// });
-
+app.use(routes)
 
 // Generate PDF
 app.get('/generate-pdf', async (req, res, next) => {

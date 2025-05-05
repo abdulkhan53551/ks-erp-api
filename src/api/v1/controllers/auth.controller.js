@@ -1,20 +1,16 @@
 const { asyncHandler } = require('../services/asyncHandler.js')
 const { ApiResponse } = require('../services/ApiResponse.js');
 const { ApiError } = require('../services/ApiError.js');
-const jwt = require('jsonwebtoken');
 const { rotateRefreshToken, createRefreshToken } = require('../services/tokenService.js');
 const { JWT } = require('../../../config/config.js');
-const bcrypt = require('bcrypt');
 const { isUserExist, getHashedPassword, isPasswordCorrect } = require('../models/user.model.js');
-const { createUser } = require('../models/auth.model.js');
-const { generateToken, hashToken, generateAccessToken } = require('../helpers/token.js');
-const { db } = require('../database/index.js');
+const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID } = require('../models/auth.model.js');
+const { hashToken, generateAccessToken } = require('../helpers/token.js');
+const { clearAccessAndRefreshTokenCookie } = require('../../../utils/cookies.js');
 
 // Convert to expiry days to number
 const REFRESH_TOKEN_EXPIRY_DAYS = Number(JWT.REFRESH_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
-const ACCESS_TOKEN_EXPIRY = Number(JWT.ACCESS_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
 const REFRESH_TOKEN_EXPIRY_IN_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
-const ACCESS_TOKEN_EXPIRY_IN_MS = ACCESS_TOKEN_EXPIRY * 60 * 1000
 
 // Register user
 const registerUser = asyncHandler(async (req, res) => {
@@ -106,7 +102,7 @@ const loginUser = asyncHandler(async (req, res) => {
     // Check if user already exist
     const user = await isUserExist(userName, email)
 
-    // Find the user in db
+    // Check if user exist
     if (!user?.id) {
         throw new ApiError({ statusCode: 404, message: 'User not found' })
     }
@@ -131,9 +127,6 @@ const loginUser = asyncHandler(async (req, res) => {
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
     }
 
-    // Set cookie options for access token
-    const optionsCookieForAccessToken = { ...optionsCookie, maxAge: ACCESS_TOKEN_EXPIRY_IN_MS }
-
     response = {
         statusCode: 200,
         data: { accessToken, refreshToken },
@@ -143,7 +136,6 @@ const loginUser = asyncHandler(async (req, res) => {
     // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
-        .cookie('accessToken', accessToken, optionsCookieForAccessToken)
         .cookie('refreshToken', refreshToken, optionsCookie)
         .json(new ApiResponse(response))
 });
@@ -179,9 +171,6 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
     }
 
-    // Set cookie options for access token
-    const optionsCookieForAccessToken = { ...optionsCookie, maxAge: ACCESS_TOKEN_EXPIRY_IN_MS }
-
     response = {
         statusCode: 200,
         data: tokens,
@@ -191,7 +180,6 @@ const refreshUserToken = asyncHandler(async (req, res) => {
     // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
-        .cookie('accessToken', accessToken, optionsCookieForAccessToken)
         .cookie('refreshToken', newRefreshToken, optionsCookie)
         .json(new ApiResponse(response))
 })
@@ -225,12 +213,69 @@ const generateAccessAndRefreshTokens = async (tokenData) => {
 const checkVerifyAccessToken = asyncHandler(async (req, res, next) => {
     return res
         .status(200)
-        .json(new ApiResponse({statusCode: 200, message: 'Access token is valid'}))
+        .json(new ApiResponse({ statusCode: 200, message: 'Access token is valid' }))
 })
+
+// Logout
+const logout = asyncHandler(async (req, res, next) => {
+    try {
+        const refreshToken = req.cookies.refreshToken || req.body.refreshToken
+        const userId = req.user.id;
+
+        // Check if refresh token is present
+        if (!refreshToken) {
+            throw new ApiError({ statusCode: 400, message: 'Refresh token is required' })
+        }
+
+        const hashedToken = hashToken(refreshToken);
+
+        console.log('Logout user:', req.user);
+        console.log('Logout userId:', userId);
+        console.log('Logout hashedToken:', hashedToken);
+
+
+        const wasDeleted = await deleteRefreshTokenByUserIDAndToken(userId, hashedToken)
+
+        if (!wasDeleted) {
+            throw new ApiError({ statusCode: 400, message: 'Unable to logout: token not found or already logged out' })
+        }
+
+        // Clear the refresh token cookie
+        clearAccessAndRefreshTokenCookie(res)
+
+        return res
+            .status(200)
+            .json(new ApiResponse({ statusCode: 200, message: 'Logged out successfully' }))
+    } catch (err) {
+        console.log('Error during logout:', err);
+
+        throw err instanceof ApiError ? err : new ApiError({ statusCode: 500, message: 'Logout error' })
+    }
+});
+
+// Logout all sessions
+const logoutAllSessions = asyncHandler(async (req, res, next) => {
+    const userId = req.user.id;
+
+    // Delete all refresh tokens for the user
+    const wasDeleted = await deleteRefreshTokenByUserID(userId)
+
+    // Check if any tokens were deleted
+    if (!wasDeleted) {
+        throw new ApiError({ statusCode: 400, message: 'Unable to logout from all sessions' })
+    }
+
+    // Clear the refresh token cookie
+    clearAccessAndRefreshTokenCookie(res); // Clears cookie from browser
+
+    return res.status(200).json(new ApiResponse({ statusCode: 200, message: 'Logged out from all sessions' }));
+});
 
 module.exports = {
     registerUser,
     loginUser,
     refreshUserToken,
-    checkVerifyAccessToken
+    checkVerifyAccessToken,
+    logout,
+    logoutAllSessions
 }

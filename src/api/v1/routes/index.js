@@ -1,9 +1,29 @@
-const { customerRoutes } = require('./customer');
-const { personRoutes } = require('./person');
+const express = require('express');
+const router = express.Router();
+const authRoutes = require('./auth.routes')
+const userRoutes = require('./user.routes')
+const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
-const { userRoutes } = require('./user');
+const verifyAccessToken = require('../middlewares/auth.middleware');
 
-exports.products = productRoutes;
-exports.users = userRoutes;
-exports.persons = personRoutes;
-exports.customers = customerRoutes;
+// const { customerRoutes } = require('./customer');
+// const { personRoutes } = require('./person');
+// const { productRoutes } = require('./product');
+// const { userRoutes } = require('./user');
+
+
+// 🔓 Public routes (no auth needed)
+router.use('/auth', authRoutes)
+
+// 🔐 Protected routes (require valid access token)
+router.use(verifyAccessToken);
+
+router.use('/users', userRoutes)
+router.use('/demo', demoRoutes)
+router.use('/products', productRoutes)
+
+module.exports = router;
+// exports.products = productRoutes;
+// exports.users = userRoutes;
+// exports.persons = personRoutes;
+// exports.customers = customerRoutes;

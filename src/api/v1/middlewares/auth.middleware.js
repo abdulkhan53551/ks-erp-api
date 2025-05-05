@@ -34,6 +34,7 @@ const { JWT } = require("../../../config/config");
 
 // module.exports = verifyJWT
 
+// Verify access token
 const verifyAccessToken = asyncHandler((req, res, next) => {
     const authHeader = req.headers.authorization;
     let token = null;
@@ -47,13 +48,13 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
 
     // If no token is found, throw an error
     if (!token) {
-        throw new ApiError({ statusCode: 401, message: 'Access token missing or invalid' })
+        throw new ApiError({ statusCode: 401, message: 'Access token required' })
     }
 
     try {
         const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
         req.user = {
-            id: decoded.userId, // or whatever you encoded in the token
+            id: decoded.id, // or whatever you encoded in the token
         };
         next();
     } catch (err) {
