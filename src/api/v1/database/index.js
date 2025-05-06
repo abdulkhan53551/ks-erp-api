@@ -1,31 +1,39 @@
-const { DATABASE } = require('../../../config/config');
-const Pool = require('pg').Pool;
+// db.js
+const knex = require('knex');
+const { patchKnex } = require('../helpers/patchKnex');
 
-const connectDB = async () => {
-    try {
-        // const pool = new Pool({
-        //     host: DATABASE.DB_HOST,
-        //     database: DATABASE.DB_NAME,
-        //     user: DATABASE.DB_USER,
-        //     password: DATABASE.DB_PASSWORD,
-        //     port: DATABASE.DB_PORT
-        // });
-        
-        // module.exports = pool;
+const knexConfig = {
+    client: 'pg', // or 'mysql', etc.
+    connection: {
+        host: process.env.DB_HOST,
+        port: process.env.DB_PORT || 5432,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
+    },
+    migrations: {
+        // directory: './migrations',
+        directory: '../../../../migrations',
+    },
+    pool: { min: 2, max: 10 },
+};
 
-        // Listen on error
-        // app.on('error', (error) => {
-        //     console.log('ERR: ', error);
-        //     throw error
-        // })
+const db = knex(knexConfig);
 
-        console.log('Test database connected successfully.');
-        
-    } catch (error) {
-        // Throw error when something went wrong
-        console.log('POSTGRESQL connection FAILED: ', error);
-        process.exit(1)
-    }
-}
+patchKnex(db); // ← This line applies the patch globally
 
-module.exports = connectDB;
+// Function to check the database connection
+const connectDB = () => {
+    return new Promise(async (resolve, reject) => {
+        try {
+            await db.raw('SELECT 1+1 AS result');
+            console.log('✅ Database connected successfully!');
+            resolve();
+        } catch (error) {
+            console.error('❌ Error connecting to the database:', error);
+            reject(error);
+        }
+    });
+};
+
+module.exports = { db, connectDB, knexConfig };

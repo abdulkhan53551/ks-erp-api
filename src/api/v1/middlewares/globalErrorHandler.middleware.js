@@ -1,33 +1,37 @@
+const { ERROR_CODES } = require('../../../config/constants/errorCodes');
 const { ApiError } = require('./../services/ApiError');
 
 const globalErrorHandler = (err, req, res, next) => {
+    const safeError = err || {};
     let statusCode;
     let message;
-    let errors = []
+    let errors = [];
+    let errorCode;
 
     try {
         // Check if the error is an instance of ApiError
-        if (err instanceof require('./../services/ApiError').ApiError) {
-            statusCode = err.statusCode;
-            message = err.message;
-            errors = err.errors;
+        if (safeError instanceof require('./../services/ApiError').ApiError) {
+            statusCode = safeError.statusCode;
+            message = safeError.message;
+            errors = safeError.errors;
+            errorCode = safeError.errorCode || ERROR_CODES.INTERNAL_ERROR;
         } else {
             // Default for other types of errors
-            statusCode = err.status || 500;
-            message = err.message || 'Something went wrong';
+            statusCode = safeError.status || 500;
+            message = safeError.message || 'Something went wrong';
         }
 
         // Construct the error response
         const errorResponse = {
             success: false,
-
+            errorCode,
             status: statusCode,
             message,
         };
 
         // Include stack trace in development mode
         if (process.env.NODE_ENV === 'development') {
-            errorResponse.stack = err.stack;
+            errorResponse.stack = safeError.stack;
         }
 
         // Include all errors in development mode
@@ -37,7 +41,7 @@ const globalErrorHandler = (err, req, res, next) => {
 
         // Log critical errors for monitoring
         if (statusCode >= 500) {
-            console.error(`[Critical Error] ${statusCode}:`, err);
+            console.error(`[Critical Error] ${statusCode}:`, safeError);
         }
 
         // Send the error response

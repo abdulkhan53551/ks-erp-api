@@ -38,14 +38,14 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Check if the occupied height exceeds the allowed height
         if (invoiceOccupiedHeight > invoiceHeight) {
             // Throw an error if the occupied height exceeds the allowed height
-            throw new ApiError(
-                422,
-                'Invoice content exceeds allowed page height',
-                [{
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Invoice content exceeds allowed page height',
+                errors: [{
                     maxHeight: invoiceHeight,
                     actualHeight: invoiceOccupiedHeight
                 }]
-            )
+            })
 
         }
 
@@ -91,7 +91,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Close the browser
         await browser2.close();
     } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError(500, 'Error generating PDF')
+        throw error instanceof ApiError ? error : new ApiError({statusCode: 500, message: 'Error generating PDF'})
     }
 };
 

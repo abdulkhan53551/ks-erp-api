@@ -5,36 +5,23 @@ const globalErrorHandler = require('./api/v1/middlewares/globalErrorHandler.midd
 const path = require('path')
 const puppeteer = require('puppeteer');
 const { projectPaths } = require('./config/constants')
-const htmlPdf = require('html-pdf')
 const fs = require('fs')
 const { generateInvoicePDF } = require('./api/v1/controllers/invoice.controller')
+const dbTransaction = require('./api/v1/middlewares/dbTransaction.middleware')
+const setUserContext = require('./api/v1/middlewares/setUserContext')
+const routes = require('./api/v1/routes/index')
 
 const app = express()
-
-app.use(cors({
-  origin: process.env.CORS_ORIGIN,
-  credentials: true
-}))
-
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
 app.use(express.json({ limit: '16kb' }));
+app.use(setUserContext);  
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(express.static('public'))
 app.use(cookieParser())
-
-// Routes import
-const userRoutes = require('./api/v1/routes/user.routes')
-const { ApiError } = require('./api/v1/services/ApiError')
-const { productRoutes } = require('./api/v1/routes/product')
-const { ApiResponse } = require('./api/v1/services/ApiResponse')
+app.use(dbTransaction); // <-- USE TRANSACTION MIDDLEWARE
 
 // Routes declaration
-// app.use('/users', userRoutes)
-app.use('/products', productRoutes)
-// app.use('/api', (req, res, next) => {
-//   console.log('Request to /api');
-//   next();
-// });
-
+app.use(routes)
 
 // Generate PDF
 app.get('/generate-pdf', async (req, res, next) => {

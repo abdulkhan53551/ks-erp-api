@@ -2,49 +2,64 @@ const jwt = require("jsonwebtoken");
 const { ApiError } = require("../services/ApiError");
 const { asyncHandler } = require("../services/asyncHandler");
 const { JWT } = require("../../../config/config");
-const userData = [
-    {
-        id: 1,
-        username: 'ksengg',
-        email: 'ksengg@gmail.com',
-        password: '123',
-        yourData: 'something 1'
-    },
-    {
-        id: 2,
-        username: 'abdul',
-        email: 'abdul@gmail.com',
-        password: '456',
-        yourData: 'something 2'
-    }
-]
 
-const verifyJWT = asyncHandler(async (req, res, next) => {
+
+// const verifyJWT = asyncHandler(async (req, res, next) => {
+//     try {
+//         // Get the token from cookie or header
+//         const token = req.cookies?.accessToken || req.header('Authorization')?.replace('Bearer ', '')
+
+//         if (!token) {
+//             throw new ApiError({statusCode: 401, message: 'Unauthorized request'})
+//         }
+
+//         // Verify token
+//         const decodeToken = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET)
+
+//         // Get user from db
+//         const user = await userData.find(user => user.id == decodeToken.id)
+//         if (!user) {
+//             throw new ApiError({statusCode: 401, message: 'Invalid access token'})
+//         }
+
+//         // Append data to request
+//         req.user = user
+
+//         // Pass to next middleware
+//         next()
+//     } catch (error) {
+//         throw error instanceof ApiError ? error : new ApiError({statusCode: 401, message: 'Invalid access token'})
+//     }
+// })
+
+// module.exports = verifyJWT
+
+// Verify access token
+const verifyAccessToken = asyncHandler((req, res, next) => {
+    const authHeader = req.headers.authorization;
+    let token = null;
+
+    // Check if the token is in the Authorization header or in cookies
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        token = authHeader.split(' ')[1];
+    } else if (req.cookies && req.cookies.accessToken) {
+        token = req.cookies.accessToken; // Fallback to cookie
+    }
+
+    // If no token is found, throw an error
+    if (!token) {
+        throw new ApiError({ statusCode: 401, message: 'Access token required' })
+    }
+
     try {
-        // Get the token from cookie or header
-        const token = req.cookies?.accessToken || req.header('Authorization')?.replace('Bearer ', '')
-    
-        if (!token) {
-            throw new ApiError(401, 'Unauthorized request')
-        }
-    
-        // Verify token
-        const decodeToken = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET)
-    
-        // Get user from db
-        const user = await userData.find(user => user.id == decodeToken.id)
-        if (!user) {
-            throw new ApiError(401, 'Invalid access token')
-        }
-    
-        // Append data to request
-        req.user = user
-    
-        // Pass to next middleware
-        next()
-    } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError(401, 'Invalid access token')
+        const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
+        req.user = {
+            id: decoded.id, // or whatever you encoded in the token
+        };
+        next();
+    } catch (err) {
+        throw new ApiError({ statusCode: 401, message: 'Access token expired or invalid' })
     }
-})
+});
 
-module.exports = verifyJWT
+module.exports = verifyAccessToken;
