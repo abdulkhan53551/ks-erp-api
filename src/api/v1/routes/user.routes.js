@@ -1,9 +1,10 @@
 const {Router}=  require('express')
 const { registerUser, loginUser, logoutUser, refreshAccessToken, changeCurrentPassword, getCurrentUser, updateAccountDetail } = require('../controllers/user.controller.js')
 const upload = require('./../middlewares/multer.middleware.js')
-const verifyJWT = require('../middlewares/auth.middleware.js')
+// const verifyJWT = require('../middlewares/auth.middleware.js')
 const validate = require('../middlewares/validate.js')
 const { userValidationSchema } = require('../validation/userValidation.js')
+const { verifyJWT } = require('../middlewares/auth.middleware.js')
 
 const router = Router()
 

@@ -4,6 +4,7 @@ const { JWT } = require('../../../config/config')
 const { ApiError } = require('../services/ApiError')
 const { db } = require('../database')
 const { logQuery } = require('../helpers/logQuery')
+const { getEnforcer } = require('../services/casbin')
 
 //  Is user exist
 const isUserExist = async (username = '', email = '') => {
@@ -14,7 +15,7 @@ const isUserExist = async (username = '', email = '') => {
             })
             .andWhere({ is_active: true })
             .first();
-    
+
         const user = await query
         return user;
     } catch (error) {

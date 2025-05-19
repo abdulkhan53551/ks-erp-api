@@ -9,9 +9,10 @@ function patchKnex(knex) {
   proto.insert = function (data, returning) {
     const now = new Date();
     const { userId = 0 } = getContext();
+    const tableName = this._single?.table;
 
     // Skip patching knex_migrations_lock table
-    if (this.tableName !== 'knex_migrations_lock') {
+    if (tableName !== 'knex_migrations_lock' && tableName !== 'policies') {
       if (Array.isArray(data)) {
         data = data.map((record) => ({
           ...record,
@@ -41,9 +42,10 @@ function patchKnex(knex) {
   proto.update = function (data, returning) {
     const now = new Date();
     const { userId = 0 } = getContext();
+    const tableName = this._single?.table;
 
     // Skip patching knex_migrations_lock table
-    if (this.tableName !== 'knex_migrations_lock') {
+    if (tableName !== 'knex_migrations_lock' && tableName !== 'policies') {
       if (typeof data === 'object' && data !== null) {
         data = {
           ...data,
@@ -55,6 +57,15 @@ function patchKnex(knex) {
 
     return originalUpdate.call(this, data, returning);
   };
+}
+
+// PATCH: Add default columns to existing tables
+function addDefaultColumns(table, knex) {
+  table.timestamp('created_at').defaultTo(knex.fn.now()).notNullable();
+  table.timestamp('updated_at').defaultTo(knex.fn.now()).notNullable();
+  table.integer('created_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
+  table.integer('updated_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
+  table.boolean('isactive').defaultTo(true);
 }
 
 module.exports = { patchKnex };

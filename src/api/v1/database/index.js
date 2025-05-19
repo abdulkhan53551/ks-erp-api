@@ -1,6 +1,8 @@
 // db.js
 const knex = require('knex');
 const { patchKnex } = require('../helpers/patchKnex');
+const path = require('path');
+const { ROOT_DIR } = require('../../../config/constants/projectPaths');
 
 const knexConfig = {
     client: 'pg', // or 'mysql', etc.
@@ -12,8 +14,7 @@ const knexConfig = {
         database: process.env.DB_NAME,
     },
     migrations: {
-        // directory: './migrations',
-        directory: '../../../../migrations',
+        directory: path.resolve(ROOT_DIR, 'migrations'),
     },
     pool: { min: 2, max: 10 },
 };
