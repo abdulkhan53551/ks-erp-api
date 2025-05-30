@@ -4,7 +4,7 @@ const { ApiError } = require('../services/ApiError.js');
 const { rotateRefreshToken, createRefreshToken } = require('../services/tokenService.js');
 const { JWT } = require('../../../config/config.js');
 const { isUserExist, getHashedPassword, isPasswordCorrect } = require('../models/user.model.js');
-const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, removeAssignedRolePermissionById, getResourcePermissionById } = require('../models/auth.model.js');
+const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, removeAssignedRolePermissionById, getResourcePermissionById, createAbacPolicy, deleteAbacPolicy, getAllAbacPolicy } = require('../models/auth.model.js');
 const { hashToken, generateAccessToken } = require('../helpers/token.js');
 const { clearAccessAndRefreshTokenCookie } = require('../../../utils/cookies.js');
 const casbinDb = require('../models/auth.model.js');
@@ -320,27 +320,30 @@ const assignRolePermission = asyncHandler(async (req, res) => {
     // Assign a role to a permission
     const rolePermissionId = await casbinDb.assignRolePermission(roleId, permissionId);
 
-    // Get role permission details
-    const { role, object, action } = await casbinDb.getRolePermissionById(rolePermissionId)
+    // // Get role permission details
+    // const { role, object, action } = await casbinDb.getRolePermissionById(rolePermissionId)
 
-    if (role) {
-        // Handle the case when the role permission is not found
-        throw new ApiError({ statusCode: 404, message: 'Role permission not found' })
+    // if (role) {
+    //     // Handle the case when the role permission is not found
+    //     throw new ApiError({ statusCode: 404, message: 'Role permission not found' })
+    // }
+
+    // // Create new abac policy
+    // const policyId = await casbinDb.createAbacPolicy(role, object, 
+
+    // if (!id) {
+    //     // Handle the case when the policy is not found
+    //     throw new ApiError({ statusCode: 404, message: 'ABAC policy not found' })
+    // }
+
+    // // Add a policy to the enforcer
+    // await casbinDb.addPolicy(sub_rule, obj_rule, act);
+
+
+    if (!rolePermissionId) {
+        // Handle the case when the role permission not added
+        throw new ApiError({ statusCode: 404, message: 'Something went wrong while creating user role to permission OR resource' })
     }
-
-    // Create new abac policy
-    const policyId = await casbinDb.createAbacPolicy(role, object, action);
-
-    // Get the policy details
-    const { id, sub_rule, obj_rule, act } = await casbinDb.getAbacPolicyById(policyId);
-
-    if (!id) {
-        // Handle the case when the policy is not found
-        throw new ApiError({ statusCode: 404, message: 'ABAC policy not found' })
-    }
-
-    // Add a policy to the enforcer
-    await casbinDb.addPolicy(sub_rule, obj_rule, act);
 
     return res
         .status(200)
@@ -365,9 +368,6 @@ const removeRolePermission = asyncHandler(async (req, res) => {
     // Create new abac policy
     const policyId = await casbinDb.createAbacPolicy(role, object, action);
 
-    // Get the policy details
-    const { id, sub_rule, obj_rule, act } = await casbinDb.getAbacPolicyById(policyId);
-
     if (!id) {
         // Handle the case when the policy is not found
         throw new ApiError({ statusCode: 404, message: 'ABAC policy not found' })
@@ -384,67 +384,38 @@ const removeRolePermission = asyncHandler(async (req, res) => {
 
 // Create policy
 const createPolicy = asyncHandler(async (req, res) => {
-    const { subRuleStr, resourceId, condRuleStr } = req.body;
+    const { sub, permissionId, condRuleStr } = req.body;
 
-    // const enforcer = await getEnforcer();
-    // await enforcer.clearPolicy();                        // clear memory
-    // await enforcer.savePolicy();                         // enforce empty policy set
-
-    // console.log('Enforcer policies:', await enforcer.getPolicy());
-
-
-    // return
-
-    // return res
-    // .status(200)
-    // .json(new ApiResponse({ statusCode: 200, data: [req.body], message: 'just for testing' }))
-
-    if (!subRuleStr) {
-        throw new ApiError({ statusCode: 400, message: 'Please provide subject rule' })
-    }
-
-    if (!resourceId) {
-        throw new ApiError({ statusCode: 400, message: 'Please provide resource id' })
-    }
-
-    // Generate rule
-    console.log('aaaaaaa');
-    
-    const subjectRuleJson = stringToJsonLogic(subRuleStr);
-    console.log('bbbbb');
+    // Generate rule in json logic tree format
     const conditionRuleJson = condRuleStr && stringToJsonLogic(condRuleStr)
 
-    console.log('subjectRuleJson: ', JSON.stringify(subjectRuleJson));
-    
+    // Get resource role permission
+    const { resourcePermissionId, resource, action } = (await getResourcePermissionById(permissionId)) || {}
 
-    // Get resource permission
-    const { resourcePermissionId, resource, action } = (await getResourcePermissionById(resourceId)) || {}
-
-    // Check policy added or not
+    // Check resource found or not for given role permission
     if (!resourcePermissionId) {
         throw new ApiError({ statusCode: 400, message: 'No resource found.' })
     }
 
-    // Logical json to string
-    const subjectConditionStr = jsonLogicToString(subjectRuleJson)
+    // Logical json tree to expression string
     const conditionStr = jsonLogicToString(conditionRuleJson)
     const act = action?.toLowerCase()
     const condNew = conditionStr?.trim() || String(true)
 
     // Add policy to casbin rule
-    const isCasbinPolicyAdded = await casbinDb.addPolicyToCasbinRule(subjectConditionStr, resource, act, condNew)
+    const isCasbinPolicyAdded = await casbinDb.addPolicyToCasbinRule(sub, resource, act, condNew)
 
     // Check casbin policy added successfully or not
     if (!isCasbinPolicyAdded) {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while adding policy to casbin rule.' })
     }
 
-    // Create policy
-    const policyId = await casbinDb.createAbacPolicy(subjectRuleJson, resource, action, conditionRuleJson);
+    // Create new abac policy
+    const abacPolicyId = await createAbacPolicy(sub, resource, act, conditionRuleJson);
 
-    // Check policy added or not
-    if (!policyId) {
-        throw new ApiError({ statusCode: 400, message: 'Something went wrong while creating policy.' })
+    // Check if policy created successfully or not
+    if (!abacPolicyId) {
+        throw new ApiError({ statusCode: 400, message: 'Something went wrong while creating ABAC policy' })
     }
 
     return res
@@ -452,14 +423,147 @@ const createPolicy = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policy added successfully.' }))
 })
 
-// Sync Casbin Policies
-const syncPolicies = asyncHandler(async (req, res) => {
-    // Sync casbin policies to policy table created by casbin and also store in memory
-    await casbinDb.syncCasbinPolicies();
+// Delete policy
+const deletePolicy = asyncHandler(async (req, res) => {
+    const { sub, permissionId, condRuleStr } = req.body;
+
+    // Generate rule in json logic tree format
+    const conditionRuleJson = condRuleStr && stringToJsonLogic(condRuleStr)
+
+    // Get resource role permission
+    const { resourcePermissionId, resource, action } = (await getResourcePermissionById(permissionId)) || {}
+
+    // Check resource found or not for given role permission
+    if (!resourcePermissionId) {
+        throw new ApiError({ statusCode: 400, message: 'No resource found.' })
+    }
+
+    // Logical json tree to expression string
+    const conditionStr = jsonLogicToString(conditionRuleJson)
+    const act = action?.toLowerCase()
+    const condNew = conditionStr?.trim() || String(true)
+
+    // Remove policy from casbin rule
+    const isCasbinPolicyRemoved = await casbinDb.removePolicyFromCasbinRule(sub, resource, act, condNew)
+
+    // Check casbin policy added successfully or not
+    if (!isCasbinPolicyRemoved) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while deleting policy from casbin rule.' })
+    }
+
+    // Delete abac policy
+    const abacPolicyId = await deleteAbacPolicy(sub, resource, act, conditionRuleJson);
+
+    // Check if policy deleted successfully or not
+    if (!abacPolicyId) {
+        throw new ApiError({ statusCode: 400, message: 'Something went wrong while deleting ABAC policy' })
+    }
 
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policies synced to Casbin enforcer' }))
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policy deleted successfully.' }))
+})
+
+// Delete policy
+const updatePolicy = asyncHandler(async (req, res) => {
+    const { oldSub, oldPermissionId, oldCondRuleStr, sub, permissionId, condRuleStr } = req.body;
+
+    // Generate rule in json logic tree format
+    const oldConditionRuleJson = condRuleStr && stringToJsonLogic(oldCondRuleStr)
+    const newConditionRuleJson = condRuleStr && stringToJsonLogic(condRuleStr)
+
+    // Get resource role permission
+    const { resourcePermissionId: oldResourcePermissionId, resource: oldResource, action: oldAction } = (await getResourcePermissionById(oldPermissionId)) || {}
+    const { resourcePermissionId: newResourcePermissionId, resource: newResource, action: newAction } = (await getResourcePermissionById(permissionId)) || {}
+
+    // Check resource found or not for given role permission
+    if (!oldResourcePermissionId || !newResourcePermissionId) {
+        throw new ApiError({ statusCode: 400, message: 'No resource found.' })
+    }
+
+    // Logical json tree to expression string
+    const oldConditionStr = jsonLogicToString(oldConditionRuleJson)
+    const oldAct = oldAction?.toLowerCase()
+    const oldCondNew = oldConditionStr?.trim() || String(true)
+
+    const newConditionStr = jsonLogicToString(newConditionRuleJson)
+    const newAct = newAction?.toLowerCase()
+    const newCondNew = newConditionStr?.trim() || String(true)
+
+    const oldPolicy = [oldSub, oldResource, oldAct, oldCondNew]
+    const newPolicy = [sub, newResource, newAct, newCondNew]
+
+    // Remove policy from casbin rule
+    const isCasbinPolicyRemoved = await casbinDb.removePolicyFromCasbinRule(...oldPolicy)
+
+    // Check casbin policy removed successfully or not
+    if (!isCasbinPolicyRemoved) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while deleting policy from casbin rule.' })
+    }
+
+    // Add policy to casbin rule
+    const isCasbinPolicyAdded = await casbinDb.addPolicyToCasbinRule(...newPolicy)
+
+    // Check casbin policy added successfully or not
+    if (!isCasbinPolicyAdded) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while adding policy to casbin rule.' })
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policy updated successfully.' }))
+})
+
+// Sync Casbin Policies
+const syncPolicies = asyncHandler(async (req, res) => {
+    const enforcer = await getEnforcer();
+    await enforcer.clearPolicy();
+
+    // Get all policies from database
+    const allPolicies = await getAllAbacPolicy();
+
+    // Check if policies exist
+    if (!allPolicies?.length) {
+        throw new ApiError({ statusCode: 404, message: 'No policies found to sync' });
+    }
+
+    // Prepare policy rules for bulk addition
+    const policyRules = allPolicies.map(policy => {
+        // Convert policy conditions to string
+        const policyConditionsStr = (policy.conditions && Object.keys(policy.conditions).length === 0)
+            ? "true"
+            : jsonLogicToString(policy.conditions);
+
+        return [
+            policy.sub,
+            policy.obj,
+            policy.act,
+            policyConditionsStr
+        ]
+    })
+
+    // Add policies in bulk to casbin rule
+    const policyAdded = casbinDb.addPolicyBulkToCasbinRule(policyRules)
+
+    // Check if policies added successfully or not
+    if (!policyAdded) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while syncing policies in bulk' });
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policies synced successfully.' }))
+})
+
+// Clear all policies
+const clearAllPolicies = asyncHandler(async (req, res) => {
+    const enforcer = await getEnforcer();
+    await enforcer.clearPolicy();                        // clear memory
+    await enforcer.savePolicy();                         // enforce empty policy set
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Successfully deleted all policies' }))
 })
 
 module.exports = {
@@ -475,5 +579,8 @@ module.exports = {
     assignUserRole,
     assignRolePermission,
     syncPolicies,
-    createPolicy
+    clearAllPolicies,
+    createPolicy,
+    deletePolicy,
+    updatePolicy
 }

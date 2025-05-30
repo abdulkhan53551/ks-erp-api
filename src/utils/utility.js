@@ -1,14 +1,13 @@
-
-
-// Parse expression to JSON Logic
+// Main function
 function stringToJsonLogic(expression) {
     const tokens = tokenize(expression);
     const ast = parseExpression(tokens);
     return ast;
 }
 
+// Tokenize input string into manageable tokens
 function tokenize(str) {
-    const regex = /\s*(=>|==|!=|<=|>=|&&|\|\||[()<>]|[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*|"(?:\\.|[^"\\])*"|[\w-]+)\s*/g;
+    const regex = /\s*(=>|==|!=|<=|>=|&&|\|\||[(),<>]|"(?:\\.|[^"\\])*"|[a-zA-Z_]\w*(?:\.[a-zA-Z_]\w*)*|\d+(?:\.\d+)?|[\w-]+)\s*/g;
     const result = [];
     let match;
     while ((match = regex.exec(str)) !== null) {
@@ -17,13 +16,14 @@ function tokenize(str) {
     return result;
 }
 
+// Parse logic expression from tokens
 function parseExpression(tokens) {
     const parseOr = () => {
         let left = parseAnd();
         while (tokens[0] === '||') {
             tokens.shift();
             const right = parseAnd();
-            left = { or: [left, right].flatMap(x => x.or ? x.or : [x]) };
+            left = { or: flattenConditions(left, right, 'or') };
         }
         return left;
     };
@@ -33,7 +33,7 @@ function parseExpression(tokens) {
         while (tokens[0] === '&&') {
             tokens.shift();
             const right = parseComparison();
-            left = { and: [left, right].flatMap(x => x.and ? x.and : [x]) };
+            left = { and: flattenConditions(left, right, 'and') };
         }
         return left;
     };
@@ -47,30 +47,81 @@ function parseExpression(tokens) {
             return expr;
         }
 
+        // Check for function call
+        if (/^[a-zA-Z_]\w*$/.test(tokens[0]) && tokens[1] === '(') {
+            return parseFunctionCall();
+        }
+
         const left = tokens.shift();
         const operator = tokens.shift();
         const right = tokens.shift();
 
-        if (!left || !operator || !right) throw new Error('Invalid comparison');
+        if (!left || !operator || !right) throw new Error('Invalid expression');
 
         const ops = ['==', '!=', '>', '<', '>=', '<='];
         if (!ops.includes(operator)) throw new Error(`Unsupported operator: ${operator}`);
 
-        // Do NOT strip `r.` prefix — keep it in the variable
-        const varObj = { var: left };
-        const value = right.startsWith('"') ? JSON.parse(right) : right;
+        return {
+            [operator]: [
+                isVariable(left) ? { var: left } : parseLiteral(left),
+                isVariable(right) ? { var: right } : parseLiteral(right)
+            ]
+        };
+    };
+
+    const parseFunctionCall = () => {
+        const fnName = tokens.shift();
+        tokens.shift(); // remove '('
+
+        const args = [];
+        while (tokens.length > 0 && tokens[0] !== ')') {
+            if (tokens[0] === ',') {
+                tokens.shift();
+                continue;
+            }
+
+            if (tokens[0] === '(') {
+                args.push(parseExpression(tokens));
+            } else {
+                const token = tokens.shift();
+                args.push(isVariable(token) ? { var: token } : parseLiteral(token));
+            }
+        }
+
+        if (tokens[0] !== ')') throw new Error('Expected ")" in function call');
+        tokens.shift();
 
         return {
-            [operator]: [varObj, value]
+            [fnName]: args
         };
     };
 
     return parseOr();
 }
 
+// Helpers
+function flattenConditions(left, right, key) {
+    return [
+        ...(left[key] ? left[key] : [left]),
+        ...(right[key] ? right[key] : [right])
+    ];
+}
 
+function parseLiteral(token) {
+    if (token.startsWith('"') && token.endsWith('"')) {
+        return JSON.parse(token);
+    } else if (!isNaN(token)) {
+        return parseFloat(token);
+    } else {
+        return token;
+    }
+}
 
-// Convert json logic to string condition
+function isVariable(token) {
+    return /^[a-zA-Z_]\w*(\.[a-zA-Z_]\w*)*$/.test(token);
+}
+
+// Convert JSON Logic to string representation
 const jsonLogicToString = (logic) => {
     if (typeof logic !== 'object' || logic === null) return "";
 
@@ -78,14 +129,22 @@ const jsonLogicToString = (logic) => {
     const args = logic[op];
 
     const format = (arg) => {
-        if (typeof arg === 'object' && arg.var) {
-            return arg.var; // e.g., sub.role
+        if (typeof arg === 'object' && arg !== null && 'var' in arg) {
+            // Return variable path as-is (e.g., r.sub.role)
+            return arg.var;
         } else if (typeof arg === 'string') {
-            // Remove surrounding escaped quotes if present (e.g., "\"role:1\"" → role:1)
-            const cleaned = arg.replace(/^"(.*)"$/, '$1');
-            return `"${cleaned.replace(/"/g, '\\"')}"`;
+            // Escape inner quotes and wrap in double quotes
+            const escaped = arg.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            return `"${escaped}"`;
+        } else if (Array.isArray(arg)) {
+            // Format arrays (for in operator or others)
+            return `[${arg.map(format).join(', ')}]`;
+        } else if (typeof arg === 'object') {
+            // Nested JSONLogic expression
+            return `(${jsonLogicToString(arg)})`;
         } else {
-            return arg;
+            // Number, boolean, etc.
+            return String(arg);
         }
     };
 
@@ -99,49 +158,12 @@ const jsonLogicToString = (logic) => {
         case 'and': return `(${args.map(jsonLogicToString).join(' && ')})`;
         case 'or': return `(${args.map(jsonLogicToString).join(' || ')})`;
         case '!': return `!(${jsonLogicToString(args[0])})`;
-        case 'in': return `${format(args[0])} in ${JSON.stringify(args[1])}`;
-        default: return `${op}(${args.map(jsonLogicToString).join(', ')})`;
+        case 'in': return `${format(args[0])} in ${format(args[1])}`;
+        default:
+            // Assume function call: op(args...)
+            return `${op}(${args.map(format).join(', ')})`;
     }
 };
-
-
-function jsonLogicToEval(logic) {
-    if (typeof logic !== 'object' || logic === null) {
-        // Return string values wrapped in quotes, others as-is
-        if (typeof logic === 'string') {
-            return `"${logic}"`;
-        }
-        return String(logic);
-    }
-
-    const operator = Object.keys(logic)[0];
-    const values = logic[operator];
-
-    switch (operator) {
-        case 'and':
-            return values.map(jsonLogicToEval).join(' && ');
-        case 'or':
-            return values.map(jsonLogicToEval).join(' || ');
-        case '==':
-            return `${jsonLogicToEval(values[0])} == ${jsonLogicToEval(values[1])}`;
-        case '!=':
-            return `${jsonLogicToEval(values[0])} != ${jsonLogicToEval(values[1])}`;
-        case '>':
-        case '<':
-        case '>=':
-        case '<=':
-            return `${jsonLogicToEval(values[0])} ${operator} ${jsonLogicToEval(values[1])}`;
-        case '!':
-            return `!(${jsonLogicToEval(values[0])})`;
-        case 'var':
-            return values; // variable path like "sub.role"
-        default:
-            throw new Error(`Unsupported operator: ${operator}`);
-    }
-}
-
-
-
 
 // Validate JSON Logic
 const isValidJsonLogic = (rule) => {

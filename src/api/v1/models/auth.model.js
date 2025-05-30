@@ -36,13 +36,6 @@ async function deleteRefreshTokenByUserID(userId) {
     return wasDeleted;
 }
 
-
-// ========== USERS ==========
-// const createUser = async (username) => {
-//     const [id] = await db('users').insert({ username }).returning('id');
-//     return id;
-// }
-
 // ========== ROLES ==========
 const createRole = async (data) => {
     const [id] = await db('roles').insert(data).returning('id');
@@ -95,55 +88,14 @@ const getResourcePermissionById = async (id) => {
     return resourcePermission?.[0] || null;
 }
 
-// Get ABAC policy by ID
-const getAbacPolicyById = async (id) => {
+// Get all abac policy by ID
+const getAllAbacPolicy = async () => {
     const abacPolicies = await db('casbin_abac_policy')
-        .where({ 'is_active': true, 'id': id })
-        .select('id', 'sub_rule', 'obj_rule', 'act');
+        .select('id', 'sub', 'obj', 'act', 'conditions')
+        .where({ 'is_active': true });
 
-    return abacPolicies?.[0] || null;
+    return abacPolicies || [];
 }
-
-// ========== POLICY SYNC ==========
-//   const syncCasbinPolicies = () => {
-//     const enforcer = getEnforcer();
-//     await enforcer.clearPolicy();
-
-//     const rolePerms = await knex('role_permissions as rp')
-//       .join('roles as r', 'rp.role_id', 'r.id')
-//       .join('permissions as p', 'rp.permission_id', 'p.id')
-//       .select('r.name as role', 'p.object', 'p.action');
-
-//     for (const { role, object, action } of rolePerms) {
-//       await enforcer.addPolicy(role, object, action);
-//     }
-
-//     const userRoles = await knex('user_roles as ur')
-//       .join('users as u', 'ur.user_id', 'u.id')
-//       .join('roles as r', 'ur.role_id', 'r.id')
-//       .select('u.username', 'r.name as role');
-
-//     for (const { username, role } of userRoles) {
-//       await enforcer.addGroupingPolicy(username, role);
-//     }
-
-//     await enforcer.savePolicy();
-//     console.log('✅ Casbin policies synced from DB');
-//   },
-
-// ========== UTILITY ==========
-//   const getUserPermissions(userId) {
-//     const roles = await knex('user_roles')
-//       .where('user_id', userId)
-//       .pluck('role_id');
-
-//     const perms = await knex('role_permissions')
-//       .whereIn('role_id', roles)
-//       .join('permissions', 'permissions.id', 'role_permissions.permission_id')
-//       .select('object', 'action');
-
-//     return perms;
-//   }
 
 // Add a new policy
 const addPolicyToCasbinRule = async (sub, obj, act, cond) => {
@@ -165,171 +117,82 @@ const addPolicyToCasbinRule = async (sub, obj, act, cond) => {
     return false;
 }
 
-// Remove a policy
-const removePolicyFromCasbinRule = async (sub, obj, act, cond) => {
+// Add a new policy
+const addPolicyBulkToCasbinRule = async (policyRules = []) => {
     const enforcer = await getEnforcer();
-    const removed = await enforcer.removePolicy(sub, obj, act, cond);
-    // if (removed) {
-    //     await enforcer.savePolicy();
-    //     await enforcer.getWatcher().update(); // Notify others
-    // }
-    return removed;
-}
 
-// Add a user to a role (grouping policy)
-const addUserToRole = async (user, role) => {
-    const enforcer = getEnforcer();
-    const added = await enforcer.addGroupingPolicy(user, role);
-    // if (added) {
-    //     await enforcer.savePolicy();
-    //     await enforcer.getWatcher().update(); // Notify others
-    // }
+    // Add policy if it doesn't exist
+    if (!policyRules?.length) {
+        throw new ApiError({ statusCode: 400, message: 'Policy rules cannot be empty' });
+    }
+    
+    const added = await enforcer.addPolicies(policyRules);
     return added;
 }
 
-// Remove a user from a role
-const removeUserFromRole = async (user, role) => {
-    const enforcer = getEnforcer();
-    const removed = await enforcer.removeGroupingPolicy(user, role);
-    if (removed) {
-        await enforcer.savePolicy();
-        await enforcer.getWatcher().update(); // Notify others
+// Remove a policy
+const removePolicyFromCasbinRule = async (sub, obj, act, cond) => {
+    const enforcer = await getEnforcer();
+    const policy = [sub, obj, act, cond];
+    
+    const exists = await enforcer.hasPolicy(...policy);
+
+    // Check policy existence
+    if (!exists) {
+        throw new ApiError({ statusCode: 404, message: 'Policy not found' })
     }
+
+    // Remove policy if it exists
+    const removed = await enforcer.removePolicy(...policy);
     return removed;
 }
 
-// Sync Casbin Policies
-// const syncCasbinPolicies = async () => {
-//     try {
-//         const enforcer = getEnforcer();
+// Remove a policy
+const updatePolicyFromCasbinRule = async (oldPolicy = [], newPolicy = []) => {
+    const enforcer = await getEnforcer();
+    // const policy = [sub, obj, act, cond];
+    
+    const exists = await enforcer.hasPolicy(...oldPolicy);
 
-//         // Clear existing policies
-//         await enforcer.clearPolicy();
+    // Check policy existence
+    if (!exists) {
+        throw new ApiError({ statusCode: 404, message: 'Policy not found' })
+    }
 
-//         const rolePerms = await db('role_permissions as rp')
-//             .join('roles as r', 'rp.role_id', 'r.id')
-//             .join('permissions as p', 'rp.permission_id', 'p.id')
-//             .where('rp.is_active', true)
-//             .select('r.name as role', 'p.object', 'p.action');
+    // Remove policy if it exists
+    // const removed = await enforcer.removePolicy(...policy);
+    const update = await enforcer.updatePolicy([...oldPolicy], [...newPolicy]);
+    // const update = await enforcer.updatePolicy(["eve", "data3", "read"], ["eve", "data3", "write"]);
+    return update;
+}
 
-//         console.log('rolePerms', rolePerms);
-
-
-//         for (const { role, object, action } of rolePerms) {
-//             await enforcer.addPolicy(role, object, action);
-//         }
-
-//         const userRoles = await db('user_roles as ur')
-//             .join('users as u', 'ur.user_id', 'u.id')
-//             .join('roles as r', 'ur.role_id', 'r.id')
-//             .where('ur.is_active', true)
-//             .select('u.user_name as username', 'r.name as role');
-
-//             console.log('userRoles', userRoles);
-
-
-//         for (const { username, role } of userRoles) {
-//             await enforcer.addGroupingPolicy(username, role);
-//         }
-
-//         // console.log('enforcer: ', enforcer);
-
-
-//         // await enforcer.savePolicy();    // Save to DB
-//         // await enforcer.getWatcher().update(); // Notify other services via Redis
-//         console.log('✅ Policies synced and Redis notified');
-//     } catch (error) {
-//         console.error('❌ Error syncing policies:', error);
-//         throw new ApiError({ statusCode: 500, message: 'Failed to sync policies' });
-//         throw error;
-
-//     }
-// }
-
-const createAbacPolicy = async (sub_rule, obj, act, condition) => {
-
-    const action = act.toLowerCase();
-
+// Create ABAC policy
+const createAbacPolicy = async (sub, obj, act, condition) => {
     // Add policy to casbin_abac_policy table
     const query = db('casbin_abac_policy').insert({
-        sub_rule,
+        sub,
         obj,
-        act: action,
+        act,
         conditions: condition || {}
     }).returning('id');
 
     const [{ id }] = await query
 
-    return id;
+    return id || null;
 }
 
-// Sync ABAC policies from role-permission mappings
-const addABACPolicy = async () => {
-    try {
-        const enforcer = getEnforcer();
-        await enforcer.clearPolicy();
+// Create ABAC policy
+const deleteAbacPolicy = async (sub, obj, act, condition) => {
+    // Add policy to casbin_abac_policy table
+    const query = await db('casbin_abac_policy')
+        .where({ sub, obj, act })
+        .andWhereRaw('conditions = ?::jsonb', [JSON.stringify(condition || {})])
+        .del();
 
-        const rolePerms = await db('role_permissions as rp')
-            .join('roles as r', 'rp.role_id', 'r.id')
-            .join('permissions as p', 'rp.permission_id', 'p.id')
-            .where('rp.is_active', true)
-            .select('r.name as role', 'p.object', 'p.action');
+    const id = await query
 
-        for (const { role, object, action } of rolePerms) {
-            const sub_rule = `r.sub.role == '${role}'`;
-            const obj_rule = `r.obj.type == '${object}'`;
-
-            // Add policy to casbin_abac_policy table
-            await db('casbin_abac_policy').insert({
-                ptype: 'p',
-                sub_rule,
-                obj_rule,
-                act: action.toLowerCase()
-            });
-        }
-    } catch (error) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to sync ABAC policies' });
-    }
-};
-
-const syncCasbinPolicies = async () => {
-    try {
-        const enforcer = await getEnforcer();
-
-        // Clear existing policies
-        await enforcer.clearPolicy();
-
-        // Step 1: Load role-permission mappings
-        const rolePerms = await db('role_permissions as rp')
-            .join('roles as r', 'rp.role_id', 'r.id')
-            .join('permissions as p', 'rp.permission_id', 'p.id')
-            .where('rp.is_active', true)
-            .select('r.name as role', 'p.object', 'p.action');
-
-        // Step 2: Add policies to Casbin table
-        for (const { role, object, action } of rolePerms) {
-            await createAbacPolicy(role, object, action);
-        }
-
-        // Step 3: Load ABAC policies with sub_rule, obj_rule, and act
-        const abacPolicies = await db('casbin_abac_policy')
-            .where('is_active', true)
-            .select('sub_rule', 'obj_rule', 'act');
-
-        // Step 4: Add poicies to memory
-        for (const { sub_rule, obj_rule, act } of abacPolicies) {
-            await enforcer.addPolicy(sub_rule, obj_rule, act);
-        }
-
-        // Optional: Notify other instances via Redis watcher if you're using it
-        // await enforcer.getWatcher().update();
-
-        console.log('✅ ABAC Policies synced');
-    } catch (error) {
-        console.error('❌ Error syncing ABAC policies:', error);
-        throw new ApiError({ statusCode: 500, message: 'Failed to sync ABAC policies' });
-    }
-};
+    return id;
+}
 
 module.exports = {
     createUser,
@@ -340,13 +203,13 @@ module.exports = {
     assignUserRole,
     assignRolePermission,
     removeAssignedRolePermissionById,
-    syncCasbinPolicies,
     addPolicyToCasbinRule,
+    addPolicyBulkToCasbinRule,
     removePolicyFromCasbinRule,
-    addUserToRole,
-    removeUserFromRole,
+    updatePolicyFromCasbinRule,
     createAbacPolicy,
+    deleteAbacPolicy,
     getRolePermissionById,
-    getAbacPolicyById,
+    getAllAbacPolicy,
     getResourcePermissionById
 };

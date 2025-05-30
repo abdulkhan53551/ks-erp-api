@@ -1,9 +1,9 @@
 const { Router } = require('express')
-const { refreshUserToken, registerUser, loginUser, checkVerifyAccessToken, logout, logoutAll, logoutAllSessions, createRole, createPermission, assignRolePermission, assignUserRole, syncPolicies, checkIsAuthorizeAccess, createPolicy } = require('../controllers/auth.controller.js')
+const { refreshUserToken, registerUser, loginUser, checkVerifyAccessToken, logout, logoutAll, logoutAllSessions, createRole, createPermission, assignRolePermission, assignUserRole, syncPolicies, checkIsAuthorizeAccess, createPolicy, deletePolicy, updatePolicy, clearAllPolicies } = require('../controllers/auth.controller.js')
 // const verifyAccessToken = require('../middlewares/auth.middleware.js')
 const { verifyAccessToken, authorizeAccess } = require('../middlewares/auth.middleware.js')
 const validate = require('../middlewares/validate.js')
-const { addRolePermissionValidationSchema, removeRolePermissionValidationSchema, updateRolePermissionValidationSchema } = require('../validation/auth.validation.js')
+const { addRolePermissionValidationSchema, removeRolePermissionValidationSchema, updateRolePermissionValidationSchema, createPolicyValidationSchema, deletePolicyValidationSchema, updatePolicyValidateSchema } = require('../validation/auth.validation.js')
 const router = Router()
 
 router.post('/register', registerUser)
@@ -21,7 +21,10 @@ router.post('/role-permission', validate(addRolePermissionValidationSchema), ass
 router.patch('/role-permission/:id', validate(updateRolePermissionValidationSchema), assignRolePermission);
 router.delete('/role-permission/:id', validate(removeRolePermissionValidationSchema), assignRolePermission);
 
-router.post('/create-policy', createPolicy);
+router.post('/policy', validate(createPolicyValidationSchema), createPolicy);
+router.delete('/policy', validate(deletePolicyValidationSchema), deletePolicy);
+router.patch('/policy', validate(updatePolicyValidateSchema), updatePolicy);
+router.delete('/clear-all-policies', clearAllPolicies);
 // router.patch('/update-policy/:id', createPolicy);
 // router.delete('/create-policy/:id', createPolicy);
 
