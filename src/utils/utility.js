@@ -188,7 +188,6 @@ const isValidJsonLogic = (rule) => {
 }
 
 module.exports = {
-    // parseExpressionToJsonLogic,
     jsonLogicToString,
     isValidJsonLogic,
     stringToJsonLogic

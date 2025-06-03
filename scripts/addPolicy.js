@@ -7,6 +7,4 @@ const { getEnforcer, initCasbin } = require("../src/api/v1/services/casbin");
 
     const enforcer = getEnforcer();
     await enforcer.addPolicy('admin', '/products', 'read');
-    // await enforcer.getWatcher().update(); // 🔁 notify other instances
-    console.log('Policy added in Instance A');
 })();
