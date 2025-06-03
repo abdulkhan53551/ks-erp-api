@@ -10,6 +10,12 @@ const DATABASE = {
     DB_PORT: process.env.DB_PORT
 }
 
+// Redis constants
+const REDIS = {
+    REDIS_HOST: process.env.REDIS_HOST,
+    REDIS_PORT: process.env.REDIS_PORT || 6379
+}
+
 // Server port
 const PORT = process.env.PORT || 3000;
 
@@ -30,6 +36,7 @@ const CLOUDINARY = {
 
 module.exports = {
     DATABASE,
+    REDIS,
     PORT,
     BASE_URL,
     JWT,
