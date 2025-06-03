@@ -50,7 +50,6 @@ const createPermission = async (object, action) => {
 // ========== RELATIONSHIPS ==========
 const assignUserRole = async (userId, roleId) => {
     try {
-        // const [id] = await db('user_roles').insert({ user_id: userId, role_id: roleId }).onConflict(['user_id', 'role_id']).ignore();
         const [id] = await db('user_roles')
             .insert({ user_id: userId, role_id: roleId })
             .returning('id');
