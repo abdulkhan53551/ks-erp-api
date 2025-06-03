@@ -1,5 +1,4 @@
 const { db } = require("../database");
-const { logQuery } = require("../helpers/logQuery");
 const { ApiError } = require("../services/ApiError");
 const { getEnforcer } = require("../services/casbin");
 
@@ -50,17 +49,56 @@ const createPermission = async (object, action) => {
 
 // ========== RELATIONSHIPS ==========
 const assignUserRole = async (userId, roleId) => {
-    const [id] = await db('user_roles').insert({ user_id: userId, role_id: roleId }).onConflict(['user_id', 'role_id']).ignore();
-    return id;
+    try {
+        // const [id] = await db('user_roles').insert({ user_id: userId, role_id: roleId }).onConflict(['user_id', 'role_id']).ignore();
+        const [id] = await db('user_roles')
+            .insert({ user_id: userId, role_id: roleId })
+            .returning('id');
+
+        return id;
+    } catch (error) {
+        if (error.code === '23505') { // PostgreSQL unique_violation
+            throw new ApiError({ statusCode: 409, message: 'This role is already assigned to the user.' });
+        }
+
+        if (error.code === '23503') { // foreign key violation
+            throw new Error('User or role not found.');
+        }
+
+        throw new ApiError({ statusCode: 500, message: 'Failed to assign the role to the user.' });
+    }
 }
 
-const assignRolePermission = async (roleId, permissionId) => {
-    const [id] = await db('role_permissions').insert({ role_id: roleId, permission_id: permissionId }).onConflict(['role_id', 'permission_id']).ignore();
-    return id;
+const assignPermissionToRole = async (roleId, permissionId) => {
+    try {
+        const [{ id }] = await db('role_permissions')
+            .insert({ role_id: roleId, permission_id: permissionId })
+            .returning('id')
+
+        return id;
+    } catch (error) {
+        if (error.code === '23505') { // PostgreSQL unique_violation
+            throw new ApiError({ statusCode: 409, message: 'This role already has this permission assigned.' });
+        }
+
+        if (error.code === '23503') { // foreign key violation
+            throw new Error('Role or Permission not found.');
+        }
+
+        throw new ApiError({ statusCode: 500, message: 'Failed to assign permission to role' });
+    }
 }
 
 // Remove role permission
-const removeAssignedRolePermissionById = async (id) => {
+const removeAssignedRolePermissionById = async (id, isPermanentDelete) => {
+    if (isPermanentDelete) {
+        const result = await db('role_permissions')
+            .where({ id: id })
+            .del();
+
+        return result > 0;
+    }
+
     const result = await db('role_permissions')
         .where({ id: id })
         .update({ is_active: false });
@@ -125,7 +163,7 @@ const addPolicyBulkToCasbinRule = async (policyRules = []) => {
     if (!policyRules?.length) {
         throw new ApiError({ statusCode: 400, message: 'Policy rules cannot be empty' });
     }
-    
+
     const added = await enforcer.addPolicies(policyRules);
     return added;
 }
@@ -134,7 +172,7 @@ const addPolicyBulkToCasbinRule = async (policyRules = []) => {
 const removePolicyFromCasbinRule = async (sub, obj, act, cond) => {
     const enforcer = await getEnforcer();
     const policy = [sub, obj, act, cond];
-    
+
     const exists = await enforcer.hasPolicy(...policy);
 
     // Check policy existence
@@ -150,8 +188,7 @@ const removePolicyFromCasbinRule = async (sub, obj, act, cond) => {
 // Remove a policy
 const updatePolicyFromCasbinRule = async (oldPolicy = [], newPolicy = []) => {
     const enforcer = await getEnforcer();
-    // const policy = [sub, obj, act, cond];
-    
+
     const exists = await enforcer.hasPolicy(...oldPolicy);
 
     // Check policy existence
@@ -159,10 +196,8 @@ const updatePolicyFromCasbinRule = async (oldPolicy = [], newPolicy = []) => {
         throw new ApiError({ statusCode: 404, message: 'Policy not found' })
     }
 
-    // Remove policy if it exists
-    // const removed = await enforcer.removePolicy(...policy);
+    // Update policy if it exists
     const update = await enforcer.updatePolicy([...oldPolicy], [...newPolicy]);
-    // const update = await enforcer.updatePolicy(["eve", "data3", "read"], ["eve", "data3", "write"]);
     return update;
 }
 
@@ -201,7 +236,7 @@ module.exports = {
     createRole,
     createPermission,
     assignUserRole,
-    assignRolePermission,
+    assignPermissionToRole,
     removeAssignedRolePermissionById,
     addPolicyToCasbinRule,
     addPolicyBulkToCasbinRule,

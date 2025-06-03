@@ -4,12 +4,12 @@ const { ApiError } = require('../services/ApiError.js');
 const { rotateRefreshToken, createRefreshToken } = require('../services/tokenService.js');
 const { JWT } = require('../../../config/config.js');
 const { isUserExist, getHashedPassword, isPasswordCorrect } = require('../models/user.model.js');
-const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, removeAssignedRolePermissionById, getResourcePermissionById, createAbacPolicy, deleteAbacPolicy, getAllAbacPolicy } = require('../models/auth.model.js');
+const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, assignPermissionToRole, removeAssignedRolePermissionById, getResourcePermissionById, createAbacPolicy, deleteAbacPolicy, getAllAbacPolicy } = require('../models/auth.model.js');
 const { hashToken, generateAccessToken } = require('../helpers/token.js');
 const { clearAccessAndRefreshTokenCookie } = require('../../../utils/cookies.js');
 const casbinDb = require('../models/auth.model.js');
 const { getEnforcer } = require('../services/casbin.js');
-const { isValidJsonLogic, parseExpressionToJsonLogic, jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
+const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
 
 // Convert to expiry days to number
 const REFRESH_TOKEN_EXPIRY_DAYS = Number(JWT.REFRESH_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
@@ -115,8 +115,6 @@ const loginUser = asyncHandler(async (req, res) => {
     if (!isPasswordValid) {
         throw new ApiError({ statusCode: 401, message: 'Invalid user credential' })
     }
-
-    // throw new ApiError({ statusCode: 200, message: 'break point' })
 
     // Acess and refresh token generation
     const tokenData = { user: user, ip: ipAddress, userAgent, deviceId: null }
@@ -285,7 +283,15 @@ const createRole = asyncHandler(async (req, res) => {
         slug: slug,
         description: description || null
     }
+
+    // Create role
     const id = await casbinDb.createRole(roleData);
+
+    if (!id) {
+        // Handle the case when the role is not created
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating role' })
+    }
+
     // res.json({ id, message: 'Role created' });
     return res
         .status(200)
@@ -295,8 +301,15 @@ const createRole = asyncHandler(async (req, res) => {
 // Create Permission
 const createPermission = asyncHandler(async (req, res) => {
     const { object, action } = req.body;
+
+    // Create permission in database
     const id = await casbinDb.createPermission(object, action);
-    // res.json({ id, message: 'Permission created' });
+
+    if (!id) {
+        // Handle the case when the permission is not created
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating permission or resource' })
+    }
+
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Permission created' }))
@@ -305,9 +318,15 @@ const createPermission = asyncHandler(async (req, res) => {
 // Assign Role to User
 const assignUserRole = asyncHandler(async (req, res) => {
     const { userId, roleId } = req.body;
+
+    // Assign a role to a user
     const userRoleId = await casbinDb.assignUserRole(userId, roleId);
 
-    // res.json({ message: 'Role assigned to user' });
+    // Check if user role is assigned successfully
+    if (!userRoleId) {
+        // Handle the case when the user role not added
+        throw new ApiError({ statusCode: 404, message: 'Something went wrong while assigning role to user' })
+    }
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Role assigned to user' }))
@@ -318,31 +337,11 @@ const assignRolePermission = asyncHandler(async (req, res) => {
     const { roleId, permissionId } = req.body;
 
     // Assign a role to a permission
-    const rolePermissionId = await casbinDb.assignRolePermission(roleId, permissionId);
-
-    // // Get role permission details
-    // const { role, object, action } = await casbinDb.getRolePermissionById(rolePermissionId)
-
-    // if (role) {
-    //     // Handle the case when the role permission is not found
-    //     throw new ApiError({ statusCode: 404, message: 'Role permission not found' })
-    // }
-
-    // // Create new abac policy
-    // const policyId = await casbinDb.createAbacPolicy(role, object, 
-
-    // if (!id) {
-    //     // Handle the case when the policy is not found
-    //     throw new ApiError({ statusCode: 404, message: 'ABAC policy not found' })
-    // }
-
-    // // Add a policy to the enforcer
-    // await casbinDb.addPolicy(sub_rule, obj_rule, act);
-
+    const rolePermissionId = await assignPermissionToRole(roleId, permissionId);
 
     if (!rolePermissionId) {
         // Handle the case when the role permission not added
-        throw new ApiError({ statusCode: 404, message: 'Something went wrong while creating user role to permission OR resource' })
+        throw new ApiError({ statusCode: 404, message: 'Something went wrong while assigning role to permission OR resource' })
     }
 
     return res
@@ -352,33 +351,20 @@ const assignRolePermission = asyncHandler(async (req, res) => {
 
 // Remove Permission to Role
 const removeRolePermission = asyncHandler(async (req, res) => {
-    // const { id } = req.params;
-    // const { roleId, permissionId } = req.body;
+    const { id } = req.params;
+    const { isPermanentDelete } = req.query;
 
     // Assign a role to a permission
-    const isDeleted = await removeAssignedRolePermissionById(id);
+    const isDeleted = await removeAssignedRolePermissionById(id, isPermanentDelete);
 
     if (!isDeleted) {
         // Handle the case when the role permission is not found
-        throw new ApiError({ statusCode: 404, message: 'Something went wrong while deleting role permission mapping' })
-
+        throw new ApiError({ statusCode: 404, message: 'Role permission mapping not found or already deleted' })
     }
-
-
-    // Create new abac policy
-    const policyId = await casbinDb.createAbacPolicy(role, object, action);
-
-    if (!id) {
-        // Handle the case when the policy is not found
-        throw new ApiError({ statusCode: 404, message: 'ABAC policy not found' })
-    }
-
-    // Add a policy to the enforcer
-    await casbinDb.addPolicy(sub_rule, obj_rule, act);
 
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Role & Permission are removed successfully' }))
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Role & Permission mapping are removed successfully' }))
 })
 
 
@@ -464,7 +450,7 @@ const deletePolicy = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Policy deleted successfully.' }))
 })
 
-// Delete policy
+// Update policy
 const updatePolicy = asyncHandler(async (req, res) => {
     const { oldSub, oldPermissionId, oldCondRuleStr, sub, permissionId, condRuleStr } = req.body;
 
@@ -578,6 +564,7 @@ module.exports = {
     createPermission,
     assignUserRole,
     assignRolePermission,
+    removeRolePermission,
     syncPolicies,
     clearAllPolicies,
     createPolicy,
