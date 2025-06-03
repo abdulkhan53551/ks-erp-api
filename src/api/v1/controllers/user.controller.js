@@ -1,7 +1,7 @@
-const {asyncHandler} = require('./../services/asyncHandler.js')
-const {ApiError} = require('./../services/ApiError.js');
+const { asyncHandler } = require('./../services/asyncHandler.js')
+const { ApiError } = require('./../services/ApiError.js');
 const { isUserExist, isPasswordCorrect, generateToken, generateRefreshToken, updatePassword, demoDBCall } = require('../models/user.model.js');
-const {uploadOnCloudinary} = require('./../services/cloudinary.js');
+const { uploadOnCloudinary } = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
 const { ApiResponse } = require('../services/ApiResponse.js');
 const jwt = require('jsonwebtoken');
@@ -27,21 +27,21 @@ const userData = [
 const registerUser = asyncHandler(async (req, res) => {
 
     // Get user detail
-    const {fullName, email, username, password} = req.body
+    const { fullName, email, username, password } = req.body
 
     // Validation - not empty
     if (
         [fullName, email, username, password].some(field => !field?.trim())
     ) {
-        throw new ApiError({statusCode: 400, message: 'All fields are required'});
+        throw new ApiError({ statusCode: 400, message: 'All fields are required' });
     }
 
     // Check if user already exist
     const existedUser = isUserExist(username, email)
-    
+
     // Throw error if user exist
     if (existedUser.length > 0) {
-        throw new ApiError({statusCode: 409, message: 'User with email or username already exist'}); 
+        throw new ApiError({ statusCode: 409, message: 'User with email or username already exist' });
     }
 
     // Check for image upload them to server
@@ -49,7 +49,7 @@ const registerUser = asyncHandler(async (req, res) => {
     const coverImageLocalPath = req.files?.coverImage?.[0]?.path
 
     if (!avatarLocalPath) {
-        throw new ApiError({statusCode: 400, message: 'Avatar local file is required'})
+        throw new ApiError({ statusCode: 400, message: 'Avatar local file is required' })
     }
 
     // Upload them to cloudanary, image
@@ -57,7 +57,7 @@ const registerUser = asyncHandler(async (req, res) => {
     const coverImage = await uploadOnCloudinary(coverImageLocalPath)
 
     if (!avatar) {
-        throw new ApiError({statusCode: 400, message: 'Avatar file is required'})
+        throw new ApiError({ statusCode: 400, message: 'Avatar file is required' })
     }
 
     // Create user in database
@@ -84,12 +84,12 @@ const registerUser = asyncHandler(async (req, res) => {
 
     // Check for user creation
     if (!createdUser) {
-        throw new ApiError({statusCode: 500, message: 'Something went wrong while registering user'})
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' })
     }
 
     // Return response
     return res.status(201).json(
-        new ApiResponse({statusCode: 200, data: createdUser, message: 'User registered successfully.'})
+        new ApiResponse({ statusCode: 200, data: createdUser, message: 'User registered successfully.' })
     )
 })
 
@@ -111,26 +111,26 @@ const loginUser = asyncHandler(async (req, res) => {
         }
     ]
     // Request body -> data
-    const {username, email, password} = req.body
+    const { username, email, password } = req.body
 
     // Username or email
     if (!(username || email)) {
-        throw new ApiError({statusCode: 400, message: 'username or  email is required'})
+        throw new ApiError({ statusCode: 400, message: 'username or  email is required' })
     }
     // Find the user in db
     const foundUser = user.find((user) => user.username === username || user.email === email)
     if (!foundUser) {
-        throw new ApiError({statusCode: 404, message: 'User not found'})
+        throw new ApiError({ statusCode: 404, message: 'User not found' })
     }
 
     // Check password
     const isPasswordValid = await isPasswordCorrect(password)
     if (!isPasswordValid) {
-        throw new ApiError({statusCode: 401, message: 'Invalid user credential'})
+        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' })
     }
 
     // Acess and refresh token generation
-    const {accessToken, refreshToken} = await generateAccessAndRefreshTokens(foundUser.id)
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(foundUser.id)
 
     // Send cookies
     const loggedInUser = user.find(user => user.id == foundUser.id)
@@ -158,7 +158,7 @@ const logoutUser = asyncHandler(async (req, res) => {
 
     // Update refresh token to empty in db
     let user = userData.find(user => user.id == req.user.id)
-    user = {...user, refreshToken: null}
+    user = { ...user, refreshToken: null }
 
     // Cookie option
     const optionsCookie = {
@@ -171,40 +171,40 @@ const logoutUser = asyncHandler(async (req, res) => {
         .status(200)
         .clearCookie('accessToken', optionsCookie)
         .clearCookie('refreshToken', optionsCookie)
-        .json(new ApiResponse({statusCode: 200, data: {}, message: 'User logged out'}))
+        .json(new ApiResponse({ statusCode: 200, data: {}, message: 'User logged out' }))
 })
 
 const refreshAccessToken = asyncHandler(async (req, res) => {
     try {
         // Get refresh token from request
         const incomingRefreshToken = req.cookies.refreshToken || req.body.refreshToken
-    
+
         if (!incomingRefreshToken) {
-            throw new ApiError({statusCode: 401, message: 'Unauthorized request'})
+            throw new ApiError({ statusCode: 401, message: 'Unauthorized request' })
         }
-    
+
         // Decode refresh token
         const decodeToken = jwt.verify(incomingRefreshToken, JWT.REFRESH_TOKEN_SECRET)
-    
+
         // Get user from db
         let user = userData.find(user => user.id == decodeToken?.id)
-    
+
         if (!user) {
-            throw new ApiError({statusCode: 401, message: 'Invalid refresh token'})
+            throw new ApiError({ statusCode: 401, message: 'Invalid refresh token' })
         }
-    
+
         if (incomingRefreshToken != user.refreshToken) {
-            throw new ApiError({statusCode: 401, message: 'Refresh token is expired or used'})
+            throw new ApiError({ statusCode: 401, message: 'Refresh token is expired or used' })
         }
-    
+
         // Generate new access and refresh token
         const optionsCookie = {
             httpOnly: true,
             secure: true
         }
-    
-        const {accessToken, refreshToken} = await generateAccessAndRefreshTokens(user.id)
-    
+
+        const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(user.id)
+
         // Return response
         return res
             .status(200)
@@ -218,15 +218,15 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
                 })
             )
     } catch (error) {
-        throw new ApiError({statusCode: 401, message: error?.message || 'Invalid refresh token'})
+        throw new ApiError({ statusCode: 401, message: error?.message || 'Invalid refresh token' })
     }
 })
 
 const changeCurrentPassword = asyncHandler(async (req, res) => {
     // Get old and new password from request
-    const {oldPassword, newPassword} = req.body
+    const { oldPassword, newPassword } = req.body
     if (!oldPassword || !newPassword) {
-        throw new ApiError({statusCode: 400, message: 'old password and new password are required'})
+        throw new ApiError({ statusCode: 400, message: 'old password and new password are required' })
     }
 
     // Get user data from request which is put by middleware when user loged in successfully
@@ -237,7 +237,7 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     // If password is not correct, throw error
     const isPasswordCorrect = await isPasswordCorrect(oldPassword)
     if (!isPasswordCorrect) {
-        throw new ApiError({statusCode: 400, message: 'Invalid old password'})
+        throw new ApiError({ statusCode: 400, message: 'Invalid old password' })
     }
 
     // Set new password to db
@@ -247,22 +247,22 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
     // Return response
     return res
         .status(200)
-        .json(new ApiResponse({statusCode: 200, data: {}, message: 'Password changed successfully'}))
+        .json(new ApiResponse({ statusCode: 200, data: {}, message: 'Password changed successfully' }))
 })
 
 const getCurrentUser = asyncHandler(async (req, res) => {
     // Get current user data from request which is put by middleware when user loged in successfully
     return res
         .status(200)
-        .json(new ApiResponse({statusCode: 200, data: req.user, message: 'Current user fetched successfully'}))
+        .json(new ApiResponse({ statusCode: 200, data: req.user, message: 'Current user fetched successfully' }))
 })
 
 const updateAccountDetail = asyncHandler(async (req, res) => {
     // Get update data from request
-    const {fullName, email} = req.body
+    const { fullName, email } = req.body
 
     if (!fullName || !email) {
-        throw new ApiError({statusCode: 400, message: 'All fields are required'})
+        throw new ApiError({ statusCode: 400, message: 'All fields are required' })
     }
 
     // Find user by id
@@ -273,7 +273,7 @@ const updateAccountDetail = asyncHandler(async (req, res) => {
     // Return response
     return res
         .status(200)
-        .json(new ApiResponse({statusCode: 200, data: user , message: 'Account detail updated successfully'}))
+        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Account detail updated successfully' }))
 })
 
 const updateUserAvatar = asyncHandler(async (req, res) => {
@@ -281,14 +281,14 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     const avatarLocalPath = req.file?.path
 
     if (!avatarLocalPath) {
-        throw new ApiError({statusCode: 400, message: 'Avatar file is missing'})
+        throw new ApiError({ statusCode: 400, message: 'Avatar file is missing' })
     }
 
     // Upload on server or cloudinary
     const avatar = await uploadOnCloudinary(avatarLocalPath)
 
     if (!avatar.url) {
-        throw new ApiError({statusCode: 400, message: 'Error while uploading avatar'})
+        throw new ApiError({ statusCode: 400, message: 'Error while uploading avatar' })
     }
 
     // Update avatar in db
@@ -298,7 +298,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
     // Return response
     return res
         .status(200)
-        .json(new ApiResponse({statusCode: 200, data: user, message: 'Avatar updated successfully'}))
+        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Avatar updated successfully' }))
 })
 
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -308,13 +308,13 @@ const generateAccessAndRefreshTokens = async (userId) => {
         const refreshToken = generateRefreshToken(foundUser)
 
         // Update refresh token to db of user
-        foundUser.refreshToken = refreshToken 
+        foundUser.refreshToken = refreshToken
         userData.map(obj => obj.id === foundUser.id ? foundUser : obj);
         console.log(foundUser);
-        
-        return {accessToken, refreshToken}
+
+        return { accessToken, refreshToken }
     } catch (error) {
-        throw new ApiError({statusCode: 500, message: 'Something went wrong while generating refresh and access token.'})
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' })
     }
 }
 

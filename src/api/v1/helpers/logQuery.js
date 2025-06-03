@@ -1,20 +1,14 @@
-// helpers/logKnexQuery.js
-function logQuery(queryBuilder, label = 'Knex Query') {
-    const { sql, bindings } = queryBuilder.toSQL();
-
-    const interpolated = bindings.reduce((query, value) => {
-        const safeValue =
-            typeof value === 'string' ? `'${value.replace(/'/g, "''")}'` :
-                value instanceof Date ? `'${value.toISOString()}'` :
-                    value === null ? 'NULL' : value;
-
-        return query.replace('?', safeValue);
-    }, sql);
-
-    console.log('==================== START ======================');
-    console.log(`🧾 ${label}:`);
-    console.log(interpolated);
-    console.log('===================== END =======================');
+function logQuery(knexQuery) {
+  const { sql, bindings } = knexQuery.toSQL();
+  let i = 0;
+  return sql.replace(/\?/g, () => {
+    const val = bindings[i++];
+    if (val === null) return 'NULL';
+    if (typeof val === 'number') return val;
+    if (val instanceof Date) return `'${val.toISOString()}'`;
+    if (typeof val === 'boolean') return val ? 'TRUE' : 'FALSE';
+    return `'${val.toString().replace(/'/g, "''")}'`; // escape single quotes
+  });
 }
 
 module.exports = { logQuery };

@@ -1,5 +1,6 @@
 const { db } = require("../database");
-const { logQuery } = require("../helpers/logQuery");
+const { ApiError } = require("../services/ApiError");
+const { getEnforcer } = require("../services/casbin");
 
 /**
  * Inserts a new user into the database.
@@ -34,8 +35,216 @@ async function deleteRefreshTokenByUserID(userId) {
     return wasDeleted;
 }
 
+// ========== ROLES ==========
+const createRole = async (data) => {
+    const [id] = await db('roles').insert(data).returning('id');
+    return id;
+}
+
+// ========== PERMISSIONS ==========
+const createPermission = async (object, action) => {
+    const [id] = await db('permissions').insert({ object, action }).returning('id');
+    return id;
+}
+
+// ========== RELATIONSHIPS ==========
+const assignUserRole = async (userId, roleId) => {
+    try {
+        // const [id] = await db('user_roles').insert({ user_id: userId, role_id: roleId }).onConflict(['user_id', 'role_id']).ignore();
+        const [id] = await db('user_roles')
+            .insert({ user_id: userId, role_id: roleId })
+            .returning('id');
+
+        return id;
+    } catch (error) {
+        if (error.code === '23505') { // PostgreSQL unique_violation
+            throw new ApiError({ statusCode: 409, message: 'This role is already assigned to the user.' });
+        }
+
+        if (error.code === '23503') { // foreign key violation
+            throw new Error('User or role not found.');
+        }
+
+        throw new ApiError({ statusCode: 500, message: 'Failed to assign the role to the user.' });
+    }
+}
+
+const assignPermissionToRole = async (roleId, permissionId) => {
+    try {
+        const [{ id }] = await db('role_permissions')
+            .insert({ role_id: roleId, permission_id: permissionId })
+            .returning('id')
+
+        return id;
+    } catch (error) {
+        if (error.code === '23505') { // PostgreSQL unique_violation
+            throw new ApiError({ statusCode: 409, message: 'This role already has this permission assigned.' });
+        }
+
+        if (error.code === '23503') { // foreign key violation
+            throw new Error('Role or Permission not found.');
+        }
+
+        throw new ApiError({ statusCode: 500, message: 'Failed to assign permission to role' });
+    }
+}
+
+// Remove role permission
+const removeAssignedRolePermissionById = async (id, isPermanentDelete) => {
+    if (isPermanentDelete) {
+        const result = await db('role_permissions')
+            .where({ id: id })
+            .del();
+
+        return result > 0;
+    }
+
+    const result = await db('role_permissions')
+        .where({ id: id })
+        .update({ is_active: false });
+
+    return result > 0;
+}
+
+const getRolePermissionById = async (id) => {
+    const rolePermission = await db('role_permissions as rp')
+        .join('roles as r', 'rp.role_id', 'r.id')
+        .join('permissions as p', 'rp.permission_id', 'p.id')
+        .where('rp.is_active', true)
+        .where({ 'rp.is_active': true, 'rp.id': id })
+        .select('r.name as role', 'p.object', 'p.action');
+
+    return rolePermission?.[0] || null;
+}
+
+// Get resource permission by id
+const getResourcePermissionById = async (id) => {
+    const resourcePermission = await db('permissions')
+        .where({ 'is_active': true, 'id': id })
+        .select('id as resourcePermissionId', 'object as url', 'resource', 'action');
+
+    return resourcePermission?.[0] || null;
+}
+
+// Get all abac policy by ID
+const getAllAbacPolicy = async () => {
+    const abacPolicies = await db('casbin_abac_policy')
+        .select('id', 'sub', 'obj', 'act', 'conditions')
+        .where({ 'is_active': true });
+
+    return abacPolicies || [];
+}
+
+// Add a new policy
+const addPolicyToCasbinRule = async (sub, obj, act, cond) => {
+    const enforcer = await getEnforcer();
+    const policy = [sub, obj, act, cond];
+    const exists = await enforcer.hasPolicy(...policy);
+
+    // Check policy existence
+    if (exists) {
+        throw new ApiError({ statusCode: 409, message: 'Policy already exist' })
+    }
+
+    // Add policy if it doesn't exist
+    if (!exists) {
+        const added = await enforcer.addPolicy(...policy);
+        return added;
+    }
+
+    return false;
+}
+
+// Add a new policy
+const addPolicyBulkToCasbinRule = async (policyRules = []) => {
+    const enforcer = await getEnforcer();
+
+    // Add policy if it doesn't exist
+    if (!policyRules?.length) {
+        throw new ApiError({ statusCode: 400, message: 'Policy rules cannot be empty' });
+    }
+
+    const added = await enforcer.addPolicies(policyRules);
+    return added;
+}
+
+// Remove a policy
+const removePolicyFromCasbinRule = async (sub, obj, act, cond) => {
+    const enforcer = await getEnforcer();
+    const policy = [sub, obj, act, cond];
+
+    const exists = await enforcer.hasPolicy(...policy);
+
+    // Check policy existence
+    if (!exists) {
+        throw new ApiError({ statusCode: 404, message: 'Policy not found' })
+    }
+
+    // Remove policy if it exists
+    const removed = await enforcer.removePolicy(...policy);
+    return removed;
+}
+
+// Remove a policy
+const updatePolicyFromCasbinRule = async (oldPolicy = [], newPolicy = []) => {
+    const enforcer = await getEnforcer();
+
+    const exists = await enforcer.hasPolicy(...oldPolicy);
+
+    // Check policy existence
+    if (!exists) {
+        throw new ApiError({ statusCode: 404, message: 'Policy not found' })
+    }
+
+    // Update policy if it exists
+    const update = await enforcer.updatePolicy([...oldPolicy], [...newPolicy]);
+    return update;
+}
+
+// Create ABAC policy
+const createAbacPolicy = async (sub, obj, act, condition) => {
+    // Add policy to casbin_abac_policy table
+    const query = db('casbin_abac_policy').insert({
+        sub,
+        obj,
+        act,
+        conditions: condition || {}
+    }).returning('id');
+
+    const [{ id }] = await query
+
+    return id || null;
+}
+
+// Create ABAC policy
+const deleteAbacPolicy = async (sub, obj, act, condition) => {
+    // Add policy to casbin_abac_policy table
+    const query = await db('casbin_abac_policy')
+        .where({ sub, obj, act })
+        .andWhereRaw('conditions = ?::jsonb', [JSON.stringify(condition || {})])
+        .del();
+
+    const id = await query
+
+    return id;
+}
+
 module.exports = {
     createUser,
     deleteRefreshTokenByUserIDAndToken,
-    deleteRefreshTokenByUserID
+    deleteRefreshTokenByUserID,
+    createRole,
+    createPermission,
+    assignUserRole,
+    assignPermissionToRole,
+    removeAssignedRolePermissionById,
+    addPolicyToCasbinRule,
+    addPolicyBulkToCasbinRule,
+    removePolicyFromCasbinRule,
+    updatePolicyFromCasbinRule,
+    createAbacPolicy,
+    deleteAbacPolicy,
+    getRolePermissionById,
+    getAllAbacPolicy,
+    getResourcePermissionById
 };

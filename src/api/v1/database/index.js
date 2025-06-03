@@ -1,6 +1,11 @@
 // db.js
 const knex = require('knex');
+const Redis = require('ioredis');
 const { patchKnex } = require('../helpers/patchKnex');
+const path = require('path');
+const { ROOT_DIR } = require('../../../config/constants/projectPaths');
+const { REDIS } = require('../../../config/config');
+let redisClient;
 
 const knexConfig = {
     client: 'pg', // or 'mysql', etc.
@@ -12,8 +17,7 @@ const knexConfig = {
         database: process.env.DB_NAME,
     },
     migrations: {
-        // directory: './migrations',
-        directory: '../../../../migrations',
+        directory: path.resolve(ROOT_DIR, 'migrations'),
     },
     pool: { min: 2, max: 10 },
 };
@@ -36,4 +40,34 @@ const connectDB = () => {
     });
 };
 
-module.exports = { db, connectDB, knexConfig };
+// Function to connect to Redis
+const connectRedis = () => {
+    return new Promise((resolve, reject) => {
+        if (redisClient) {
+            return resolve(redisClient);
+        }
+
+        redisClient = new Redis({
+            host: REDIS.REDIS_HOST,
+            port: REDIS.REDIS_PORT,
+        });
+
+        redisClient.on('connect', () => {
+            console.log('✅ Redis connected');
+            resolve(redisClient);
+        });
+
+        redisClient.on('error', (err) => {
+            console.error('❌ Redis connection error:', err);
+            reject(err);
+        });
+    });
+};
+
+// Function to get the Redis client
+const getRedisClient = () => {
+    if (!redisClient) throw new Error('Redis client is not initialized');
+    return redisClient;
+};
+
+module.exports = { db, connectDB, knexConfig, connectRedis, getRedisClient };

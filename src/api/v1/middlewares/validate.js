@@ -8,18 +8,31 @@ const { asyncHandler } = require("../services/asyncHandler");
  * @param {String} [property='body'] - Request property to validate (default is 'body')
  */
 
-const validate = (schema, property = 'body') => {
+const validate = (schemas) => {
   return asyncHandler((req, _, next) => {
-    const { error } = schema.validate(req[property], { abortEarly: false });
+    const allErrors = [];
 
-    // If error found while validation
-    if (error) {
-      const errors = error.details.map((detail) => detail.message); // Collect error messages
-      const errorMessage = error.details?.[0]?.message?.replace(/"/g, '');
-      throw new ApiError({statusCode: 422, message: errorMessage, errors: errors});
+    for (const [source, schema] of Object.entries(schemas)) {
+      const { error, value } = schema.validate(req[source], { abortEarly: false, stripUnknown: true });
+
+      if (error) {
+        allErrors.push(...error.details.map(detail => detail.message));
+      } else {
+        // Replace request part with sanitized data
+        req[source] = value;
+      }
     }
-    next(); // Proceed to the next middleware or controller
-  })
+
+    if (allErrors.length > 0) {
+      throw new ApiError({
+        statusCode: 422,
+        message: allErrors[0].replace(/"/g, ''),
+        errors: allErrors
+      });
+    }
+
+    next();
+  });
 };
 
 module.exports = validate;

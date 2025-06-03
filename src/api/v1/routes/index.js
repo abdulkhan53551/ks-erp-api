@@ -4,7 +4,7 @@ const authRoutes = require('./auth.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
-const verifyAccessToken = require('../middlewares/auth.middleware');
+const { verifyAccessToken } = require('../middlewares/auth.middleware');
 
 // const { customerRoutes } = require('./customer');
 // const { personRoutes } = require('./person');
