@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const authRoutes = require('./auth.routes')
+const firmRoutes = require('./firm.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
@@ -14,6 +15,7 @@ const { verifyAccessToken } = require('../middlewares/auth.middleware');
 
 // 🔓 Public routes (no auth needed)
 router.use('/auth', authRoutes)
+router.use('/firm', firmRoutes)
 
 // 🔐 Protected routes (require valid access token)
 router.use(verifyAccessToken);
