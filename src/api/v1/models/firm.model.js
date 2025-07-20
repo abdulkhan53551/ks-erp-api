@@ -1,34 +1,105 @@
 const { db } = require("../database");
 
-// Check if firm exists with GST
-const isFirmExistWithGst = async (gstin) => {
-    const exists = await db('firms')
-        .where({ gstin: gstin })
-        .first();
-    return exists;
+// Fetch all firms with their addresses and bank accounts
+const fetchAllFirm = async () => {
+    const firms = await db('firms AS F')
+        .select(
+            'F.id as firm_id',
+            'F.firm_name',
+            'F.trade_name',
+            'F.gstin',
+            'F.firm_type',
+            'UC.city',
+            'UC.state',
+            'UC.pincode',
+            'FBA.account_number',
+            'FBA.ifsc_code',
+            'FBA.bank_name',
+            'FBA.branch_name'
+        )
+        .join('user_contacts AS UC', function () {
+            this.on('F.id', '=', 'UC.entity_id')
+                .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
+        })
+        .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
+        .where('F.is_active', true)
+
+    return firms;
 }
 
+// Check if firm exists with GSTIN
+const fetchFirmById = async (id = 0) => {
+    const query = db('firms AS F')
+        .select(
+            'F.id as firm_id',
+            'F.firm_name',
+            'F.trade_name',
+            'F.gstin',
+            'F.firm_type',
+            'C.name AS city',
+            'S.name AS state',
+            'UC.pincode',
+            'FBA.account_number',
+            'FBA.ifsc_code',
+            'FBA.bank_name',
+            'FBA.branch_name'
+        )
+        .leftJoin('user_contacts AS UC', function () {
+            this.on('F.id', '=', 'UC.entity_id')
+                .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
+        })
+        .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
+        .leftJoin('city AS C', 'UC.city_id', 'C.id')
+        .leftJoin('state AS S', 'UC.state_id', 'S.id')
+        .where('F.id', id)
+        .first();
+
+    const exists = await query
+    return exists;
+};
+
+// Check if firm exists with GSTIN
+const isFirmExistWithGst = async (gstin, firmId = 0) => {
+    const query = db('firms').where({ gstin, is_active: true });
+
+    if (firmId) {
+        query.andWhereNot('id', firmId); // exclude this firmId if provided
+    }
+
+    const exists = await query.first();
+    return exists;
+};
+
 // Check if firm exists with name and phone number
-const isFirmExistWithNameAndPhone = async (firmName, phoneNumber) => {
-    const exists = await db('user_contacts AS UC')
+const isFirmExistWithNameAndPhone = async (firmName, phoneNumber, firmId = 0) => {
+    const query = db('user_contacts AS UC')
         .join('firms AS F', function () {
             this.on('F.id', '=', 'UC.entity_id')
                 .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
         })
         .where('F.firm_name', firmName)
         .where('UC.phone_number', phoneNumber)
-        .whereNull('F.gstin')
-        .first();
+        .where('F.is_active', true)
+        .whereNull('F.gstin');
+
+    if (firmId) {
+        query.andWhereNot('F.id', firmId); // Exclude firmId if provided
+    }
+
+    const exists = await query.first();
     return exists;
-}
+};
+
 
 // Insert a new firm
 const insertFirm = async (data) => {
-    const query = db('firms').insert(data).returning('id');
-
-    const [{ id }] = await query
-
-    return id || null;
+    try {
+        const query = db('firms').insert(data).returning('id');
+        const [{ id }] = await query
+        return id || null;
+    } catch (error) {
+        throw new Error('Failed to fetch firms');
+    }
 }
 
 // Update firm by ID
@@ -43,82 +114,86 @@ const deleteFirmtById = async (id, isPermanentDelete) => {
         const result = await db('firms')
             .where({ id: id })
             .del();
-
         return result > 0;
     }
 
     const result = await db('firms')
-        .where({ id: id })
-        .update({ is_active: false });
-
+        .update({ is_active: false })
+        .where({ id: id });
     return result > 0;
 }
 
 // Insert address for a firm
 const insertAddress = async (data) => {
     const query = db('user_contacts').insert(data).returning('id');
-
     const [{ id }] = await query
-
     return id || null;
 }
 
 // Update address by entity type and ID
-const updateAddressByEntity = async (entityType, entityId, addressData) => {
-    const updatedCount = await db('addresses')
+const updateAddressByEntity = async (id, addressData) => {
+    const updatedCount = await db('user_contacts')
         .update(addressData)
-        .where({ entity_type: entityType, entity_id: entityId });
+        .where({ id: id });
     return updatedCount > 0;
 };
 
 // Delete address by ID
-const deleteAddressById = async (id, isPermanentDelete) => {
+const deleteAddressByFirmId = async (firmId, isPermanentDelete) => {
     if (isPermanentDelete) {
-        const result = await db('addresses')
-            .where({ id: id })
+        const result = await db('user_contacts')
+            .where({ entity_type: 'firm', entity_id: firmId })
             .del();
-
         return result > 0;
     }
 
-    const result = await db('addresses')
-        .where({ id: id })
+    const result = await db('user_contacts')
+        .where({ entity_type: 'firm', entity_id: firmId })
         .update({ is_active: false });
-
     return result > 0;
 }
 
 // Insert bank account for a firm
 const insertBankAccount = async (data) => {
     const query = db('firm_bank_accounts').insert(data).returning('id');
-
     const [{ id }] = await query
-
     return id || null;
 }
 
 // Update bank account by firm ID
-const updateBankAccountByFirmId = async (firmId, bankData) => {
-    return await db('bank_accounts')
+const updateBankAccountByFirmId = async (id, bankData) => {
+    return await db('firm_bank_accounts')
         .update(bankData)
-        .where({ firm_id: firmId });
+        .where({ id: id });
 };
 
 // Delete bank account by ID
-const deleteBankAccountById = async (id, isPermanentDelete) => {
+const deleteBankAccountByFirmId = async (firmId, isPermanentDelete) => {
     if (isPermanentDelete) {
-        const result = await db('bank_accounts')
-            .where({ id: id })
+        const result = await db('firm_bank_accounts')
+            .where({ firm_id: firmId })
             .del();
 
         return result > 0;
     }
 
-    const result = await db('bank_accounts')
-        .where({ id: id })
+    const result = await db('firm_bank_accounts')
+        .where({ firm_id: firmId })
         .update({ is_active: false });
 
     return result > 0;
+}
+
+// Fetch firm types from the database
+const fetchFirmTypes = async () => {
+    const enumLabels = await db('pg_enum as e')
+        .select('e.enumlabel')
+        .join('pg_type as t', 't.oid', 'e.enumtypid')
+        .where('t.typname', 'entity_type_enum');
+
+    const values = enumLabels.map(row => row.enumlabel);
+
+    return values;
 }
 
 // Create ABAC policy
@@ -135,6 +210,8 @@ const deleteAbacPolicy = async (sub, obj, act, condition) => {
 }
 
 module.exports = {
+    fetchAllFirm,
+    fetchFirmById,
     isFirmExistWithGst,
     isFirmExistWithNameAndPhone,
     insertFirm,
@@ -142,9 +219,10 @@ module.exports = {
     deleteFirmtById,
     insertAddress,
     updateAddressByEntity,
-    deleteAddressById,
+    deleteAddressByFirmId,
     insertBankAccount,
     updateBankAccountByFirmId,
-    deleteBankAccountById,
+    deleteBankAccountByFirmId,
     deleteAbacPolicy,
+    fetchFirmTypes
 };

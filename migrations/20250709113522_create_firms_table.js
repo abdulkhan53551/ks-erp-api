@@ -44,6 +44,8 @@ exports.up = async function (knex) {
         table.integer('created_by').references('id').inTable('users');
         table.integer('updated_by').references('id').inTable('users');
         table.timestamps(true, true); // created_at & updated_at
+        table.boolean('is_active').notNullable().defaultTo(true);
+
     })
 };
 

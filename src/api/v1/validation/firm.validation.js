@@ -22,9 +22,7 @@ const createFirmValidationSchema = {
     invoiceStartNumber: Joi.number().integer().min(1).default(1),
     notesFooter: Joi.string().allow(null, ''),
 
-    // entityType: Joi.string().valid('firm', 'client', 'user', 'vendor', 'employee').required(),
-    // entityId: Joi.number().integer().required(),
-
+    // Address details
     email: Joi.string().email().allow(null, ''),
     phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
     website: Joi.string().uri().allow(null, ''),
@@ -35,8 +33,7 @@ const createFirmValidationSchema = {
     pincode: Joi.number().integer().min(100000).max(999999).required(),
     country: Joi.string().default('India'),
 
-    // firmId: Joi.number().integer().required(),
-
+    // Bank account details
     upiId: Joi.string().max(100).allow(null, ''),
     accountHolderName: Joi.string().max(255).required(),
     accountNumber: Joi.string().pattern(/^\d{9,18}$/).required(),
@@ -73,6 +70,8 @@ const updateFirmValidationSchema = {
     invoiceStartNumber: Joi.number().integer().min(1),
     notesFooter: Joi.string().allow(null, ''),
 
+    // Address details
+    addressId: Joi.number().integer().required(),
     email: Joi.string().email().allow(null, ''),
     phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
     website: Joi.string().uri().allow(null, ''),
@@ -83,6 +82,8 @@ const updateFirmValidationSchema = {
     pincode: Joi.number().integer().min(100000).max(999999).allow(null),
     country: Joi.string(),
 
+    // Bank account details
+    bankAccountId: Joi.number().integer().required(),
     upiId: Joi.string().max(100).allow(null, ''),
     accountHolderName: Joi.string().max(255),
     accountNumber: Joi.string().pattern(/^\d{9,18}$/),
@@ -99,21 +100,21 @@ const updateFirmValidationSchema = {
 
 // Delete firm validation schema
 const deleteFirmValidationSchema = {
-    params: Joi.object({
-        id: Joi.number().integer().required().label('Firm ID'),
-    }),
-    query: Joi.object({
-        isPermanentDelete: Joi.boolean()
-            .default(false)
-            .label('Is Permanent Delete')
-            .messages({
-                'boolean.base': `"isPermanentDelete" must be a boolean value.`,
-            })
-    })
+  params: Joi.object({
+    id: Joi.number().integer().required().label('Firm ID'),
+  }),
+  query: Joi.object({
+    isPermanentDelete: Joi.boolean()
+      .default(false)
+      .label('Is Permanent Delete')
+      .messages({
+        'boolean.base': `"isPermanentDelete" must be a boolean value.`,
+      })
+  })
 };
 
 module.exports = {
-    createFirmValidationSchema,
-    updateFirmValidationSchema,
-    deleteFirmValidationSchema
+  createFirmValidationSchema,
+  updateFirmValidationSchema,
+  deleteFirmValidationSchema
 };
