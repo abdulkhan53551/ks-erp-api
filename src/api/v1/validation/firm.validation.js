@@ -1,5 +1,12 @@
 const Joi = require("joi");
 
+// Get firm by ID validation schema
+const getFirmByIdValidationSchema = {
+  params: Joi.object({
+    id: Joi.number().integer().required().label('Firm ID'),
+  })
+};
+
 // Create firm validation schema
 const createFirmValidationSchema = {
   body: Joi.object({
@@ -114,6 +121,7 @@ const deleteFirmValidationSchema = {
 };
 
 module.exports = {
+  getFirmByIdValidationSchema,
   createFirmValidationSchema,
   updateFirmValidationSchema,
   deleteFirmValidationSchema

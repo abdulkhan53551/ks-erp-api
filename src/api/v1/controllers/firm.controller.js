@@ -1,17 +1,44 @@
-const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmtById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById } = require("../models/firm.model");
+const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmtById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById, fetchFirmMeta } = require("../models/firm.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
 
 // Get all firm
 const getAllFirm = asyncHandler(async (req, res) => {
-    const firms = await fetchAllFirm();
+    const firms = await fetchAllFirm(req.query);
     if (!firms) {
         throw new ApiError({ statusCode: 404, message: 'No firms found.' });
     }
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: firms, message: 'Firms fetched successfully.' }));
+});
+
+// Get firm meta data for pagination
+const getFirmMeta = asyncHandler(async (req, res) => {
+    // Fetch firm meta data for pagination
+    const result = await fetchFirmMeta(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Firm pagination fetch successfully.' }));
+});
+
+// Get firm by ID
+const getFirmById = asyncHandler(async (req, res) => {
+    const { id: firmId } = req.params;
+
+    // Fetch firm by ID
+    const firm = await fetchFirmById(firmId);
+
+    // Check if firm exists
+    if (!firm) {
+        throw new ApiError({ statusCode: 404, message: 'Firm with this ID does not exist.' });
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: firm, message: 'Firm fetched successfully.' }));
 });
 
 // Create firm
@@ -232,6 +259,8 @@ const getFirmType = asyncHandler(async (req, res) => {
 
 module.exports = {
     getAllFirm,
+    getFirmMeta,
+    getFirmById,
     createFirm,
     updateFirm,
     deleteFirm,

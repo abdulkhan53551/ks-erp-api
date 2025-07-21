@@ -1,16 +1,19 @@
+const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
 
 // Fetch all firms with their addresses and bank accounts
-const fetchAllFirm = async () => {
-    const firms = await db('firms AS F')
+const fetchAllFirm = async (query) => {
+    const { page = 1, pageSize = 10, search = '' } = query;
+
+    const baseQuery = db('firms AS F')
         .select(
             'F.id as firm_id',
             'F.firm_name',
             'F.trade_name',
             'F.gstin',
             'F.firm_type',
-            'UC.city',
-            'UC.state',
+            'C.name AS city',
+            'S.name AS state',
             'UC.pincode',
             'FBA.account_number',
             'FBA.ifsc_code',
@@ -22,9 +25,38 @@ const fetchAllFirm = async () => {
                 .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
         })
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
+        .leftJoin('city AS C', 'UC.city_id', 'C.id')
+        .leftJoin('state AS S', 'UC.state_id', 'S.id')
         .where('F.is_active', true)
 
+    // if (search) {
+    //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
+    // }
+
+    const firms = await fetchPageData({ baseQuery, page, pageSize });
+
     return firms;
+}
+
+// Fetch firm meta data for pagination
+const fetchFirmMeta = async (query) => {
+    const { page = 1, pageSize = 10, search = '' } = query;
+
+    const baseQuery = db('firms AS F')
+        .join('user_contacts AS UC', function () {
+            this.on('F.id', '=', 'UC.entity_id')
+                .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
+        })
+        .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
+        .where('F.is_active', true)
+
+    // if (search) {
+    //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
+    // }
+
+    const result = await buildPagination({ baseQuery, page, pageSize });
+
+    return result;
 }
 
 // Check if firm exists with GSTIN
@@ -211,6 +243,7 @@ const deleteAbacPolicy = async (sub, obj, act, condition) => {
 
 module.exports = {
     fetchAllFirm,
+    fetchFirmMeta,
     fetchFirmById,
     isFirmExistWithGst,
     isFirmExistWithNameAndPhone,
