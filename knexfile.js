@@ -10,5 +10,8 @@ module.exports = {
         migrations: {
             directory: path.resolve(__dirname, 'migrations')
         },
+        seeds: {
+            directory: path.resolve(__dirname, 'seeds'), // ✅ Add this line
+        },
     },
 };
