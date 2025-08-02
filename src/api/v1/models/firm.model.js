@@ -228,19 +228,6 @@ const fetchFirmTypes = async () => {
     return values;
 }
 
-// Create ABAC policy
-const deleteAbacPolicy = async (sub, obj, act, condition) => {
-    // Add policy to casbin_abac_policy table
-    const query = await db('casbin_abac_policy')
-        .where({ sub, obj, act })
-        .andWhereRaw('conditions = ?::jsonb', [JSON.stringify(condition || {})])
-        .del();
-
-    const id = await query
-
-    return id;
-}
-
 module.exports = {
     fetchAllFirm,
     fetchFirmMeta,
@@ -256,6 +243,5 @@ module.exports = {
     insertBankAccount,
     updateBankAccountByFirmId,
     deleteBankAccountByFirmId,
-    deleteAbacPolicy,
     fetchFirmTypes
 };

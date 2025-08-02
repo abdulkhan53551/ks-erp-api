@@ -18,8 +18,13 @@ exports.up = function (knex) {
         table.timestamps(true, true); // adds created_at and updated_at
         table.boolean('is_active').notNullable().defaultTo(true);
 
-        table.unique(['id', 'invoice_id']); // Check challan uniqueness per invoice
-        table.unique(['firm_id', 'challan_no']); // Ensure unique challan number per firm
+        table.unique(['firm_id', 'challan_no'], {
+            indexName: 'unique_firm_challan_no'
+        });
+
+        table.unique(['id', 'invoice_id'], {
+            indexName: 'unique_id_invoice'
+        });
     });
 };
 
