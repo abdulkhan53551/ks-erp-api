@@ -1,10 +1,10 @@
-const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById } = require("../models/invoiceChallan.model");
+const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta } = require("../models/invoiceChallan.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
 
 // Fetch all invoice challans with pagination and search
-const fetchAllInvoiceChallans = asyncHandler(async (req, res) => {
+const getAllInvoiceChallans = asyncHandler(async (req, res) => {
     const { page = 1, pageSize = 10, search = '' } = req.query;
 
     const challans = await fetchAllInvoiceChallans({ page, pageSize, search });
@@ -18,11 +18,20 @@ const fetchAllInvoiceChallans = asyncHandler(async (req, res) => {
     );
 });
 
+// Fetch invoice challan meta data for pagination
+const getInvoiceChallanMeta = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceChallanMeta(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice challan pagination fetch successfully.' }));
+});
+
 // Fetch invoice challan by ID
 const getInvoiceChallanById = asyncHandler(async (req, res) => {
     const challanId = req.params.id;
 
-    const challan = await fetchchall(challanId);
+    const challan = await fetchInvoiceChallanById(challanId);
 
     if (!challan) {
         throw new ApiError({ statusCode: 404, message: 'Invoice challan not found.' });
@@ -41,7 +50,7 @@ const getInvoiceChallanById = asyncHandler(async (req, res) => {
 const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoice_id;
 
-    const challans = await fetchInvoiceChallanById(invoiceId);
+    const challans = await fetchInvoiceChallansByInvoiceId(invoiceId);
 
     if (!challans) {
         throw new ApiError({
@@ -110,9 +119,12 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
 
 const deleteInvoiceChallan = asyncHandler(async (req, res) => {
     const challanId = req.params.id;
+    const { isPermanentDelete = false } = req.query;
 
-    const deleted = await deleteInvoiceChallanById(challanId);
+    // delete invoice challan by ID
+    const deleted = await deleteInvoiceChallanById(challanId, isPermanentDelete);
 
+    // If no rows were affected, it means the invoice challan was not found or already deleted
     if (!deleted) {
         throw new ApiError({ statusCode: 404, message: 'Invoice challan not found or already deleted' });
     }
@@ -124,7 +136,8 @@ const deleteInvoiceChallan = asyncHandler(async (req, res) => {
 
 
 module.exports = {
-    fetchAllInvoiceChallans,
+    getAllInvoiceChallans,
+    getInvoiceChallanMeta,
     getInvoiceChallanById,
     getInvoiceChallansByInvoiceId,
     createInvoiceChallan,

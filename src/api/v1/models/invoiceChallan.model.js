@@ -14,7 +14,7 @@ const fetchAllInvoiceChallans = async (req, res) => {
                 'IC.challan_no',
                 'IC.challan_date',
                 'IC.is_invoiced',
-                'IC.invoice_id',
+                'I.invoice_no',
                 'IC.customer_name'
             )
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id') // double check your table name
@@ -27,7 +27,7 @@ const fetchAllInvoiceChallans = async (req, res) => {
             });
         }
 
-        baseQuery.orderBy('IC.challan_no', 'desc');
+        baseQuery.orderBy('IC.id', 'desc');
 
         // Fetch paginated data
         const challans = await fetchPageData({ baseQuery, page, pageSize });
@@ -43,17 +43,24 @@ const fetchAllInvoiceChallans = async (req, res) => {
 
 // Fetch invoice challan meta data for pagination
 const fetchInvoiceChallanMeta = async (query) => {
-    const { page = 1, pageSize = 10, search = '' } = query;
+    try {
+        const { page = 1, pageSize = 10, search = '' } = query;
 
-    const baseQuery = db('invoice_challans').where('is_active', true)
+        const baseQuery = db('invoice_challans').where('is_active', true)
 
-    // if (search) {
-    //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
-    // }
+        // if (search) {
+        //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
+        // }
 
-    const result = await buildPagination({ baseQuery, page, pageSize });
+        const result = await buildPagination({ baseQuery, page, pageSize });
 
-    return result;
+        return result;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching invoice challan meta data.',
+        });
+    }
 }
 
 // Fetch invoice challan by ID
