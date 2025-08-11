@@ -1,9 +1,11 @@
 const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
+const { getContext } = require("../helpers/requestContext");
 
 // Fetch all firms with their addresses and bank accounts
 const fetchAllFirm = async (query) => {
     const { page = 1, pageSize = 10, search = '' } = query;
+    const { userId = 0 } = getContext();
 
     const baseQuery = db('firms AS F')
         .select(
@@ -28,6 +30,7 @@ const fetchAllFirm = async (query) => {
         .leftJoin('city AS C', 'UC.city_id', 'C.id')
         .leftJoin('state AS S', 'UC.state_id', 'S.id')
         .where('F.is_active', true)
+        .andWhere('F.created_by', userId)  // Show only firms created by the user
 
     // if (search) {
     //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
@@ -41,6 +44,7 @@ const fetchAllFirm = async (query) => {
 // Fetch firm meta data for pagination
 const fetchFirmMeta = async (query) => {
     const { page = 1, pageSize = 10, search = '' } = query;
+    const { userId = 0 } = getContext();
 
     const baseQuery = db('firms AS F')
         .join('user_contacts AS UC', function () {
@@ -49,6 +53,7 @@ const fetchFirmMeta = async (query) => {
         })
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
         .where('F.is_active', true)
+        .andWhere('F.created_by', userId)
 
     // if (search) {
     //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);

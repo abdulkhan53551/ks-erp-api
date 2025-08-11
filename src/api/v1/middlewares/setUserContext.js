@@ -19,7 +19,5 @@ module.exports = (req, res, next) => {
     //     console.warn('Invalid JWT:', err.message);
     // }
 
-    runWithContext({ userId }, () => {
-        next();
-    });
+    runWithContext({ userId }, () => next());
 };

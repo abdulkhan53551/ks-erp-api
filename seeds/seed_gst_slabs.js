@@ -70,34 +70,6 @@ exports.seed = async function (knex) {
         effective_to: null,
         created_by: 1,
         updated_by: 1
-      },
-
-      // GOODS WITH CESS
-      {
-        description: '28% GST + 15% cess on luxury cars',
-        gst_rate: 28.00,
-        cgst_rate: 14.00,
-        sgst_rate: 14.00,
-        igst_rate: 28.00,
-        cess_rate: 15.00,
-        is_service: false,
-        effective_from: '2017-07-01',
-        effective_to: null,
-        created_by: 1,
-        updated_by: 1
-      },
-      {
-        description: '28% GST + 12% cess on aerated drinks',
-        gst_rate: 28.00,
-        cgst_rate: 14.00,
-        sgst_rate: 14.00,
-        igst_rate: 28.00,
-        cess_rate: 12.00,
-        is_service: false,
-        effective_from: '2017-07-01',
-        effective_to: null,
-        created_by: 1,
-        updated_by: 1
       }
     ]
 

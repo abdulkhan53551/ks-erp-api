@@ -3,6 +3,177 @@ const { sampleInvoiceData } = require("./sampleInvoiceData");
 const path = require('path')
 const ejs = require('ejs')
 const { ApiError } = require('./../services/ApiError');
+const { asyncHandler } = require("../services/asyncHandler");
+const { ApiResponse } = require("../services/ApiResponse");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById } = require("../models/invoice.model");
+
+// Fetch all invoice
+const getAllInvoice = asyncHandler(async (req, res) => {
+    const { page = 1, pageSize = 10, search = '' } = req.query;
+
+    const result = await fetchAllInvoice({ page, pageSize, search });
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            message: 'Invoice fetched successfully.',
+            data: result,
+        })
+    );
+});
+
+// Fetch invoice meta
+const getInvoiceMeta = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceMeta(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice pagination fetch successfully.' }));
+});
+
+// Fetch invoice by ID
+const getInvoiceById = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    const result = await fetchInvoiceById(invoiceId);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Invoice fetched successfully.',
+        })
+    );
+});
+
+// Create a new invoice
+const createInvoice = asyncHandler(async (req, res) => {
+    const { invoice, items, billingAddress, shippingAddress } = req.body;
+
+    // Create invoice
+    const invoiceMaster = {
+        invoice_no: invoice.invoiceNo,
+        invoice_date: invoice.invoiceDate,
+        due_days: invoice.dueDays,
+        due_date: invoice.dueDate,
+        customer_name: invoice.customerName,
+        has_gst: invoice.hasGst,
+        gst_number: invoice.gstNumber,
+        has_challan: invoice.hasChallan,
+        has_po: invoice.hasPo,
+        has_eway_bill: invoice.hasEwayBill,
+        sub_total: invoice.subTotal,
+        discount_percent: invoice.discountPercent,
+        discount_amount: invoice.discountAmount,
+        taxable_amount: invoice.taxableAmount,
+        cgst: invoice.cgst,
+        sgst: invoice.sgst,
+        igst: invoice.igst,
+        total: invoice.total,
+        round_off: invoice.roundOff,
+        other: invoice.other,
+        payment_status_id: invoice.paymentStatusId,
+        payment_mode_id: invoice.paymentModeId,
+    };
+
+    const invoiceItems = { ...items }
+    const billing = { ...billingAddress };
+    const shipping = { ...shippingAddress };
+
+    // Insert invoice
+    const invoiceId = await insertInvoice({
+        masterData: invoiceMaster,
+        items: invoiceItems,
+        billing,
+        shipping
+    });
+
+    // If invoiceId is not returned, throw an error
+    if (!invoiceId) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice' })
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice created successfully.' })
+    )
+})
+
+// Update invoice by ID
+const updateInvoice = asyncHandler(async (req, res) => {
+    const { invoiceId } = req.params;
+    const { invoice, items, billingAddress, shippingAddress } = req.body;
+
+    // Update invoice
+    const invoiceMaster = {
+        invoice_no: invoice.invoiceNo,
+        invoice_date: invoice.invoiceDate,
+        due_days: invoice.dueDays,
+        due_date: invoice.dueDate,
+        customer_name: invoice.customerName,
+        has_gst: invoice.hasGst,
+        gst_number: invoice.gstNumber,
+        has_challan: invoice.hasChallan,
+        has_po: invoice.hasPo,
+        has_eway_bill: invoice.hasEwayBill,
+        sub_total: invoice.subTotal,
+        discount_percent: invoice.discountPercent,
+        discount_amount: invoice.discountAmount,
+        taxable_amount: invoice.taxableAmount,
+        cgst: invoice.cgst,
+        sgst: invoice.sgst,
+        igst: invoice.igst,
+        total: invoice.total,
+        round_off: invoice.roundOff,
+        other: invoice.other,
+        payment_status_id: invoice.paymentStatusId,
+        payment_mode_id: invoice.paymentModeId,
+    };
+
+    const invoiceItems = { ...items }
+    const billing = { ...billingAddress };
+    const shipping = { ...shippingAddress };
+
+
+    // Update invoice
+    const affectedRows = await updateInvoiceById({
+        invoiceId,
+        masterData: invoiceMaster,
+        items: invoiceItems,
+        billing,
+        shipping
+    });
+
+    // If no rows were affected, it means the invoice was not found or update failed
+    if (!affectedRows) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found or update failed' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice updated successfully.' })
+    );
+});
+
+// Delete invoice by ID
+const deleteInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+    const { isPermanentDelete = false } = req.query;
+
+    // Delete invoice by ID
+    const deleted = await deleteInvoiceById(invoiceId, isPermanentDelete);
+
+    // If no rows were affected, it means the invoice was not found or already deleted
+    if (!deleted) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice deleted successfully.' })
+    );
+});
 
 // Generate invoice PDF
 const generateInvoicePDF = async (invoiceData, puppeteer) => {
@@ -91,7 +262,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Close the browser
         await browser2.close();
     } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError({statusCode: 500, message: 'Error generating PDF'})
+        throw error instanceof ApiError ? error : new ApiError({ statusCode: 500, message: 'Error generating PDF' })
     }
 };
 
@@ -111,4 +282,12 @@ const evaluatePage = () => {
     }
 }
 
-module.exports = { generateInvoicePDF };
+module.exports = {
+    getAllInvoice,
+    getInvoiceMeta,
+    getInvoiceById,
+    createInvoice,
+    updateInvoice,
+    deleteInvoice,
+    generateInvoicePDF
+};
