@@ -10,7 +10,7 @@ exports.up = function (knex) {
         table.string('description').notNullable(); // Item name or description
         table.string('hsn_sac_code').nullable();
         table.decimal('qty', 12, 2).notNullable();
-        table.integer('gst_unit_id').unsigned().references('id').inTable('gst_units').onDelete('SET NULL'); // Nos, pcs, kg, etc.
+        table.integer('item_unit_id').unsigned().references('id').inTable('item_units').onDelete('SET NULL'); // Nos, pcs, kg, etc.
         table.decimal('rate', 12, 2).notNullable();
         table.decimal('discount_percent', 5, 2).defaultTo(0); // per-item %
         table.decimal('discount_amount', 12, 2).defaultTo(0); // optional

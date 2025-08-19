@@ -17,12 +17,15 @@ const getInvoiceChallansByInvoiceIdValidationSchema = {
 // Schema: Create a new invoice challan
 const createInvoiceChallanValidationSchema = {
     body: Joi.object({
-        invoiceId: Joi.number().integer().positive().default(0),
+        invoiceId: Joi.number().integer().positive().allow(null).optional(),
         challanNo: Joi.string().max(50).required(),
         challanDate: Joi.date().required(),
         customerName: Joi.string().max(255).required(),
-        isInvoiced: Joi.boolean().default(false),
-        firmId: Joi.number().integer().positive().optional(),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.valid(true).default(true),
+            otherwise: Joi.valid(false).default(false)
+        })
     }),
 };
 
@@ -32,11 +35,15 @@ const updateInvoiceChallanValidationSchema = {
         id: Joi.number().integer().required().label('Challan ID'),
     }),
     body: Joi.object({
-        invoiceId: Joi.number().integer().positive(),
-        challanNo: Joi.string().max(50),
-        challanDate: Joi.date(),
-        customerName: Joi.string().max(255),
-        isInvoiced: Joi.boolean(),
+        invoiceId: Joi.number().integer().positive().allow(null).optional(),
+        challanNo: Joi.string().max(50).required(),
+        challanDate: Joi.date().required(),
+        customerName: Joi.string().max(255).required(),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.valid(true).default(true),
+            otherwise: Joi.valid(false).default(false)
+        })
     }).min(1),
 };
 

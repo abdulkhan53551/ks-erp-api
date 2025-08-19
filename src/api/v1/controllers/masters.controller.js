@@ -1,7 +1,7 @@
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchStates, fetchCities, fetchPaymentStatuses, fetchPaymentModes, fetchGSTSlabs } = require("../models/masters.model");
+const { fetchStates, fetchCities, fetchPaymentStatuses, fetchPaymentModes, fetchGSTSlabs, fetchProductUnits } = require("../models/masters.model");
 
 // Fetch all states
 const getStates = asyncHandler(async (req, res) => {
@@ -24,7 +24,7 @@ const getStates = asyncHandler(async (req, res) => {
 
 // Fetch all cities by state ID
 const getCityByState = asyncHandler(async (req, res) => {
-    const { stateId = 1 } = req.query;
+    const { stateId } = req.params;
 
     const result = await fetchCities(stateId);
 
@@ -100,6 +100,25 @@ const getGstSlabs = asyncHandler(async (req, res) => {
     );
 });
 
+// Fetch all item units
+const getProductUnits = asyncHandler(async (req, res) => {
+    const result = await fetchProductUnits();
+
+    // Check if result is empty
+    if (!result || result.length === 0) {
+        throw new ApiError({ statusCode: 404, message: 'No product unit found.' });
+
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            message: 'Product units fetched successfully.',
+            data: result,
+        })
+    );
+});
+
 
 
 module.exports = {
@@ -107,5 +126,6 @@ module.exports = {
     getCityByState,
     getPyamentStatuses,
     getPyamentModes,
-    getGstSlabs
+    getGstSlabs,
+    getProductUnits
 };

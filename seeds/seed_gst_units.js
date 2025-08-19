@@ -4,9 +4,9 @@
  */
 exports.seed = async function (knex) {
   await knex.transaction(async trx => {
-    await knex('gst_units').del();
+    await knex('item_units').del();
 
-    await knex('gst_units').insert([
+    await knex('item_units').insert([
       { uqc: 'PCS', description: 'Pieces', created_by: 1, updated_by: 1 },
       { uqc: 'NOS', description: 'Numbers', created_by: 1, updated_by: 1 },
       { uqc: 'KGS', description: 'Kilograms', created_by: 1, updated_by: 1 },

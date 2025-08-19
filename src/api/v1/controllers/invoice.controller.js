@@ -1,4 +1,4 @@
-const { projectPaths } = require("../../../config/constants");
+const { projectPaths, errorCodes } = require("../../../config/constants");
 const { sampleInvoiceData } = require("./sampleInvoiceData");
 const path = require('path')
 const ejs = require('ejs')
@@ -6,6 +6,9 @@ const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
 const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById } = require("../models/invoice.model");
+const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
+const { default: Decimal } = require("decimal.js");
+const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
@@ -54,6 +57,57 @@ const getInvoiceById = asyncHandler(async (req, res) => {
 const createInvoice = asyncHandler(async (req, res) => {
     const { invoice, items, billingAddress, shippingAddress } = req.body;
 
+    // Get all gst slabs
+    const gstSlabResult = await fetchGSTSlabs() ?? [];
+
+    // Convert gst slabs to key-value pairs for easy access
+    const gstSlabs = gstSlabResult.reduce((acc, item) => {
+        acc[item.key] = item;
+        return acc;
+    }, {});
+
+    const invoiceItemsCalculation = items.map(item => {
+        const qty = new Decimal(item.qty || 0);
+        const rate = new Decimal(item.rate || 0);
+        const amount = qty.times(rate);
+        const gstRate = new Decimal(gstSlabs[item.gstSlabId].gst_rate || 0);
+        const discountPercent = new Decimal(item.discountPercent || 0);
+        const discountAmount = new Decimal(item.discountAmount || 0);
+        const discount = calculateDiscount(amount, discountAmount, discountPercent);
+
+        return {
+            quantity: qty,
+            rate: rate,
+            gstRate: gstRate,
+            discount: discount,
+        }
+    })
+
+    // 1. Recalculate totals
+    const invoiceCalculation = calculateInvoiceTotals(invoiceItemsCalculation, invoice.hasGst);
+
+    const frontendTotals = {
+        discountTotal: invoice.discountAmount,
+        taxableTotal: invoice.taxableAmount,
+        gstTotal: new Decimal(invoice.cgst || 0).plus(invoice.sgst || 0).plus(invoice.igst || 0).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        grandTotal: invoice.total
+    }
+
+    const backendTotals = {
+        discountTotal: invoiceCalculation.discountAmount,
+        taxableTotal: invoiceCalculation.taxableAmount,
+        gstTotal: invoiceCalculation.gstTotal,
+        grandTotal: invoiceCalculation.total
+    }
+
+    // 2. Compare with frontend values
+    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+
+    // 3. If mismatch exceeds tolerance, throw error
+    if (mismatches.length > 0) {
+        throw new ApiError({ statusCode: 400, errorCode: ERROR_CODES.BAD_REQUEST, message: 'Invoice totals mismatch beyond acceptable tolerance' })
+    }
+
     // Create invoice
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo,
@@ -66,21 +120,37 @@ const createInvoice = asyncHandler(async (req, res) => {
         has_challan: invoice.hasChallan,
         has_po: invoice.hasPo,
         has_eway_bill: invoice.hasEwayBill,
-        sub_total: invoice.subTotal,
-        discount_percent: invoice.discountPercent,
-        discount_amount: invoice.discountAmount,
-        taxable_amount: invoice.taxableAmount,
-        cgst: invoice.cgst,
-        sgst: invoice.sgst,
-        igst: invoice.igst,
-        total: invoice.total,
-        round_off: invoice.roundOff,
-        other: invoice.other,
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        total: new Decimal(invoice.total).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        other: new Decimal(invoice.other).toDecimalPlaces(2, Decimal.ROUND_DOWN),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
     };
 
-    const invoiceItems = { ...items }
+    // Prepare invoice items
+    const invoiceItems = items.map(item => ({
+        description: item.description,
+        hsn_sac_code: item.hsnSacCode,
+        qty: item.qty,
+        item_unit_id: item.gstUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        gst_slab_id: item.gstSlabId,
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        igst: new Decimal(item.igst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        total: new Decimal(item.total).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+    }));
+
     const billing = { ...billingAddress };
     const shipping = { ...shippingAddress };
 
@@ -107,6 +177,57 @@ const updateInvoice = asyncHandler(async (req, res) => {
     const { invoiceId } = req.params;
     const { invoice, items, billingAddress, shippingAddress } = req.body;
 
+    // Get all gst slabs
+    const gstSlabResult = await fetchGSTSlabs() ?? [];
+
+    // Convert gst slabs to key-value pairs for easy access
+    const gstSlabs = gstSlabResult.reduce((acc, item) => {
+        acc[item.key] = item;
+        return acc;
+    }, {});
+
+    const invoiceItemsCalculation = items.map(item => {
+        const qty = new Decimal(item.qty || 0);
+        const rate = new Decimal(item.rate || 0);
+        const amount = qty.times(rate);
+        const gstRate = new Decimal(gstSlabs[item.gstSlabId].gst_rate || 0);
+        const discountPercent = new Decimal(item.discountPercent || 0);
+        const discountAmount = new Decimal(item.discountAmount || 0);
+        const discount = calculateDiscount(amount, discountAmount, discountPercent);
+
+        return {
+            quantity: qty,
+            rate: rate,
+            gstRate: gstRate,
+            discount: discount,
+        }
+    })
+
+    // 1. Recalculate totals
+    const invoiceCalculation = calculateInvoiceTotals(invoiceItemsCalculation, invoice.hasGst);
+
+    const frontendTotals = {
+        discountTotal: invoice.discountAmount,
+        taxableTotal: invoice.taxableAmount,
+        gstTotal: new Decimal(invoice.cgst || 0).plus(invoice.sgst || 0).plus(invoice.igst || 0).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        grandTotal: invoice.total
+    }
+
+    const backendTotals = {
+        discountTotal: invoiceCalculation.discountAmount,
+        taxableTotal: invoiceCalculation.taxableAmount,
+        gstTotal: invoiceCalculation.gstTotal,
+        grandTotal: invoiceCalculation.total
+    }
+
+    // 2. Compare with frontend values
+    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+
+    // 3. If mismatch exceeds tolerance, throw error
+    if (mismatches.length > 0) {
+        throw new ApiError({ statusCode: 400, errorCode: ERROR_CODES.BAD_REQUEST, message: 'Invoice totals mismatch beyond acceptable tolerance' })
+    }
+
     // Update invoice
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo,
@@ -119,21 +240,36 @@ const updateInvoice = asyncHandler(async (req, res) => {
         has_challan: invoice.hasChallan,
         has_po: invoice.hasPo,
         has_eway_bill: invoice.hasEwayBill,
-        sub_total: invoice.subTotal,
-        discount_percent: invoice.discountPercent,
-        discount_amount: invoice.discountAmount,
-        taxable_amount: invoice.taxableAmount,
-        cgst: invoice.cgst,
-        sgst: invoice.sgst,
-        igst: invoice.igst,
-        total: invoice.total,
-        round_off: invoice.roundOff,
-        other: invoice.other,
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        total: new Decimal(invoice.total).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        other: new Decimal(invoice.other).toDecimalPlaces(2, Decimal.ROUND_DOWN),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
     };
 
-    const invoiceItems = { ...items }
+    const invoiceItems = items.map(item => ({
+        description: items.description,
+        hsn_sac_code: items.hsnSacCode,
+        qty: items.qty,
+        item_unit_id: items.gstUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        gst_slab_id: item.gstSlabId,
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        igst: new Decimal(item.igst).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        total: new Decimal(item.total).toDecimalPlaces(2, Decimal.ROUND_DOWN)
+    }));
+
     const billing = { ...billingAddress };
     const shipping = { ...shippingAddress };
 
@@ -157,6 +293,67 @@ const updateInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+// Utility: compare with tolerance
+const isWithinTolerance = (value1, value2) => {
+    return Math.abs(value1 - value2) <= TOLERANCE;
+}
+
+const compareWithFrontendValues = (frontendTotals, backendTotals) => {
+    // 2. Compare with frontend values
+    const mismatches = [];
+    for (const key of Object.keys(frontendTotals)) {
+        if (!isWithinTolerance(frontendTotals[key], backendTotals[key])) {
+            mismatches.push({ field: key, frontend: frontendTotals[key], backend: backendTotals[key] });
+        }
+    }
+
+    return mismatches;
+}
+
+// Invoice calculation function
+const calculateInvoiceTotals = (items, hasGst) => {
+    let taxableTotal = new Decimal(0);
+    let gstTotal = new Decimal(0);
+    let discountTotal = new Decimal(0);
+
+    items.forEach(item => {
+        const quantity = new Decimal(item.quantity);
+        const rate = new Decimal(item.rate);
+        const amount = quantity.times(rate);
+        const discount = new Decimal(item.discount || 0);
+        const total = amount.minus(discount);
+
+        discountTotal = discountTotal.plus(discount);
+        taxableTotal = taxableTotal.plus(amount);
+
+        if (hasGst && item.gstRate) {
+            const gstAmt = amount.times(new Decimal(item.gstRate).dividedBy(100));
+            gstTotal = gstTotal.plus(gstAmt);
+        }
+    });
+
+    const grandTotal = taxableTotal.plus(gstTotal);
+
+    // Return as numbers rounded to 2 decimal places
+    return {
+        discountTotal: new Decimal(discountTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        taxableTotal: new Decimal(taxableTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        gstTotal: new Decimal(gstTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+        grandTotal: new Decimal(grandTotal).toDecimalPlaces(2, Decimal.ROUND_DOWN),
+    };
+}
+
+// Utility: calculate discount
+const calculateDiscount = (total, discountAmount, discountPercent) => {
+    if (discountAmount && discountAmount > 0) {
+        return discountAmount;
+    } else if (discountPercent && discountPercent > 0) {
+        return (total * discountPercent) / 100;
+    } else {
+        return 0;
+    }
+}
+
 // Delete invoice by ID
 const deleteInvoice = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
@@ -174,6 +371,308 @@ const deleteInvoice = asyncHandler(async (req, res) => {
         new ApiResponse({ statusCode: 200, data: [], message: 'Invoice deleted successfully.' })
     );
 });
+
+// Prepare invoice PDF JSON data
+const prepareInvoicePdfJsonData = async (invoice) => {
+    if (!invoice || !invoice.items) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid invoice data while generating pdf' });
+    }
+
+    const invoiceData = {
+        id: 1,
+        customerName: 'John Doe',
+        company: {
+            logo: 'https://www.unilever.com/Images/unilever-logo_tcm244-500123_w600.png',
+            name: 'Hindustan Uniliver Test',
+            gstNo: '27ABCDE1234F1Z5',
+            address: '64, Whilefield Main Rd, Palm Meadows, White field <br> Bengaluru KARNATAKA, 560066',
+            mobile: '+91 99800 12345',
+            email: 'info@unilever.com'
+        },
+        customer: {
+            name: 'Hein Schumacher',
+            gstNo: '27ABCDE1234F1Z5',
+            billingAddress: 'Marathahalli - Sarjapur Outer Ring Road, Kadabeesanahalli, <br> Bengaluru, Karnataka, 560087',
+            shippingAddress: 'Marathahalli - Sarjapur Outer Ring Road, Kadabeesanahalli test, <br> Bengaluru, Karnataka, 560087',
+            mobile: '9890241776',
+            email: 'hein.schumacher@unilever.com'
+        },
+        invoiceDetails: {
+            invoiceNo: "INV-11",
+            invoiceDate: "15 JUN 2023",
+            placeOfSupply: "29-KARNATAKA",
+            dueDate: "15 JUN 2023",
+            challanNo: "01, 02, 03, 04, 05",
+            challanDate: "15 JUN 2023",
+            poNumber: "PO123456",
+            poDate: "20 JUN 2023",
+            ewayBillNo: "PO123456",
+            modeOfPayment: "CASH / ONLINE"
+        },
+        items: [
+            {
+                id: 1,
+                name: 'Colgate 200 gm',
+                hsnAndSacCode: '33061020',
+                taxPercentage: '18',
+                qty: '5 NOS',
+                unit: 'NOS',
+                price: '64.41',
+                totalAmount: '322.03'
+            },
+            {
+                id: 2,
+                name: 'Surf Excel Easy Wash Detergent Powder 1kg',
+                hsnAndSacCode: '340119',
+                taxPercentage: '18',
+                qty: '2',
+                unit: 'NOS',
+                price: '126.27',
+                totalAmount: '252.54'
+            },
+            {
+                id: 3,
+                name: 'Dove Soap',
+                hsnAndSacCode: '34011919',
+                taxPercentage: '18',
+                qty: '10',
+                unit: 'NOS',
+                price: '33.05',
+                totalAmount: '330.51'
+            },
+            {
+                id: 4,
+                name: 'Head & Shoulders Shampoo',
+                hsnAndSacCode: '3304',
+                taxPercentage: '18',
+                qty: '5',
+                unit: 'NOS',
+                price: '253.39',
+                totalAmount: '1266.95'
+            },
+        ],
+        subTotal: [
+            { name: 'Discount 2.0%', totalAmount: '2172.03' },
+            { name: 'Taxable Amount', totalAmount: '2172.03' },
+            { name: 'CGST', totalAmount: '195.49' },
+            { name: 'SGST', totalAmount: '195.49' },
+        ],
+        total: {
+            qty: '22.000',
+            totalAmount: '₹2,563.00',
+            totalAmountInWords: 'Two Thousand, Five Hundred and Sixty Three Rupees Only.'
+        },
+        taxDetail: {
+            items: [
+                {
+                    taxableValue: '322.03',
+                    centralTaxPercentage: '9%',
+                    centralTaxAmount: '28.98',
+                    stateTaxPercentage: '9%',
+                    stateTaxAmount: '28.98',
+                    totalTaxAmount: '57.97'
+                },
+                {
+                    taxableValue: '252.54',
+                    centralTaxPercentage: '9%',
+                    centralTaxAmount: '22.73',
+                    stateTaxPercentage: '9%',
+                    stateTaxAmount: '22.73',
+                    totalTaxAmount: '45.46'
+                },
+                {
+                    taxableValue: '330.51',
+                    centralTaxPercentage: '9%',
+                    centralTaxAmount: '29.75',
+                    stateTaxPercentage: '9%',
+                    stateTaxAmount: '29.75',
+                    totalTaxAmount: '59.49'
+                },
+                {
+                    taxableValue: '1266.95',
+                    centralTaxPercentage: '9%',
+                    centralTaxAmount: '114.03',
+                    stateTaxPercentage: '9%',
+                    stateTaxAmount: '114.03',
+                    totalTaxAmount: '228.05'
+                },
+            ],
+            total: {
+                taxableValue: '2172.03',
+                centralTaxAmount: '195.49',
+                stateTaxAmount: '195.49',
+                totalTaxAmount: '390.97'
+            }
+        },
+        bank: {
+            bankName: 'YES BANK',
+            accountNumber: '66789999222445',
+            ifscCode: 'YESBBIN4567',
+            branch: 'Kodihalli'
+        },
+        termsAndConditions: [
+            '1. Goolds once sold cannot be taken back or exchanged.',
+            '2. We are not the manufacturers, company will stand for warranty as per their terms and conditions.',
+            '3. Interest @24% p.a. will be charged for uncleared bill beyond 15 days.',
+            '4. Subject to local jurisdiction.'
+        ],
+        emptyRowNeeded: 0,
+        emptyRowHeightNeededInPx: 0,
+    };
+
+    // {
+    //     "invoice_id": 12,
+    //     "invoice_no": "INV-0012",
+    //     "invoice_date": "2025-08-10",
+    //     "due_days": 30,
+    //     "due_date": "2025-09-09",
+    //     "firm_id": 5,
+    //     "customer_name": "ABC Traders",
+    //     "has_gst": true,
+    //     "gst_number": "27ABCDE1234F1Z5",
+
+    //     "billing_email": "billing@abc.com",
+    //     "billing_phone_number": "9876543210",
+    //     "billing_website": "www.abc.com",
+    //     "billing_address": "123 Market Street",
+    //     "billing_city_id": 22,
+    //     "billing_state_id": 12,
+    //     "billing_pincode": "422101",
+
+    //     "shipping_email": "shipping@abc.com",
+    //     "shipping_phone_number": "9876540000",
+    //     "shipping_address": "456 Industrial Area",
+    //     "shipping_city_id": 45,
+    //     "shipping_state_id": 12,
+    //     "shipping_pincode": "422105",
+
+    //     "has_challan": true,
+    //     "has_po": false,
+    //     "has_eway_bill": true,
+
+    //     "sub_total": 5000.00,
+    //     "discount_percent": 10.00,
+    //     "discount_amount": 500.00,
+    //     "taxable_amount": 4500.00,
+    //     "cgst": 405.00,
+    //     "sgst": 405.00,
+    //     "igst": 0.00,
+    //     "total": 5310.00,
+    //     "round_off": -0.20,
+    //     "other": 0.00,
+
+    //     "payment_status_id": 1,
+    //     "payment_mode_id": 2
+    //     }
+
+    const [states, cities] = await Promise.all([
+        fetchStates(),
+        fetchAllCities()
+    ]);
+
+    const stateMap = states.reduce((acc, state) => {
+        acc[state.id] = state;
+        return acc;
+    }, {});
+
+    const cityMap = cities.reduce((acc, city) => {
+        acc[city.id] = city;
+        return acc;
+    }, {});
+
+
+    const {items: invoiceItems} = invoice;
+    const customerBillingAddress = `${invoice.billing_address || ''} <br> ${cityMap[invoice.billing_city_id]?.name || ''}, ${stateMap[invoice.billing_state_id]?.name || ''}, ${invoice.billing_pincode || ''}`;
+    const customerShippingAddress = `${invoice.shipping_address || ''} <br> ${cityMap[invoice.shipping_city_id]?.name || ''}, ${stateMap[invoice.shipping_state_id]?.name || ''}, ${invoice.shipping_pincode || ''}`;
+    const placeOfSupply = stateMap[invoice.billing_state_id]?.gst_place_of_supply || '';
+    const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : ''
+    const invoiceDate = invoice.invoice_date ? moment(invoice.invoice_date).format("DD MMM YYYY").toUpperCase() : '';
+    // const challanDate = invoice.challan_date ? moment(invoice.challan_date).format("DD MMM YYYY").toUpperCase() : '';
+
+    const invoiceData = {
+        id: invoice.id,
+        customerName: invoice.customerName,
+        company: {
+            logo: invoice.company_logo,
+            name: invoice.company_name,
+            gstNo: invoice.gst_number,
+            address: invoice.company_address,
+            mobile: invoice.company_phone_number,
+            email: invoice.company_email
+        },
+        customer: {
+            name: invoice.customer_name,
+            gstNo: invoice.gst_number,
+            billingAddress: customerBillingAddress,
+            shippingAddress: customerShippingAddress,
+            mobile: invoice.billing_phone_number,
+            email: invoice.billing_email,
+        },
+        invoiceDetails: {
+            invoiceNo: invoice.invoice_no,
+            invoiceDate: invoiceDate,
+            placeOfSupply: placeOfSupply,
+            dueDate: dueDate,
+            challanNo: invoice.challan || '',
+            challanDate: '15 JUN 2023',
+            poNumber: invoice.po || '',
+            poDate: '20 JUN 2023',
+            ewayBillNo: invoice.ewaybill || '',
+            modeOfPayment: invoice.payment_label || ''
+        },
+        items: [
+            {
+                id: invoiceItems.id,
+                name: invoiceItems.description || '',
+                hsnAndSacCode: invoiceItems.hsn_sac_code || '',
+                taxPercentage: `${invoiceItems.gst_rate || 0}%`,
+                qty: invoiceItems.quantity || '',
+                unit: invoiceItems.uqc || '',
+                price: invoiceItems.rate || '',
+                totalAmount: invoiceItems.amount || ''
+            }
+        ],
+        subTotal: [
+            {
+                name: null,
+                totalAmount: null
+            }
+        ],
+        total: {
+            qty: null,
+            totalAmount: null,
+            totalAmountInWords: null
+        },
+        taxDetail: {
+            items: [
+                {
+                    taxableValue: null,
+                    centralTaxPercentage: null,
+                    centralTaxAmount: null,
+                    stateTaxPercentage: null,
+                    stateTaxAmount: null,
+                    totalTaxAmount: null
+                }
+            ],
+            total: {
+                taxableValue: null,
+                centralTaxAmount: null,
+                stateTaxAmount: null,
+                totalTaxAmount: null
+            }
+        },
+        bank: {
+            bankName: null,
+            accountNumber: null,
+            ifscCode: null,
+            branch: null
+        },
+        termsAndConditions: [],
+        emptyRowNeeded: null,
+        emptyRowHeightNeededInPx: null
+    };
+
+}
 
 // Generate invoice PDF
 const generateInvoicePDF = async (invoiceData, puppeteer) => {

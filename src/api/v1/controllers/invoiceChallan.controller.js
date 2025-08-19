@@ -1,7 +1,9 @@
+const { getContext } = require("../helpers/requestContext");
 const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta } = require("../models/invoiceChallan.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
+const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice challans with pagination and search
 const getAllInvoiceChallans = asyncHandler(async (req, res) => {
@@ -70,6 +72,7 @@ const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create firm
 const createInvoiceChallan = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const body = req.body;
 
     // Create firm
@@ -78,7 +81,7 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced
     }
     const challanId = await insertInvoiceChallan(challanData);
@@ -94,6 +97,8 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
 });
 
 const updateInvoiceChallan = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
+
     const challanId = req.params.id;
     const body = req.body;
 
@@ -102,7 +107,7 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced,
     };
 

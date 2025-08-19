@@ -38,16 +38,34 @@ const fetchPaymentModes = async () => {
 // Fetch GST slabs
 const fetchGSTSlabs = async () => {
     try {
-        const ewayBill = await db('gst_slabs')
+        const gstSlab = await db('gst_slabs')
             .select('id', 'gst_rate', 'description', 'cgst_rate', 'sgst_rate', 'igst_rate')
             .where({ is_active: true })
             .orderBy('gst_rate', 'asc');
 
-        return ewayBill;
+        return gstSlab;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while fetching gst slabs.',
+        });
+    }
+};
+
+// Fetch item units
+const fetchProductUnits = async () => {
+    try {
+        // Note: Maps to `item_units` table in DB
+        const productUnit = await db('item_units')
+            .select('id', 'uqc', 'description')
+            .where({ is_active: true })
+            .orderBy('uqc', 'asc');
+
+        return productUnit;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching product units.',
         });
     }
 };
@@ -86,10 +104,29 @@ const fetchCities = async (stateId) => {
     }
 };
 
+// Fetch all cities
+const fetchAllCities = async (stateId) => {
+    try {
+        const cities = await db('city')
+            .select('id', 'name')
+            .where({ is_active: true })
+            .orderBy('name', 'asc');
+
+        return cities;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching cities.',
+        });
+    }
+};
+
 module.exports = {
     fetchPaymentStatuses,
     fetchPaymentModes,
     fetchGSTSlabs,
+    fetchProductUnits,
     fetchStates,
-    fetchCities
+    fetchCities,
+    fetchAllCities
 };

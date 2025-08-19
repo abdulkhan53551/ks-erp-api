@@ -98,6 +98,7 @@ const fetchInvoiceById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
+        // 1. Fetch invoice master
         const result = await db('invoices AS I')
             .select(
                 'I.id AS invoice_id',
@@ -105,7 +106,21 @@ const fetchInvoiceById = async (id) => {
                 'I.invoice_date',
                 'I.due_days',
                 'I.due_date',
-                'I.firm_id',
+                'F.firm_id',
+                'F.firm_name AS company_name',
+                'F.firm_type',
+                'F.logo_url AS company_logo',
+                'F.gstin AS firm_gstin',
+                'F.invoice_prefix',
+                'F.notes_footer',
+                'UC.entity_type AS company_entity_type',
+                'UC.email AS company_email',
+                'UC.phone_number AS company_phone_number',
+                'UC.website AS company_website',
+                'UC.address_line1 AS company_address',
+                'UC.website AS company_website',
+                'UC.website AS company_website',
+                'UC.pincode AS company_pincode',
                 'I.customer_name',
                 'I.has_gst',
                 'I.gst_number',
@@ -140,10 +155,31 @@ const fetchInvoiceById = async (id) => {
             )
             .leftJoin('invoice_contacts AS ICB', 'I.billing_address_id', 'ICB.id')
             .leftJoin('invoice_contacts AS ICS', 'I.shipping_address_id', 'ICS.id')
+            .leftJoin('user_contacts AS UC', function () {
+                this.on('F.id', '=', 'UC.entity_id')
+                    .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
+            })
+            .innerJoin('firm AS F', 'I.firm_id', 'F.id')
+            .innerJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.id')
             .where('I.is_active', true)
+            .andWhere('FBA.is_active', true)
             .andWhere('I.id', id)
             .andWhere('I.firm_id', firmId)
             .first();
+
+        // 2. Fetch invoice items (detail)
+        const items = await db('invoice_items AS II')
+            .select('II.id', 'II.description', 'II.hsn_sac_code', 'IU.uqc', 'II.quantity', 'II.rate', 'GS.gst_rate', 'II.amount')
+            .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
+            .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
+            .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
+            .where('I.is_active', true)
+            .where('I.id', id);
+
+        // 3. Attach items to invoice
+        if (result) {
+            result.items = items;
+        }
 
         return result || null;
     } catch (err) {
@@ -161,11 +197,17 @@ const insertInvoice = async (data) => {
         // 1. Insert master data
         const invoiceId = await insertInvoiceMaster(trx, masterData);
 
-        // 2. Insert items
-        await insertInvoiceItems(trx, invoiceId, items);
+        // // 2. Insert items
+        // await insertInvoiceItems(trx, invoiceId, items);
 
-        // 3. Insert billing and shipping addresses
-        await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
+        // // 3. Insert billing and shipping addresses
+        // await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
+
+        // 2 & 3. Run in parallel
+        await Promise.all([
+            insertInvoiceItems(trx, invoiceId, items),
+            insertInvoiceAddresses(trx, invoiceId, billing, shipping)
+        ]);
         return invoiceId;
     });
 }
@@ -246,11 +288,17 @@ const updateInvoiceById = async (data) => {
         // 1. Update master
         await updateInvoiceMaster(trx, invoiceId, masterData);
 
-        // 2. Update items (smart delete/insert/update)
-        await updateInvoiceItems(trx, invoiceId, items);
+        // // 2. Update items (smart delete/insert/update)
+        // await updateInvoiceItems(trx, invoiceId, items);
 
-        // 3. Insert billing and shipping addresses
-        await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
+        // // 3. Insert billing and shipping addresses
+        // await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
+
+        // 2 & 3. Run in parallel
+        await Promise.all([
+            updateInvoiceItems(trx, invoiceId, items),
+            insertInvoiceAddresses(trx, invoiceId, billing, shipping)
+        ]);
 
         return invoiceId;
     });
@@ -407,6 +455,38 @@ const fetchEwayBillsForInvoice = async (invoiceId) => {
     }
 };
 
+// Fetch challans, purchase orders and eway bills for invoice
+const fetchChallanPOEwayBillsForInvoice = async (invoiceId) => {
+    try {
+        if (!invoiceId) return;
+
+        const result = await db('invoice_challans as ic')
+            .select(
+                'i.invoice_id',
+                db.raw('STRING_AGG(ic.challan_no::text, \',\') as challan'),
+                'po.po_no as po',
+                'eb.ewaybill_no as ewaybill',
+                'PM.code as payment_code',
+                'PM.label as payment_label'
+            )
+            .leftJoin('invoices as i', 'i.id', 'ic.invoice_id')
+            .leftJoin('purchase_orders as po', 'i.id', 'po.invoice_id')
+            .leftJoin('eway_bills as eb', 'i.id', 'eb.invoice_id')
+            .leftJoin('payment_modes as PM', 'i.payment_mode_id', 'PM.id')
+            .where('i.id', invoiceId)
+            .andWhere('i.is_active', true)
+            .groupBy('i.id', 'po.po_no', 'eb.ewaybill_no');
+
+
+        return result;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching challans, purchase orders and eway bills for invoice.',
+        });
+    }
+};
+
 module.exports = {
     fetchAllInvoice,
     fetchInvoiceMeta,
@@ -416,5 +496,6 @@ module.exports = {
     deleteInvoiceById,
     fetchChallansForInvoice,
     fetchPurchaseOrdersForInvoice,
-    fetchEwayBillsForInvoice
+    fetchEwayBillsForInvoice,
+    fetchChallanPOEwayBillsForInvoice
 };

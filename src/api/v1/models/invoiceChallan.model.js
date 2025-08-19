@@ -120,6 +120,8 @@ const insertInvoiceChallan = async (data) => {
         const [result] = await db('invoice_challans').insert(data).returning('id');
         return result?.id || null;
     } catch (err) {
+        console.log('Error inserting invoice challan:', err);
+        
         if (err.code === '23505') {
             switch (err.constraint) {
                 case 'unique_firm_challan_no':

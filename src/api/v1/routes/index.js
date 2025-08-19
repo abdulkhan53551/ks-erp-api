@@ -5,6 +5,7 @@ const firmRoutes = require('./firm.routes')
 const invoiceChallan = require('./invoiceChallan.routes')
 const purchaseOrder = require('./purchaseOrder.routes')
 const ewaybill = require('./ewaybill.routes')
+const masters = require('./masters.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
@@ -19,7 +20,6 @@ const { verifyAccessToken } = require('../middlewares/auth.middleware');
 // 🔓 Public routes (no auth needed)
 router.use('/auth', authRoutes)
 router.use('/firm', firmRoutes)
-router.use('/invoice-challan', invoiceChallan)
 router.use('/purchase-order', purchaseOrder)
 router.use('/ewaybill', ewaybill)
 
@@ -29,6 +29,8 @@ router.use(verifyAccessToken);
 router.use('/users', userRoutes)
 router.use('/demo', demoRoutes)
 router.use('/products', productRoutes)
+router.use('/masters', masters)
+router.use('/invoice-challan', invoiceChallan)
 
 module.exports = router;
 // exports.products = productRoutes;
