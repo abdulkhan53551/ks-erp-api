@@ -6,7 +6,7 @@ const path = require('path')
 const puppeteer = require('puppeteer');
 const { projectPaths } = require('./config/constants')
 const fs = require('fs')
-const { generateInvoicePDF } = require('./api/v1/controllers/invoice.controller')
+const { generateInvoicePDF, prepareInvoicePdfJsonData } = require('./api/v1/controllers/invoice.controller')
 const dbTransaction = require('./api/v1/middlewares/dbTransaction.middleware')
 const setUserContext = require('./api/v1/middlewares/setUserContext')
 const routes = require('./api/v1/routes/index')
@@ -42,7 +42,7 @@ app.get('/generate-pdf', async (req, res, next) => {
       ...invoiceChallanPOEwaybillData
     }
 
-    // const invoicePdfJsonData = prepareInvoicePdfJsonData(invoiceData);
+    const invoicePdfJsonData = prepareInvoicePdfJsonData(invoiceData);
 
 
     // Get the path to the generated PDF file
@@ -51,7 +51,7 @@ app.get('/generate-pdf', async (req, res, next) => {
 
 
     // Generate the PDF
-    await generateInvoicePDF("", puppeteer); // generates the PDF and saves it
+    await generateInvoicePDF(invoicePdfJsonData, puppeteer); // generates the PDF and saves it
 
     // Set the headers for the response as a PDF file
     res.setHeader('Content-Type', 'application/pdf');

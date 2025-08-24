@@ -151,7 +151,11 @@ const fetchInvoiceById = async (id) => {
                 'I.round_off',
                 'I.other',
                 'I.payment_status_id',
-                'I.payment_mode_id'
+                'I.payment_mode_id',
+                'FBA.bank_name',
+                'FBA.account_number',
+                'FBA.ifsc_code',
+                'FBA.branch_name'
             )
             .leftJoin('invoice_contacts AS ICB', 'I.billing_address_id', 'ICB.id')
             .leftJoin('invoice_contacts AS ICS', 'I.shipping_address_id', 'ICS.id')
@@ -160,7 +164,7 @@ const fetchInvoiceById = async (id) => {
                     .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
             })
             .innerJoin('firm AS F', 'I.firm_id', 'F.id')
-            .innerJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.id')
+            .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.id')
             .where('I.is_active', true)
             .andWhere('FBA.is_active', true)
             .andWhere('I.id', id)
