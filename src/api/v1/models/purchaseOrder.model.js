@@ -4,9 +4,9 @@ const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 
 // Fetch all purchase order
-const fetchAllPurchaseOrder = async (req, res) => {
+const fetchAllPurchaseOrder = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '' } = req.query;
+        const { page = 1, pageSize = 10, search = '' } = query;
 
         const baseQuery = db('purchase_orders AS PO')
             .select(
@@ -120,11 +120,17 @@ const insertPurchaseOrder = async (data) => {
         const [result] = await db('purchase_orders').insert(data).returning('id');
         return result?.id || null;
     } catch (err) {
-        if (err.code === '23505') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This PO is already created.',
-            });
+        switch (err.constraint) {
+            case 'purchase_orders_firm_id_po_no_unique':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This PO is already created.',
+                });
+            case 'purchase_orders_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create purchase order.',
+                });
         }
         throw new ApiError({
             statusCode: 500,
@@ -139,11 +145,17 @@ const updatePurchaseOrderById = async (id, data) => {
         const affectedRows = await db('purchase_orders').where({ id }).update(data);
         return affectedRows;
     } catch (err) {
-        if (err.code === '23505') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This PO is already created.',
-            });
+        switch (err.constraint) {
+            case 'purchase_orders_firm_id_po_no_unique':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This PO is already created.',
+                });
+            case 'purchase_orders_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create purchase order.',
+                });
         }
         throw new ApiError({
             statusCode: 500,
@@ -155,12 +167,15 @@ const updatePurchaseOrderById = async (id, data) => {
 // Delete purchase order by ID
 const deletePurchaseOrderById = async (id, isPermanentDelete) => {
     try {
+        // Hard delete
         if (isPermanentDelete) {
             const result = await db('purchase_orders').where({ id: id }).del();
             return result > 0;
         }
 
-        return await db('purchase_orders').where({ id }).del();
+        // Soft delete
+        const updated = await db('purchase_orders').update({ is_active: false }).where({ id });
+        return updated;
     } catch (err) {
         throw new ApiError({
             statusCode: 500,

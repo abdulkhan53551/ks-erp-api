@@ -20,8 +20,6 @@ const { verifyAccessToken } = require('../middlewares/auth.middleware');
 // 🔓 Public routes (no auth needed)
 router.use('/auth', authRoutes)
 router.use('/firm', firmRoutes)
-router.use('/purchase-order', purchaseOrder)
-router.use('/ewaybill', ewaybill)
 
 // 🔐 Protected routes (require valid access token)
 router.use(verifyAccessToken);
@@ -31,6 +29,8 @@ router.use('/demo', demoRoutes)
 router.use('/products', productRoutes)
 router.use('/masters', masters)
 router.use('/invoice-challan', invoiceChallan)
+router.use('/purchase-order', purchaseOrder)
+router.use('/ewaybill', ewaybill)
 
 module.exports = router;
 // exports.products = productRoutes;

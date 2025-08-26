@@ -1,5 +1,5 @@
 const { getContext } = require("../helpers/requestContext");
-const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta } = require("../models/invoiceChallan.model");
+const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta, fetchAllInvoiceChallans } = require("../models/invoiceChallan.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
@@ -10,6 +10,10 @@ const getAllInvoiceChallans = asyncHandler(async (req, res) => {
     const { page = 1, pageSize = 10, search = '' } = req.query;
 
     const challans = await fetchAllInvoiceChallans({ page, pageSize, search });
+
+    if (!challans.length) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice challan found.' });
+    }
 
     return res.status(200).json(
         new ApiResponse({
@@ -23,6 +27,10 @@ const getAllInvoiceChallans = asyncHandler(async (req, res) => {
 // Fetch invoice challan meta data for pagination
 const getInvoiceChallanMeta = asyncHandler(async (req, res) => {
     const result = await fetchInvoiceChallanMeta(req.query);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice challans found' });
+    }
 
     return res
         .status(200)
@@ -50,11 +58,10 @@ const getInvoiceChallanById = asyncHandler(async (req, res) => {
 
 // Fetch invoice challans by invoice ID
 const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
-    const invoiceId = req.params.invoice_id;
-
+    const invoiceId = req.params.invoiceId;
     const challans = await fetchInvoiceChallansByInvoiceId(invoiceId);
 
-    if (!challans) {
+    if (!challans.length) {
         throw new ApiError({
             statusCode: 404,
             message: 'No challans found for the given invoice ID.',

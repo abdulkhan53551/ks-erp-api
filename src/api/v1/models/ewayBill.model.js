@@ -122,12 +122,19 @@ const insertEwayBill = async (data) => {
         const [result] = await db('eway_bills').insert(data).returning('id');
         return result?.id || null;
     } catch (err) {
-        if (err.code === '23505') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This eway bill is already created.',
-            });
+        switch (err.constraint) {
+            case 'eway_bills_eway_bill_no_unique':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This eway bill is already created.',
+                });
+            case 'eway_bills_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create eway bill.',
+                });
         }
+
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while inserting eway bill data.',
@@ -141,11 +148,17 @@ const updateEwayBillById = async (id, data) => {
         const affectedRows = await db('eway_bills').where({ id }).update(data);
         return affectedRows;
     } catch (err) {
-        if (err.code === '23505') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This eway bill is already created.',
-            });
+        switch (err.constraint) {
+            case 'eway_bills_eway_bill_no_unique':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This eway bill is already created.',
+                });
+            case 'eway_bills_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create eway bill.',
+                });
         }
         throw new ApiError({
             statusCode: 500,
@@ -157,12 +170,15 @@ const updateEwayBillById = async (id, data) => {
 // Delete eway bill by ID
 const deleteEwayBillById = async (id, isPermanentDelete) => {
     try {
+        // Hard delete
         if (isPermanentDelete) {
             const result = await db('eway_bills').where({ id: id }).del();
             return result > 0;
         }
 
-        return await db('eway_bills').where({ id }).del();
+        // Soft delete
+        const updated = await db('eway_bills').update({ is_active: false }).where({ id });
+        return updated;
     } catch (err) {
         throw new ApiError({
             statusCode: 500,

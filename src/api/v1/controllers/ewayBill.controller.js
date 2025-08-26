@@ -1,3 +1,4 @@
+const { getContext } = require("../helpers/requestContext");
 const { fetchAllEwayBill, fetchEwayBillMeta, fetchEwayBillById, fetchEwayBillByInvoiceId, insertEwayBill, updateEwayBillById, deleteEwayBillById } = require("../models/ewayBill.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
@@ -8,6 +9,10 @@ const getAllEwayBill = asyncHandler(async (req, res) => {
     const { page = 1, pageSize = 10, search = '' } = req.query;
 
     const result = await fetchAllEwayBill({ page, pageSize, search });
+
+    if (!result.length) {
+        throw new ApiError({ statusCode: 404, message: 'No eway bill found.' });
+    }
 
     return res.status(200).json(
         new ApiResponse({
@@ -21,6 +26,10 @@ const getAllEwayBill = asyncHandler(async (req, res) => {
 // Fetch eway bill meta data for pagination
 const getEwayBillMeta = asyncHandler(async (req, res) => {
     const result = await fetchEwayBillMeta(req.query);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'No eway bill found.' });
+    }
 
     return res
         .status(200)
@@ -48,13 +57,13 @@ const getEwayBillById = asyncHandler(async (req, res) => {
 
 // Fetch eway bill by invoice ID
 const getEwayBillByInvoiceId = asyncHandler(async (req, res) => {
-    const invoiceId = req.params.invoice_id;
+    const invoiceId = req.params.invoiceId;
 
     // Fetch all challans for the given invoice ID
     const result = await fetchEwayBillByInvoiceId(invoiceId);
 
     // If no eway bill is found, throw an error
-    if (!result) {
+    if (!result.length) {
         throw new ApiError({
             statusCode: 404,
             message: 'No eway bill found for the given invoice ID.',
@@ -72,16 +81,17 @@ const getEwayBillByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create a new eway bill
 const createEwayBill = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const body = req.body;
 
     // Create eway bill
     const data = {
         invoice_id: body.invoiceId,
-        po_no: body.ewaybillNo,
-        po_date: body.ewaybillDate,
+        eway_bill_no: body.ewaybillNo,
+        eway_bill_date: body.ewaybillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced
     }
     const ewayBillid = await insertEwayBill(data);
@@ -97,16 +107,17 @@ const createEwayBill = asyncHandler(async (req, res) => {
 });
 
 const updateEwayBill = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const ewayId = req.params.id;
     const body = req.body;
 
     const updatedData = {
         invoice_id: body.invoiceId,
-        po_no: body.ewaybillNo,
-        po_date: body.ewaybillDate,
+        eway_bill_no: body.ewaybillNo,
+        eway_bill_date: body.ewaybillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced
     }
 

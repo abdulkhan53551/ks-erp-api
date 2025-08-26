@@ -1,3 +1,4 @@
+const { getContext } = require("../helpers/requestContext");
 const { fetchAllPurchaseOrder, fetchPurchaseOrderById, fetchPurchaseOrderByInvoiceId, insertPurchaseOrder, updatePurchaseOrderById, deletePurchaseOrderById, fetchPurchaseOrderMeta } = require("../models/purchaseOrder.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
@@ -8,6 +9,10 @@ const getAllPurchaseOrder = asyncHandler(async (req, res) => {
     const { page = 1, pageSize = 10, search = '' } = req.query;
 
     const purchaseOrder = await fetchAllPurchaseOrder({ page, pageSize, search });
+
+    if (!purchaseOrder.length) {
+        throw new ApiError({ statusCode: 404, message: 'No purchase order found.' });
+    }
 
     return res.status(200).json(
         new ApiResponse({
@@ -21,6 +26,10 @@ const getAllPurchaseOrder = asyncHandler(async (req, res) => {
 // Fetch purchase order meta data for pagination
 const getPurchaseOrderMeta = asyncHandler(async (req, res) => {
     const result = await fetchPurchaseOrderMeta(req.query);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'No purchase order found.' });
+    }
 
     return res
         .status(200)
@@ -48,13 +57,13 @@ const getPurchaseOrderById = asyncHandler(async (req, res) => {
 
 // Fetch purchase orders by invoice ID
 const getPurchaseOrderByInvoiceId = asyncHandler(async (req, res) => {
-    const invoiceId = req.params.invoice_id;
+    const invoiceId = req.params.invoiceId;
 
     // Fetch all challans for the given invoice ID
     const purchaseOrder = await fetchPurchaseOrderByInvoiceId(invoiceId);
 
     // If no purchase order is found, throw an error
-    if (!purchaseOrder) {
+    if (!purchaseOrder.length) {
         throw new ApiError({
             statusCode: 404,
             message: 'No purchase order found for the given invoice ID.',
@@ -72,15 +81,16 @@ const getPurchaseOrderByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create a new purchase order
 const createPurchaseOrder = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const body = req.body;
 
     // Create purchase order
     const poData = {
         invoice_id: body.invoiceId,
-        po_no: body.po_no,
-        po_date: body.po_date,
+        po_no: body.poNo,
+        po_date: body.poDate,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced
     }
     const challanId = await insertPurchaseOrder(poData);
@@ -96,15 +106,16 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 });
 
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const poId = req.params.id;
     const body = req.body;
 
     const updatedData = {
         invoice_id: body.invoiceId,
-        po_no: body.po_no,
-        po_date: body.po_date,
+        po_no: body.poNo,
+        po_date: body.poDate,
         customer_name: body.customerName,
-        firm_id: body.firmId,
+        firm_id: firmId,
         is_invoiced: body.isInvoiced
     }
 

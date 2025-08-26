@@ -23,7 +23,7 @@ const createInvoiceChallanValidationSchema = {
         customerName: Joi.string().max(255).required(),
         isInvoiced: Joi.boolean().when('invoiceId', {
             is: Joi.number().integer().positive(),
-            then: Joi.valid(true).default(true),
+            then: Joi.boolean().default(false),
             otherwise: Joi.valid(false).default(false)
         })
     }),
@@ -41,7 +41,7 @@ const updateInvoiceChallanValidationSchema = {
         customerName: Joi.string().max(255).required(),
         isInvoiced: Joi.boolean().when('invoiceId', {
             is: Joi.number().integer().positive(),
-            then: Joi.valid(true).default(true),
+            then: Joi.boolean().default(false),
             otherwise: Joi.valid(false).default(false)
         })
     }).min(1),

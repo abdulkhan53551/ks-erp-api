@@ -4,9 +4,9 @@ const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 
 // Fetch all invoice challans
-const fetchAllInvoiceChallans = async (req, res) => {
+const fetchAllInvoiceChallans = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '' } = req.query;
+        const { page = 1, pageSize = 10, search = '' } = query;
 
         const baseQuery = db('invoice_challans AS IC')
             .select(
@@ -120,21 +120,22 @@ const insertInvoiceChallan = async (data) => {
         const [result] = await db('invoice_challans').insert(data).returning('id');
         return result?.id || null;
     } catch (err) {
-        console.log('Error inserting invoice challan:', err);
-        
-        if (err.code === '23505') {
-            switch (err.constraint) {
-                case 'unique_firm_challan_no':
-                    throw new ApiError({
-                        statusCode: 409,
-                        message: 'Duplicate challan number found in this firm.',
-                    });
-                case 'unique_id_invoice':
-                    throw new ApiError({
-                        statusCode: 409,
-                        message: 'This challan is already linked to the invoice.',
-                    });
-            }
+        switch (err.constraint) {
+            case 'unique_firm_challan_no':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Duplicate challan number found in this firm.',
+                });
+            case 'unique_id_invoice':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This challan is already linked to the invoice.',
+                });
+            case 'invoice_challans_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create invoice challan.',
+                });
         }
         throw new ApiError({
             statusCode: 500,
@@ -149,19 +150,22 @@ const updateInvoiceChallanById = async (id, data) => {
         const affectedRows = await db('invoice_challans').where({ id }).update(data);
         return affectedRows;
     } catch (err) {
-        if (err.code === '23505') {
-            switch (err.constraint) {
-                case 'unique_firm_challan_no':
-                    throw new ApiError({
-                        statusCode: 409,
-                        message: 'Duplicate challan number found in this firm.',
-                    });
-                case 'unique_id_invoice':
-                    throw new ApiError({
-                        statusCode: 409,
-                        message: 'This challan is already linked to the invoice.',
-                    });
-            }
+        switch (err.constraint) {
+            case 'unique_firm_challan_no':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Duplicate challan number found in this firm.',
+                });
+            case 'unique_id_invoice':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'This challan is already linked to the invoice.',
+                });
+            case 'invoice_challans_invoice_id_foreign':
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to update invoice challan.',
+                });
         }
         throw new ApiError({
             statusCode: 500,
@@ -173,12 +177,15 @@ const updateInvoiceChallanById = async (id, data) => {
 // Delete invoice challan by ID
 const deleteInvoiceChallanById = async (id, isPermanentDelete) => {
     try {
+        // Hard delete
         if (isPermanentDelete) {
             const result = await db('invoice_challans').where({ id: id }).del();
             return result > 0;
         }
 
-        return await db('invoice_challans').where({ id }).del();
+        // Soft delete
+        const updated = await db('invoice_challans').update({ is_active: false }).where({ id });
+        return updated
     } catch (err) {
         throw new ApiError({
             statusCode: 500,

@@ -10,18 +10,22 @@ const getPurchaseOrderByIdValidationSchema = {
 // Validation schema for getting purchase orders by invoice ID
 const getPurchaseOrdersByInvoiceIdValidationSchema = {
     params: Joi.object({
-        invoice_id: Joi.number().integer().required().label('Invoice ID'),
+        invoiceId: Joi.number().integer().required().label('Invoice ID'),
     }),
 };
 
 // Validation schema for creating a new purchase order
 const createPurchaseOrderValidationSchema = {
     body: Joi.object({
-        invoice_id: Joi.number().integer().positive().optional(),
-        po_no: Joi.string().max(50).required(),
-        po_date: Joi.date().required(),
-        customer_name: Joi.string().max(255).required(),
-        is_invoiced: Joi.boolean().default(false),
+        invoiceId: Joi.number().integer().positive().allow(null).optional(),
+        poNo: Joi.string().max(50).required(),
+        poDate: Joi.date().required(),
+        customerName: Joi.string().max(255).required(),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.boolean().default(false),
+            otherwise: Joi.valid(false).default(false)
+        })
     }),
 };
 
@@ -31,11 +35,15 @@ const updatePurchaseOrderValidationSchema = {
         id: Joi.number().integer().required().label('Purchase Order ID'),
     }),
     body: Joi.object({
-        invoice_id: Joi.number().integer().positive().optional(),
-        po_no: Joi.string().max(50).required(),
-        po_date: Joi.date().required(),
-        customer_name: Joi.string().max(255).required(),
-        is_invoiced: Joi.boolean().default(false),
+        invoiceId: Joi.number().integer().positive().allow(null).optional(),
+        poNo: Joi.string().max(50).required(),
+        poDate: Joi.date().required(),
+        customerName: Joi.string().max(255).required(),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.boolean().default(false),
+            otherwise: Joi.valid(false).default(false)
+        })
     }).min(1), // Ensure at least one field is provided
 };
 

@@ -19,10 +19,19 @@ const createEWayBillValidationSchema = {
     body: Joi.object({
         ewaybillNo: Joi.string().max(50).required(),
         ewaybillDate: Joi.date().required(),
-        ewaybillValidUpto: Joi.date().required(),
+        ewaybillValidUpto: Joi.date()
+            .min(Joi.ref('ewaybillDate')) // must be same or after ewaybillDate
+            .required()
+            .messages({
+                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewaybillDate"',
+            }),
         customerName: Joi.string().max(255).required(),
-        isInvoiced: Joi.boolean().default(false),
-        invoiceId: Joi.number().integer().positive().default(0),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.boolean().default(false),
+            otherwise: Joi.valid(false).default(false)
+        }),
+        invoiceId: Joi.number().integer().positive().allow(null).default(0),
     }),
 };
 
@@ -34,9 +43,19 @@ const updateEWayBillValidationSchema = {
     body: Joi.object({
         ewaybillNo: Joi.string().max(50).required(),
         ewaybillDate: Joi.date().required(),
+        ewaybillValidUpto: Joi.date()
+            .min(Joi.ref('ewaybillDate')) // must be same or after ewaybillDate
+            .required()
+            .messages({
+                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewaybillDate"',
+            }),
         customerName: Joi.string().max(255).required(),
-        isInvoiced: Joi.boolean().default(false),
-        invoiceId: Joi.number().integer().positive().default(0),
+        isInvoiced: Joi.boolean().when('invoiceId', {
+            is: Joi.number().integer().positive(),
+            then: Joi.boolean().default(false),
+            otherwise: Joi.valid(false).default(false)
+        }),
+        invoiceId: Joi.number().integer().positive().allow(null).default(0),
     }),
 };
 
