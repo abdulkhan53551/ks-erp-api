@@ -20,6 +20,5 @@ exports.up = function (knex) {
  * @returns { Promise<void> }
  */
 exports.down = async function (knex) {
-    await knex.schema.dropTableIfExists('invoices');
     await knex.schema.dropTableIfExists('payment_modes');
 };

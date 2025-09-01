@@ -35,7 +35,10 @@ const createInvoiceValidationSchema = {
 
     billingAddress: Joi.object({
       email: Joi.string().email().allow(null, ''),
-      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, '').messages({
+        'string.pattern.base': 'Billing phone number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9',
+        'string.base': 'Billing phone must be text',
+      }),
       website: Joi.string().uri().allow(null, ''),
       addressLine1: Joi.string().max(255).allow(null, ''),
       cityId: Joi.number().integer().required(),
@@ -45,7 +48,10 @@ const createInvoiceValidationSchema = {
 
     shippingAddress: Joi.object({
       email: Joi.string().email().allow(null, ''),
-      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, '').messages({
+        'string.pattern.base': 'Shipping phone number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9',
+        'string.base': 'Shipping phone must be text',
+      }),
       addressLine1: Joi.string().max(255).allow(null, ''),
       cityId: Joi.number().integer().required(),
       stateId: Joi.number().integer().required(),
@@ -61,7 +67,7 @@ const createInvoiceValidationSchema = {
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string().max(20).allow(null, ''),
         qty: Joi.number().precision(2).min(0).required(),
-        itemUnitId: Joi.number().integer().allow(0),
+        itemUnitId: Joi.number().integer(),
         rate: Joi.number().precision(2).min(0).required(),
         discountPercent: Joi.number().precision(2).min(0).max(100).allow(0),
         discountAmount: Joi.number().precision(2).min(0).allow(0),
@@ -71,7 +77,9 @@ const createInvoiceValidationSchema = {
         sgst: Joi.number().precision(2).min(0).allow(0),
         igst: Joi.number().precision(2).min(0).allow(0),
         total: Joi.number().precision(2).min(0).required().allow(0)
-      }).custom(invoiceItemCustomValidation)
+      })
+        .custom(invoiceItemCustomValidation)
+        .messages({ 'any.invalid': '{{#customMessage}}' })
     ).min(1).required(),
 
     subTotal: Joi.number().precision(2).min(0).required(),
@@ -87,11 +95,16 @@ const createInvoiceValidationSchema = {
 
     paymentStatusId: Joi.number().integer().min(1).required(),
     paymentModeId: Joi.number().integer().min(0).required()
-  }).custom(validateCreateOrUpdateCustom)
+  })
+    .custom(validateCreateOrUpdateCustom)
+    .messages({ 'any.invalid': '{{#customMessage}}' })
 };
 
 // Update invoice validation schema
 const updateInvoiceValidationSchema = {
+  params: Joi.object({
+    id: Joi.number().integer().required().label('Invoice ID'),
+  }),
   body: Joi.object({
     invoiceNo: Joi.string().max(255).required(),
     invoiceDate: Joi.date().required(),
@@ -120,9 +133,12 @@ const updateInvoiceValidationSchema = {
     shippingAddressId: Joi.number().integer().allow(null),
 
     billingAddress: Joi.object({
-      invoiceId: Joi.number().integer().required(),
+      id: Joi.number().integer().required(),
       email: Joi.string().email().allow(null, ''),
-      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, '').messages({
+        'string.pattern.base': 'Billing phone number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9',
+        'string.base': 'Billing phone number must be text',
+      }),
       website: Joi.string().uri().allow(null, ''),
       addressLine1: Joi.string().max(255).allow(null, ''),
       cityId: Joi.number().integer().required(),
@@ -131,9 +147,12 @@ const updateInvoiceValidationSchema = {
     }),
 
     shippingAddress: Joi.object({
-      invoiceId: Joi.number().integer().required(),
+      id: Joi.number().integer().required(),
       email: Joi.string().email().allow(null, ''),
-      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+      phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, '').messages({
+        'string.pattern.base': 'Shipping phone number must be a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9',
+        'string.base': 'Shipping phone number must be text',
+      }),
       addressLine1: Joi.string().max(255).allow(null, ''),
       cityId: Joi.number().integer().required(),
       stateId: Joi.number().integer().required(),
@@ -151,7 +170,7 @@ const updateInvoiceValidationSchema = {
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string().max(20).allow(null, ''),
         qty: Joi.number().precision(2).min(0).required(),
-        itemUnitId: Joi.number().integer().allow(0, null),
+        itemUnitId: Joi.number().integer(),
         rate: Joi.number().precision(2).min(0).required(),
         discountPercent: Joi.number().precision(2).min(0).max(100).allow(0, null),
         discountAmount: Joi.number().precision(2).min(0).allow(0, null),
@@ -161,7 +180,9 @@ const updateInvoiceValidationSchema = {
         sgst: Joi.number().precision(2).min(0).allow(0, null),
         igst: Joi.number().precision(2).min(0).allow(0, null),
         total: Joi.number().precision(2).min(0).allow(0).required()
-      }).custom(invoiceItemCustomValidation)
+      })
+        .custom(invoiceItemCustomValidation)
+        .messages({ 'any.invalid': '{{#customMessage}}' })
     ).min(1).required(),
 
     subTotal: Joi.number().precision(2).min(0),
@@ -177,13 +198,15 @@ const updateInvoiceValidationSchema = {
 
     paymentStatusId: Joi.number().integer().min(1),
     paymentModeId: Joi.number().integer().min(0)
-  }).custom(validateCreateOrUpdateCustom)
+  })
+    .custom(validateCreateOrUpdateCustom)
+    .messages({ 'any.invalid': '{{#customMessage}}' })
 };
 
 // Delete invoice validation schema
 const deleteInvoiceValidationSchema = {
   params: Joi.object({
-    id: Joi.number().integer().required().label('Firm ID'),
+    id: Joi.number().integer().required().label('Invoice ID'),
   }),
   query: Joi.object({
     isPermanentDelete: Joi.boolean()
@@ -195,35 +218,35 @@ const deleteInvoiceValidationSchema = {
   })
 };
 
-// Get challan by invoice ID validation schema
-const getChallansForInvoiceByIdValidationSchema = {
-  params: Joi.object({
-    invoiceId: Joi.number().integer().required().label('Invoice ID'),
-  })
-};
+// // Get challan by invoice ID validation schema
+// const getChallansForInvoiceByIdValidationSchema = {
+//   params: Joi.object({
+//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
+//   })
+// };
 
-// Get purchase order by invoice ID validation schema
-const getPurchaseOrderForInvoiceByIdValidationSchema = {
-  params: Joi.object({
-    invoiceId: Joi.number().integer().required().label('Invoice ID'),
-  })
-};
+// // Get purchase order by invoice ID validation schema
+// const getPurchaseOrderForInvoiceByIdValidationSchema = {
+//   params: Joi.object({
+//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
+//   })
+// };
 
-// Get eway bill by invoice ID validation schema
-const getEwaybillForInvoiceByIdValidationSchema = {
-  params: Joi.object({
-    invoiceId: Joi.number().integer().required().label('Invoice ID'),
-  })
-};
+// // Get eway bill by invoice ID validation schema
+// const getEwaybillForInvoiceByIdValidationSchema = {
+//   params: Joi.object({
+//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
+//   })
+// };
 
 // Custom validation function for create/update
-const validateCreateOrUpdateCustom = (item, helpers) => {
+function validateCreateOrUpdateCustom(item, helpers) {
   const gross = new Decimal(item.subTotal);
 
   // Rule: If discountPercent > 0 → discountAmount must be > 0
   if (item.discountPercent && item.discountPercent > 0) {
     if (!item.discountAmount || item.discountAmount <= 0) {
-      return helpers.error("any.invalid", { message: "Discount amount must be provided when discount percent is greater than 0" });
+      return helpers.error("any.invalid", { customMessage: "Discount amount must be provided when discount percent is greater than 0" });
     }
   }
 
@@ -231,27 +254,27 @@ const validateCreateOrUpdateCustom = (item, helpers) => {
   if (item.discountPercent > 0 && item.discountAmount > 0) {
     const expected = gross.times(item.discountPercent).div(100);
     if (!expected.equals(item.discountAmount)) {
-      return helpers.error("any.invalid", { message: "Discount percent and discount amount mismatch" });
+      return helpers.error("any.invalid", { customMessage: "Discount percent and discount amount mismatch" });
     }
   }
 
   // Rule: discount amount cannot exceed gross
   if (gross.lessThan(item.discountAmount)) {
-    return helpers.error("any.invalid", { message: "Discount amount cannot exceed gross amount" });
+    return helpers.error("any.invalid", { customMessage: "Discount amount cannot exceed gross amount of invoice" });
   }
 
   return item;
 }
 
 // Custom validation function for invoice items
-const invoiceItemCustomValidation = (item, helpers) => {
+function invoiceItemCustomValidation(item, helpers) {
   const qty = new Decimal(item.qty || 0);
   const rate = new Decimal(item.rate || 0);
   const grossAmount = qty.times(rate);
 
   // Rule 1: discount amount <= gross
   if (grossAmount.lessThan(item.discountAmount)) {
-    return helpers.error("any.invalid", { message: "Discount amount cannot exceed gross amount (rate * qty)" });
+    return helpers.error("any.invalid", { customMessage: "Discount amount cannot exceed gross amount (rate * qty) of invoice item" });
   }
 
   return item;
@@ -262,7 +285,7 @@ module.exports = {
   createInvoiceValidationSchema,
   updateInvoiceValidationSchema,
   deleteInvoiceValidationSchema,
-  getChallansForInvoiceByIdValidationSchema,
-  getPurchaseOrderForInvoiceByIdValidationSchema,
-  getEwaybillForInvoiceByIdValidationSchema
+  // getChallansForInvoiceByIdValidationSchema,
+  // getPurchaseOrderForInvoiceByIdValidationSchema,
+  // getEwaybillForInvoiceByIdValidationSchema
 };

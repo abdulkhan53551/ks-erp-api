@@ -3,7 +3,6 @@ const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
-const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice challans with pagination and search
 const getAllInvoiceChallans = asyncHandler(async (req, res) => {
@@ -103,6 +102,7 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
     )
 });
 
+// Update invoice challan
 const updateInvoiceChallan = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
 
@@ -129,6 +129,7 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
     );
 });
 
+// Delete invoice challan
 const deleteInvoiceChallan = asyncHandler(async (req, res) => {
     const challanId = req.params.id;
     const { isPermanentDelete = false } = req.query;
@@ -145,7 +146,6 @@ const deleteInvoiceChallan = asyncHandler(async (req, res) => {
         new ApiResponse({ statusCode: 200, data: [], message: 'Invoice challan deleted successfully.' })
     );
 });
-
 
 module.exports = {
     getAllInvoiceChallans,

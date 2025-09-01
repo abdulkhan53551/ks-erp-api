@@ -22,6 +22,10 @@ exports.up = function (knex) {
         table.boolean('has_gst').notNullable().defaultTo(false);  // Has GST number
         table.string('gst_number', 20).nullable();                // GST number
 
+        // Invoice address
+        table.integer('billing_address_id').unsigned().references('id').inTable('invoice_contacts').onDelete('SET NULL');
+        table.integer('shipping_address_id').unsigned().references('id').inTable('invoice_contacts').onDelete('SET NULL');
+
         // Challan
         table.boolean('has_challan').notNullable().defaultTo(false);
 
@@ -48,7 +52,7 @@ exports.up = function (knex) {
             .references('id').inTable('payment_statuses').onDelete('RESTRICT');
         table.integer('payment_mode_id').unsigned().notNullable().defaultTo(0)
             .references('id').inTable('payment_modes').onDelete('RESTRICT');
-        
+
         table.string('status', 255).notNullable();         // Draft, Final, Cancelled
 
         // Audit
@@ -68,5 +72,5 @@ exports.up = function (knex) {
  * @returns { Promise<void> }
  */
 exports.down = function (knex) {
-    return knex.schema.dropTableIfExists('eway_bills');
+    return knex.schema.dropTableIfExists('invoices');
 };

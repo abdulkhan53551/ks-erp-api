@@ -9,7 +9,7 @@ const fetchAllInvoice = async (query) => {
         const { page = 1, pageSize = 10, search = '' } = query;
         const { firmId = 0 } = getContext();
 
-        const baseQuery = db('invoice_challans AS IC')
+        const baseQuery = db('invoices AS I')
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
@@ -19,27 +19,31 @@ const fetchAllInvoice = async (query) => {
                 'I.total',
                 'PS.code AS payment_status_code',
                 'PM.code AS payment_mode_code',
-                'IC.challan_no',
                 'PO.po_no',
                 'EB.eway_bill_no',
-                'U.name AS created_by',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'I.created_at',
                 'I.updated_at',
             )
-            .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
-            .leftJoin('purchase_orders AS PO', 'I.invoice_id', 'PO.invoice_id')
-            .leftJoin('eway_bills AS EB', 'I.invoice_id', 'EB.invoice_id')
+            .leftJoin('purchase_orders AS PO', function () {
+                this.on('I.id', '=', 'PO.invoice_id')
+                    .andOn('PO.is_active', '=', db.raw('true'));
+            })
+            .leftJoin('eway_bills AS EB', function () {
+                this.on('I.id', '=', 'EB.invoice_id')
+                    .andOn('EB.is_active', '=', db.raw('true'));
+            })
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
-            .leftJoin('users AS U', 'I.created_by', 'U.id')
-            .where('I.is_active', true).andWhere('PO.is_active', true).andWhere('EB.is_active', true).andWhere('PS.is_active', true).andWhere('PM.is_active', true)
+            .leftJoin('users AS u', 'I.created_by', 'u.id')
+            .where('I.is_active', true)
             .andWhere('I.firm_id', firmId);
 
         if (search) {
             baseQuery.where(function () {
-                this.where('I.invoice_no', 'ilike', `%${search}%`)
-                    .orWhere('I.customer_name', 'ilike', `%${search}%`)
-                    .orWhere('U.name', 'ilike', `%${search}%`);
+                this.where('I.invoice_no', 'ILIKE', `%${search}%`)
+                    .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`]);
             });
         }
 
@@ -65,22 +69,27 @@ const fetchInvoiceMeta = async (query) => {
 
 
         const baseQuery = db('invoices AS I')
-            .leftJoin('purchase_orders AS PO', 'I.invoice_id', 'PO.invoice_id')
-            .leftJoin('eway_bills AS EB', 'I.invoice_id', 'EB.invoice_id')
+            .leftJoin('purchase_orders AS PO', function () {
+                this.on('I.id', '=', 'PO.invoice_id')
+                    .andOn('PO.is_active', '=', db.raw('true'));
+            })
+            .leftJoin('eway_bills AS EB', function () {
+                this.on('I.id', '=', 'EB.invoice_id')
+                    .andOn('EB.is_active', '=', db.raw('true'));
+            })
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
             .leftJoin('users AS U', 'I.created_by', 'U.id')
-            .where('I.is_active', true).andWhere('PO.is_active', true).andWhere('EB.is_active', true).andWhere('F.is_active', true).andWhere('PS.is_active', true).andWhere('PM.is_active', true)
+            .where('I.is_active', true)
             .andWhere('I.firm_id', firmId);
 
-        // if (search) {
-        // baseQuery.where(function () {
-        //         this.where('I.invoice_no', 'ilike', `%${search}%`)
-        //             .orWhere('I.customer_name', 'ilike', `%${search}%`)
-        //             .orWhere('F.firm_name', 'ilike', `%${search}%`)
-        //              .orWhere('U.name', 'ilike', `%${search}%`);
-        //     });
-        // }
+        if (search) {
+            baseQuery.where(function () {
+                this.where('I.invoice_no', 'ILIKE', `%${search}%`)
+                    .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`]);
+            });
+        }
 
         const result = await buildPagination({ baseQuery, page, pageSize });
 
@@ -106,7 +115,7 @@ const fetchInvoiceById = async (id) => {
                 'I.invoice_date',
                 'I.due_days',
                 'I.due_date',
-                'F.firm_id',
+                'I.firm_id',
                 'F.firm_name AS company_name',
                 'F.firm_type',
                 'F.logo_url AS company_logo',
@@ -159,21 +168,20 @@ const fetchInvoiceById = async (id) => {
             )
             .leftJoin('invoice_contacts AS ICB', 'I.billing_address_id', 'ICB.id')
             .leftJoin('invoice_contacts AS ICS', 'I.shipping_address_id', 'ICS.id')
+            .innerJoin('firms AS F', 'I.firm_id', 'F.id')
             .leftJoin('user_contacts AS UC', function () {
                 this.on('F.id', '=', 'UC.entity_id')
                     .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
             })
-            .innerJoin('firm AS F', 'I.firm_id', 'F.id')
             .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.id')
             .where('I.is_active', true)
-            .andWhere('FBA.is_active', true)
             .andWhere('I.id', id)
             .andWhere('I.firm_id', firmId)
             .first();
 
         // 2. Fetch invoice items (detail)
         const items = await db('invoice_items AS II')
-            .select('II.id', 'II.description', 'II.hsn_sac_code', 'IU.uqc', 'II.quantity', 'II.rate', 'GS.gst_rate', 'II.amount')
+            .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'IU.uqc', 'II.qty', 'II.rate', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
             .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
             .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
             .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
@@ -187,6 +195,7 @@ const fetchInvoiceById = async (id) => {
 
         return result || null;
     } catch (err) {
+        console.log('Error in fetchInvoiceById => ', err);
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while fetching invoice by ID.',
@@ -201,17 +210,16 @@ const insertInvoice = async (data) => {
         // 1. Insert master data
         const invoiceId = await insertInvoiceMaster(trx, masterData);
 
-        // // 2. Insert items
-        // await insertInvoiceItems(trx, invoiceId, items);
-
-        // // 3. Insert billing and shipping addresses
-        // await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
+        const address = [billing, shipping]
 
         // 2 & 3. Run in parallel
-        await Promise.all([
+        const [itemsResult, addressResult] = await Promise.all([
             insertInvoiceItems(trx, invoiceId, items),
-            insertInvoiceAddresses(trx, invoiceId, billing, shipping)
+            insertInvoiceAddresses(trx, invoiceId, address)
         ]);
+
+        // Update billing & shipping address id into invoice
+        await updateAddressIdInInvoice(trx, invoiceId, addressResult)
         return invoiceId;
     });
 }
@@ -219,7 +227,7 @@ const insertInvoice = async (data) => {
 // Insert invoice master data
 const insertInvoiceMaster = async (trx, data) => {
     try {
-        const [id] = await trx('invoices').insert(data).returning('id');
+        const [{ id }] = await trx('invoices').insert(data).returning('id');
         return id;
     } catch (error) {
         if (error.code === '23505') { // Unique violation
@@ -230,7 +238,7 @@ const insertInvoiceMaster = async (trx, data) => {
         }
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while inserting invoice master data.',
+            message: 'Something went wrong while inserting invoice data.',
         });
     }
 }
@@ -275,12 +283,36 @@ const insertInvoiceAddresses = async (trx, invoiceId, addresses) => {
 
         if (toInsert.length) {
             const insertData = toInsert.map(addr => ({ ...addr, invoice_id: invoiceId }));
-            await trx('invoice_contacts').insert(insertData);
+            return await trx('invoice_contacts').insert(insertData).returning(['id', 'contact_type']);;
         }
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
             message: 'Database error while saving invoice addresses.'
+        });
+    }
+}
+
+// Update address id in invoice
+const updateAddressIdInInvoice = async (trx, invoiceId, address) => {
+    try {
+        // Get address id mapping as per type
+        const ids = address.reduce((acc, c) => {
+            acc[c.contact_type] = c.id || 0;
+            return acc;
+        }, {});
+
+        // Update the billing & shipping address id in invoice table
+        const updateAddressId = {
+            billing_address_id: ids.BILLING,
+            shipping_address_id: ids.SHIPPING
+        }
+
+        await trx('invoices').where({ id: invoiceId }).update(updateAddressId);
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Fail to update addres id into invoice.'
         });
     }
 }
@@ -292,16 +324,11 @@ const updateInvoiceById = async (data) => {
         // 1. Update master
         await updateInvoiceMaster(trx, invoiceId, masterData);
 
-        // // 2. Update items (smart delete/insert/update)
-        // await updateInvoiceItems(trx, invoiceId, items);
-
-        // // 3. Insert billing and shipping addresses
-        // await insertInvoiceAddresses(trx, invoiceId, billing, shipping);
-
+        const address = [billing, shipping]
         // 2 & 3. Run in parallel
         await Promise.all([
             updateInvoiceItems(trx, invoiceId, items),
-            insertInvoiceAddresses(trx, invoiceId, billing, shipping)
+            insertInvoiceAddresses(trx, invoiceId, address)
         ]);
 
         return invoiceId;
@@ -321,37 +348,44 @@ const updateInvoiceMaster = async (trx, invoiceId, data) => {
         }
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while updating invoice master data.',
+            message: 'Something went wrong while updating invoice data.',
         });
     }
 }
 
 // Update invoice items
 const updateInvoiceItems = async (trx, invoiceId, items) => {
-    const existingRecords = await trx('invoice_items').where({ invoice_id: invoiceId });
+    try {
+        // Fetch existing items for this invoice
+        const existingRecords = await trx('invoice_items').where({ invoice_id: invoiceId });
 
-    const toUpdate = items.filter(i => i.id);
-    const toInsert = items.filter(i => !i.id);
-    const incomingIds = toUpdate.map(i => i.id);
+        const toUpdate = items.filter(i => i.id);
+        const toInsert = items.filter(i => !i.id);
+        const incomingIds = toUpdate.map(i => i.id);
+        const existingIds = existingRecords.map(i => i.id);
+        const toDeleteIds = existingIds.filter(id => !incomingIds.includes(id));
 
-    const existingIds = existingRecords.map(i => i.id);
-    const toDeleteIds = existingIds.filter(id => !incomingIds.includes(id));
+        // Delete
+        if (toDeleteIds.length) {
+            await trx('invoice_items').whereIn('id', toDeleteIds).del();
+        }
 
-    // Delete
-    if (toDeleteIds.length) {
-        await trx('invoice_items').whereIn('id', toDeleteIds).del();
-    }
+        // Update
+        for (const item of toUpdate) {
+            const { id, ...data } = item;
+            await trx('invoice_items').where({ id }).update(data);
+        }
 
-    // Update
-    for (const item of toUpdate) {
-        const { id, ...data } = item;
-        await trx('invoice_items').where({ id }).update(data);
-    }
-
-    // Insert
-    if (toInsert.length) {
-        const insertData = toInsert.map(i => ({ ...i, invoice_id: invoiceId }));
-        await trx('invoice_items').insert(insertData);
+        // Insert
+        if (toInsert.length) {
+            const insertData = toInsert.map(i => ({ ...i, invoice_id: invoiceId }));
+            await trx('invoice_items').insert(insertData);
+        }
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while updating invoice items.',
+        });
     }
 }
 
@@ -359,13 +393,14 @@ const updateInvoiceItems = async (trx, invoiceId, items) => {
 const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
     try {
         const { firmId = 0 } = getContext();
+        let affectedInvoices;
 
         return db.transaction(async trx => {
             if (isPermanentDelete) {
                 // Hard delete
-                await trx('invoice_contacts').where({ invoice_id: invoiceId, firmId }).del();
-                await trx('invoice_items').where({ invoice_id: invoiceId, firmId }).del();
-                await trx('invoices').where({ id: invoiceId, firmId }).del();
+                await trx('invoice_contacts').where({ invoice_id: invoiceId }).del();
+                await trx('invoice_items').where({ invoice_id: invoiceId }).del();
+                affectedInvoices = await trx('invoices').where({ id: invoiceId, firm_id: firmId }).del();
             } else {
                 // 1. Delete invoice contacts
                 await trx('invoice_contacts').update({ is_active: false }).where({ invoice_id: invoiceId });
@@ -374,8 +409,11 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                 await trx('invoice_items').update({ is_active: false }).where({ invoice_id: invoiceId })
 
                 // 3. Delete invoice
-                await trx('invoices').update({ is_active: false }).where({ id: invoiceId });
+                affectedInvoices = await trx('invoices').update({ is_active: false }).where({ id: invoiceId });
             }
+
+            // return true/false
+            return affectedInvoices > 0;
         });
     } catch (error) {
         throw new ApiError({

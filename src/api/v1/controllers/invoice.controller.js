@@ -10,12 +10,21 @@ const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const { default: Decimal } = require("decimal.js");
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
 const { formatAmount, amountToWords } = require("../services/conversion");
+const { getContext } = require("../helpers/requestContext");
+const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
     const { page = 1, pageSize = 10, search = '' } = req.query;
 
     const result = await fetchAllInvoice({ page, pageSize, search });
+
+    console.log('result => ', result);
+
+
+    if (!result.length) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
+    }
 
     return res.status(200).json(
         new ApiResponse({
@@ -29,6 +38,10 @@ const getAllInvoice = asyncHandler(async (req, res) => {
 // Fetch invoice meta
 const getInvoiceMeta = asyncHandler(async (req, res) => {
     const result = await fetchInvoiceMeta(req.query);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
+    }
 
     return res
         .status(200)
@@ -56,57 +69,21 @@ const getInvoiceById = asyncHandler(async (req, res) => {
 
 // Create a new invoice
 const createInvoice = asyncHandler(async (req, res) => {
-    const { invoice, items, billingAddress, shippingAddress } = req.body;
-
-    // Get all gst slabs
-    const gstSlabResult = await fetchGSTSlabs() ?? [];
-
-    // Convert gst slabs to key-value pairs for easy access
-    const gstSlabs = gstSlabResult.reduce((acc, item) => {
-        acc[item.key] = item;
-        return acc;
-    }, {});
-
-    const invoiceItemsCalculation = items.map(item => {
-        const qty = new Decimal(item.qty || 0);
-        const rate = new Decimal(item.rate || 0);
-        const amount = qty.times(rate);
-        const gstRate = new Decimal(gstSlabs[item.gstSlabId].gst_rate || 0);
-        const discountPercent = new Decimal(item.discountPercent || 0);
-        const discountAmount = new Decimal(item.discountAmount || 0);
-        const discount = calculateDiscount(amount, discountAmount, discountPercent);
-
-        return {
-            quantity: qty,
-            rate: rate,
-            gstRate: gstRate,
-            discount: discount,
-        }
-    })
-
-    // 1. Recalculate totals
-    const invoiceCalculation = calculateInvoiceTotals(invoiceItemsCalculation, invoice.hasGst);
-
-    const frontendTotals = {
-        discountTotal: invoice.discountAmount,
-        taxableTotal: invoice.taxableAmount,
-        gstTotal: new Decimal(invoice.cgst || 0).plus(invoice.sgst || 0).plus(invoice.igst || 0).toDecimalPlaces(2),
-        grandTotal: invoice.total
-    }
-
-    const backendTotals = {
-        discountTotal: invoiceCalculation.discountAmount,
-        taxableTotal: invoiceCalculation.taxableAmount,
-        gstTotal: invoiceCalculation.gstTotal,
-        grandTotal: invoiceCalculation.total
-    }
+    const { firmId = 0 } = getContext();
+    const invoice = req.body;
+    const { items, billingAddress, shippingAddress } = invoice;
 
     // 2. Compare with frontend values
-    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+    const mismatches = await validateInvoiceTotals({ items, invoice })
 
     // 3. If mismatch exceeds tolerance, throw error
     if (mismatches.length > 0) {
-        throw new ApiError({ statusCode: 400, errorCode: ERROR_CODES.BAD_REQUEST, message: 'Invoice totals mismatch beyond acceptable tolerance' })
+        throw new ApiError({
+            statusCode: 400,
+            errors: mismatches,
+            errorCode: ERROR_CODES.BAD_REQUEST,
+            message: 'Invoice totals mismatch beyond acceptable tolerance'
+        })
     }
 
     // Create invoice
@@ -121,18 +98,19 @@ const createInvoice = asyncHandler(async (req, res) => {
         has_challan: invoice.hasChallan,
         has_po: invoice.hasPo,
         has_eway_bill: invoice.hasEwayBill,
-        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2),
-        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2),
-        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2),
-        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2),
-        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2),
-        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2),
-        igst: new Decimal(invoice.igst).toDecimalPlaces(2),
-        total: new Decimal(invoice.total).toDecimalPlaces(2),
-        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2),
-        other: new Decimal(invoice.other).toDecimalPlaces(2),
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2).toNumber(),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
+        other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
+        firm_id: firmId
     };
 
     // Prepare invoice items
@@ -140,20 +118,41 @@ const createInvoice = asyncHandler(async (req, res) => {
         description: item.description,
         hsn_sac_code: item.hsnSacCode,
         qty: item.qty,
-        item_unit_id: item.gstUnitId,
-        rate: new Decimal(item.rate).toDecimalPlaces(2),
-        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2),
-        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2),
-        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2),
+        item_unit_id: item.itemUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
         gst_slab_id: item.gstSlabId,
-        cgst: new Decimal(item.cgst).toDecimalPlaces(2),
-        sgst: new Decimal(item.sgst).toDecimalPlaces(2),
-        igst: new Decimal(item.igst).toDecimalPlaces(2),
-        total: new Decimal(item.total).toDecimalPlaces(2)
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(item.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(item.total).toDecimalPlaces(2).toNumber()
     }));
 
-    const billing = { ...billingAddress };
-    const shipping = { ...shippingAddress };
+    // Prepare billing address
+    const billing = {
+        contact_type: 'BILLING',
+        email: billingAddress.email,
+        phone_number: billingAddress.phoneNumber,
+        website: billingAddress.website,
+        address_line1: billingAddress.addressLine1,
+        city_id: billingAddress.cityId,
+        state_id: billingAddress.stateId,
+        pincode: billingAddress.pincode,
+    };
+
+    // Prepare shipping address
+    const shipping = {
+        contact_type: 'SHIPPING',
+        email: shippingAddress.email,
+        phone_number: shippingAddress.phoneNumber,
+        website: shippingAddress.website,
+        address_line1: shippingAddress.addressLine1,
+        city_id: shippingAddress.cityId,
+        state_id: shippingAddress.stateId,
+        pincode: shippingAddress.pincode,
+    };
 
     // Insert invoice
     const invoiceId = await insertInvoice({
@@ -175,58 +174,21 @@ const createInvoice = asyncHandler(async (req, res) => {
 
 // Update invoice by ID
 const updateInvoice = asyncHandler(async (req, res) => {
-    const { invoiceId } = req.params;
-    const { invoice, items, billingAddress, shippingAddress } = req.body;
+    const { firmId = 0 } = getContext();
+    const { id: invoiceId } = req.params;
+    const invoice = req.body;
+    const { items, billingAddress, shippingAddress } = invoice;
 
-    // Get all gst slabs
-    const gstSlabResult = await fetchGSTSlabs() ?? [];
-
-    // Convert gst slabs to key-value pairs for easy access
-    const gstSlabs = gstSlabResult.reduce((acc, item) => {
-        acc[item.key] = item;
-        return acc;
-    }, {});
-
-    const invoiceItemsCalculation = items.map(item => {
-        const qty = new Decimal(item.qty || 0);
-        const rate = new Decimal(item.rate || 0);
-        const amount = qty.times(rate);
-        const gstRate = new Decimal(gstSlabs[item.gstSlabId].gst_rate || 0);
-        const discountPercent = new Decimal(item.discountPercent || 0);
-        const discountAmount = new Decimal(item.discountAmount || 0);
-        const discount = calculateDiscount(amount, discountAmount, discountPercent);
-
-        return {
-            quantity: qty,
-            rate: rate,
-            gstRate: gstRate,
-            discount: discount,
-        }
-    })
-
-    // 1. Recalculate totals
-    const invoiceCalculation = calculateInvoiceTotals(invoiceItemsCalculation, invoice.hasGst);
-
-    const frontendTotals = {
-        discountTotal: invoice.discountAmount,
-        taxableTotal: invoice.taxableAmount,
-        gstTotal: new Decimal(invoice.cgst || 0).plus(invoice.sgst || 0).plus(invoice.igst || 0).toDecimalPlaces(2),
-        grandTotal: invoice.total
-    }
-
-    const backendTotals = {
-        discountTotal: invoiceCalculation.discountAmount,
-        taxableTotal: invoiceCalculation.taxableAmount,
-        gstTotal: invoiceCalculation.gstTotal,
-        grandTotal: invoiceCalculation.total
-    }
-
-    // 2. Compare with frontend values
-    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+    const mismatches = await validateInvoiceTotals({ items, invoice })
 
     // 3. If mismatch exceeds tolerance, throw error
     if (mismatches.length > 0) {
-        throw new ApiError({ statusCode: 400, errorCode: ERROR_CODES.BAD_REQUEST, message: 'Invoice totals mismatch beyond acceptable tolerance' })
+        throw new ApiError({
+            statusCode: 400,
+            errors: mismatches,
+            errorCode: ERROR_CODES.BAD_REQUEST,
+            message: 'Invoice totals mismatch beyond acceptable tolerance'
+        })
     }
 
     // Update invoice
@@ -241,38 +203,63 @@ const updateInvoice = asyncHandler(async (req, res) => {
         has_challan: invoice.hasChallan,
         has_po: invoice.hasPo,
         has_eway_bill: invoice.hasEwayBill,
-        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2),
-        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2),
-        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2),
-        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2),
-        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2),
-        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2),
-        igst: new Decimal(invoice.igst).toDecimalPlaces(2),
-        total: new Decimal(invoice.total).toDecimalPlaces(2),
-        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2),
-        other: new Decimal(invoice.other).toDecimalPlaces(2),
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2).toNumber(),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
+        other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
+        firm_id: firmId
     };
 
     const invoiceItems = items.map(item => ({
-        description: items.description,
-        hsn_sac_code: items.hsnSacCode,
-        qty: items.qty,
-        item_unit_id: items.gstUnitId,
-        rate: new Decimal(item.rate).toDecimalPlaces(2),
-        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2),
-        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2),
-        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2),
+        id: item.id,
+        description: item.description,
+        hsn_sac_code: item.hsnSacCode,
+        qty: item.qty,
+        item_unit_id: item.itemUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
         gst_slab_id: item.gstSlabId,
-        cgst: new Decimal(item.cgst).toDecimalPlaces(2),
-        sgst: new Decimal(item.sgst).toDecimalPlaces(2),
-        igst: new Decimal(item.igst).toDecimalPlaces(2),
-        total: new Decimal(item.total).toDecimalPlaces(2)
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(item.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(item.total).toDecimalPlaces(2).toNumber()
     }));
 
-    const billing = { ...billingAddress };
-    const shipping = { ...shippingAddress };
+    // Prepare billing address
+    const billing = {
+        id: billingAddress.id,
+        contact_type: 'BILLING',
+        email: billingAddress.email,
+        phone_number: billingAddress.phoneNumber,
+        website: billingAddress.website,
+        address_line1: billingAddress.addressLine1,
+        city_id: billingAddress.cityId,
+        state_id: billingAddress.stateId,
+        pincode: billingAddress.pincode,
+    };
+
+    // Prepare shipping address
+    const shipping = {
+        id: shippingAddress.id,
+        contact_type: 'SHIPPING',
+        email: shippingAddress.email,
+        phone_number: shippingAddress.phoneNumber,
+        website: shippingAddress.website,
+        address_line1: shippingAddress.addressLine1,
+        city_id: shippingAddress.cityId,
+        state_id: shippingAddress.stateId,
+        pincode: shippingAddress.pincode,
+    };
 
 
     // Update invoice
@@ -294,11 +281,63 @@ const updateInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+/**
+ * Validate invoice totals by comparing frontend vs backend calculation
+ * @param {Array} items - Invoice line items
+ * @param {Object} invoice - Invoice header data (discount, gst, total, etc.)
+ */
+const validateInvoiceTotals = async ({
+    items,
+    invoice,
+}) => {
+    // 1. Get all GST slabs
+    const gstSlabResult = await fetchGSTSlabs() ?? [];
+
+    // 2. Convert gst slabs to key-value pairs for easy access
+    const gstSlabs = gstSlabResult.reduce((acc, item) => {
+        acc[item.id] = item;
+        return acc;
+    }, {});
+
+    // 3. Prepare backend calculation from items
+    const invoiceItemsCalculation = items.map(item => {
+        const qty = new Decimal(item.qty || 0);
+        const rate = new Decimal(item.rate || 0);
+        const amount = qty.times(rate);
+        const gstRate = new Decimal(gstSlabs[item.gstSlabId]?.gst_rate || 0);
+        const discountPercent = new Decimal(item.discountPercent || 0);
+        const discountAmount = new Decimal(item.discountAmount || 0);
+        const discount = calculateDiscount(amount, discountAmount, discountPercent);
+
+        return { quantity: qty, rate, gstRate, discount };
+    });
+
+    // 4. Backend totals
+    const backendTotals = calculateInvoiceTotals(invoiceItemsCalculation, invoice);
+
+    // 5. Frontend totals
+    const frontendTotals = {
+        discountTotal: invoice.discountAmount,
+        taxableTotal: invoice.taxableAmount,
+        gstTotal: new Decimal(invoice.cgst || 0)
+            .plus(invoice.sgst || 0)
+            .plus(invoice.igst || 0)
+            .toDecimalPlaces(2),
+        grandTotal: invoice.total
+    };
+
+    // 6. Compare frontend vs backend
+    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+
+    return mismatches;
+}
+
 // Utility: compare with tolerance
 const isWithinTolerance = (value1, value2) => {
     return Math.abs(value1 - value2) <= TOLERANCE;
 }
 
+// Utility: compare frontend vs backend values
 const compareWithFrontendValues = (frontendTotals, backendTotals) => {
     // 2. Compare with frontend values
     const mismatches = [];
@@ -312,10 +351,13 @@ const compareWithFrontendValues = (frontendTotals, backendTotals) => {
 }
 
 // Invoice calculation function
-const calculateInvoiceTotals = (items, hasGst) => {
+const calculateInvoiceTotals = (items, invoice) => {
+    const { hasGst } = invoice
     let taxableTotal = new Decimal(0);
     let gstTotal = new Decimal(0);
     let discountTotal = new Decimal(0);
+    const otherAmount = new Decimal(invoice.other)
+    const roundOff = new Decimal(invoice.roundOff)
 
     items.forEach(item => {
         const quantity = new Decimal(item.quantity);
@@ -325,22 +367,21 @@ const calculateInvoiceTotals = (items, hasGst) => {
         const total = amount.minus(discount);
 
         discountTotal = discountTotal.plus(discount);
-        taxableTotal = taxableTotal.plus(amount);
+        taxableTotal = taxableTotal.plus(total);
 
         if (hasGst && item.gstRate) {
-            const gstAmt = amount.times(new Decimal(item.gstRate).dividedBy(100));
+            const gstAmt = total.times(new Decimal(item.gstRate).dividedBy(100));
             gstTotal = gstTotal.plus(gstAmt);
         }
     });
 
-    const grandTotal = taxableTotal.plus(gstTotal);
+    const grandTotal = taxableTotal.plus(gstTotal).plus(otherAmount).plus(roundOff);
 
-    // Return as numbers rounded to 2 decimal places
     return {
-        discountTotal: new Decimal(discountTotal).toDecimalPlaces(2),
-        taxableTotal: new Decimal(taxableTotal).toDecimalPlaces(2),
-        gstTotal: new Decimal(gstTotal).toDecimalPlaces(2),
-        grandTotal: new Decimal(grandTotal).toDecimalPlaces(2),
+        discountTotal: discountTotal.toDecimalPlaces(2).toNumber(),
+        taxableTotal: taxableTotal.toDecimalPlaces(2).toNumber(),
+        gstTotal: gstTotal.toDecimalPlaces(2).toNumber(),
+        grandTotal: grandTotal.toDecimalPlaces(2).toNumber(),
     };
 }
 
