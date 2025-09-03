@@ -1,6 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const authRoutes = require('./auth.routes')
+const firmRoutes = require('./firm.routes')
+const invoiceChallanRoutes = require('./invoiceChallan.routes')
+const purchaseOrderRoutes = require('./purchaseOrder.routes')
+const ewaybillRoutes = require('./ewaybill.routes')
+const invoiceRoutes = require('./invoice.routes')
+const mastersRoutes = require('./masters.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
@@ -21,6 +27,12 @@ router.use(verifyAccessToken);
 router.use('/users', userRoutes)
 router.use('/demo', demoRoutes)
 router.use('/products', productRoutes)
+router.use('/firm', firmRoutes)
+router.use('/masters', mastersRoutes)
+router.use('/invoice-challan', invoiceChallanRoutes)
+router.use('/purchase-order', purchaseOrderRoutes)
+router.use('/ewaybill', ewaybillRoutes)
+router.use('/invoice', invoiceRoutes)
 
 module.exports = router;
 // exports.products = productRoutes;

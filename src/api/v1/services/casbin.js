@@ -26,8 +26,8 @@ const initCasbin = async (redisClient) => {
         // Assign watcher to enforcer
         await enforcer.setWatcher(watcher);
 
-        const policies = await enforcer.getPolicy();
-        console.log('Current policies:', policies);
+        // const policies = await enforcer.getPolicy();
+        // console.log('Current policies:', policies);
 
         // Callback when watcher receives a policy update from Redis
         watcher.setUpdateCallback(async () => {

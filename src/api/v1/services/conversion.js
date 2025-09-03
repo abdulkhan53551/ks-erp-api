@@ -1,12 +1,13 @@
 const { ToWords } = require("to-words");
 const { USER_DPI } = require("../../../config/constants/app");
+const { default: Decimal } = require("decimal.js");
 
 const pixelsToMm = (pixels, dpi = USER_DPI) => {
     return (pixels / dpi) * 25.4;
 };
 
 // Convert number into words
-const convertToWords = (num = 0, options = {}) => {
+const amountToWords = (num = 0, options = {}) => {
     // Sanitize the number
     const number = isNaN(Number(num)) ? 0 : Number(num);
 
@@ -37,7 +38,58 @@ const convertToWords = (num = 0, options = {}) => {
     return toWords.convert(number);
 }
 
+// Format amount to Indian currency format
+const formatAmount = (amount, config = {}) => {
+    const { showSymbol } = config
+    const dec = new Decimal(amount ?? 0);
+    let currencyConfig = {}
+
+    // Append cofig of currency symbol
+    if (showSymbol) {
+        currencyConfig = {
+            style: 'currency',
+            currency: 'INR',
+        }
+    }
+
+    return new Intl.NumberFormat('en-IN', {
+        minimumFractionDigits: 2,
+        ...currencyConfig
+    }).format(dec.toNumber());
+};
+
+// Convert to camel case
+const toCamelCase = (obj) => {
+    if (Array.isArray(obj)) {
+        return obj.map(v => toCamelCase(v));
+    } else if (obj !== null && obj.constructor === Object) {
+        return Object.keys(obj).reduce((result, key) => {
+            const camelKey = key.replace(/_([a-z])/g, (_, g) => g.toUpperCase());
+            result[camelKey] = toCamelCase(obj[key]);
+            return result;
+        }, {});
+    }
+    return obj;
+}
+
+// Convert string to Title Case
+const toTitleCase = (str) => {
+    if (typeof str !== "string" || !str.trim()) {
+        return ""; // return empty string for invalid input
+    }
+
+    return str
+        .toLowerCase()
+        .trim()
+        .split(/\s+/) // split on one or more spaces
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
 module.exports = {
     pixelsToMm,
-    convertToWords
+    amountToWords,
+    formatAmount,
+    toCamelCase,
+    toTitleCase
 };

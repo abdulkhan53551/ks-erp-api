@@ -1,8 +1,671 @@
-const { projectPaths } = require("../../../config/constants");
+const { projectPaths, errorCodes } = require("../../../config/constants");
 const { sampleInvoiceData } = require("./sampleInvoiceData");
 const path = require('path')
 const ejs = require('ejs')
+const puppeteer = require('puppeteer');
+const fs = require('fs')
+const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
+const { asyncHandler } = require("../services/asyncHandler");
+const { ApiResponse } = require("../services/ApiResponse");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice } = require("../models/invoice.model");
+const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
+const { default: Decimal } = require("decimal.js");
+const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
+const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
+const { getContext } = require("../helpers/requestContext");
+const TOLERANCE = 0.01; // ₹0.01 = 1 paise
+
+// Fetch all invoice
+const getAllInvoice = asyncHandler(async (req, res) => {
+    const { page = 1, pageSize = 10, search = '' } = req.query;
+
+    const result = await fetchAllInvoice({ page, pageSize, search });
+
+    console.log('result => ', result);
+
+
+    if (!result.length) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            message: 'Invoice fetched successfully.',
+            data: result,
+        })
+    );
+});
+
+// Fetch invoice meta
+const getInvoiceMeta = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceMeta(req.query);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice pagination fetch successfully.' }));
+});
+
+// Fetch invoice by ID
+const getInvoiceById = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    const result = await fetchInvoiceById(invoiceId);
+
+    if (!result) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Invoice fetched successfully.',
+        })
+    );
+});
+
+// Create a new invoice
+const createInvoice = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
+    const invoice = req.body;
+    const { items, billingAddress, shippingAddress } = invoice;
+
+    // 2. Compare with frontend values
+    const mismatches = await validateInvoiceTotals({ items, invoice })
+
+    // 3. If mismatch exceeds tolerance, throw error
+    if (mismatches.length > 0) {
+        throw new ApiError({
+            statusCode: 400,
+            errors: mismatches,
+            errorCode: ERROR_CODES.BAD_REQUEST,
+            message: 'Invoice totals mismatch beyond acceptable tolerance'
+        })
+    }
+
+    // Create invoice
+    const invoiceMaster = {
+        invoice_no: invoice.invoiceNo,
+        invoice_date: invoice.invoiceDate,
+        due_days: invoice.dueDays,
+        due_date: invoice.dueDate,
+        customer_name: invoice.customerName,
+        has_gst: invoice.hasGst,
+        gst_number: invoice.gstNumber,
+        has_challan: invoice.hasChallan,
+        has_po: invoice.hasPo,
+        has_eway_bill: invoice.hasEwayBill,
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2).toNumber(),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
+        other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
+        payment_status_id: invoice.paymentStatusId,
+        payment_mode_id: invoice.paymentModeId,
+        firm_id: firmId
+    };
+
+    // Prepare invoice items
+    const invoiceItems = items.map(item => ({
+        description: item.description,
+        hsn_sac_code: item.hsnSacCode,
+        qty: item.qty,
+        item_unit_id: item.itemUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
+        gst_slab_id: item.gstSlabId,
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(item.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(item.total).toDecimalPlaces(2).toNumber()
+    }));
+
+    // Prepare billing address
+    const billing = {
+        contact_type: 'BILLING',
+        email: billingAddress.email,
+        phone_number: billingAddress.phoneNumber,
+        website: billingAddress.website,
+        address_line1: billingAddress.addressLine1,
+        city_id: billingAddress.cityId,
+        state_id: billingAddress.stateId,
+        pincode: billingAddress.pincode,
+    };
+
+    // Prepare shipping address
+    const shipping = {
+        contact_type: 'SHIPPING',
+        email: shippingAddress.email,
+        phone_number: shippingAddress.phoneNumber,
+        website: shippingAddress.website,
+        address_line1: shippingAddress.addressLine1,
+        city_id: shippingAddress.cityId,
+        state_id: shippingAddress.stateId,
+        pincode: shippingAddress.pincode,
+    };
+
+    // Insert invoice
+    const invoiceId = await insertInvoice({
+        masterData: invoiceMaster,
+        items: invoiceItems,
+        billing,
+        shipping
+    });
+
+    // If invoiceId is not returned, throw an error
+    if (!invoiceId) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice' })
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice created successfully.' })
+    )
+})
+
+// Update invoice by ID
+const updateInvoice = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
+    const { id: invoiceId } = req.params;
+    const invoice = req.body;
+    const { items, billingAddress, shippingAddress } = invoice;
+
+    const mismatches = await validateInvoiceTotals({ items, invoice })
+
+    // 3. If mismatch exceeds tolerance, throw error
+    if (mismatches.length > 0) {
+        throw new ApiError({
+            statusCode: 400,
+            errors: mismatches,
+            errorCode: ERROR_CODES.BAD_REQUEST,
+            message: 'Invoice totals mismatch beyond acceptable tolerance'
+        })
+    }
+
+    // Update invoice
+    const invoiceMaster = {
+        invoice_no: invoice.invoiceNo,
+        invoice_date: invoice.invoiceDate,
+        due_days: invoice.dueDays,
+        due_date: invoice.dueDate,
+        customer_name: invoice.customerName,
+        has_gst: invoice.hasGst,
+        gst_number: invoice.gstNumber,
+        has_challan: invoice.hasChallan,
+        has_po: invoice.hasPo,
+        has_eway_bill: invoice.hasEwayBill,
+        sub_total: new Decimal(invoice.subTotal).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(invoice.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(invoice.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(invoice.taxableAmount).toDecimalPlaces(2).toNumber(),
+        cgst: new Decimal(invoice.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
+        other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
+        payment_status_id: invoice.paymentStatusId,
+        payment_mode_id: invoice.paymentModeId,
+        firm_id: firmId
+    };
+
+    const invoiceItems = items.map(item => ({
+        id: item.id,
+        description: item.description,
+        hsn_sac_code: item.hsnSacCode,
+        qty: item.qty,
+        item_unit_id: item.itemUnitId,
+        rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
+        discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
+        discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
+        gst_slab_id: item.gstSlabId,
+        cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
+        sgst: new Decimal(item.sgst).toDecimalPlaces(2).toNumber(),
+        igst: new Decimal(item.igst).toDecimalPlaces(2).toNumber(),
+        total: new Decimal(item.total).toDecimalPlaces(2).toNumber()
+    }));
+
+    // Prepare billing address
+    const billing = {
+        id: billingAddress.id,
+        contact_type: 'BILLING',
+        email: billingAddress.email,
+        phone_number: billingAddress.phoneNumber,
+        website: billingAddress.website,
+        address_line1: billingAddress.addressLine1,
+        city_id: billingAddress.cityId,
+        state_id: billingAddress.stateId,
+        pincode: billingAddress.pincode,
+    };
+
+    // Prepare shipping address
+    const shipping = {
+        id: shippingAddress.id,
+        contact_type: 'SHIPPING',
+        email: shippingAddress.email,
+        phone_number: shippingAddress.phoneNumber,
+        website: shippingAddress.website,
+        address_line1: shippingAddress.addressLine1,
+        city_id: shippingAddress.cityId,
+        state_id: shippingAddress.stateId,
+        pincode: shippingAddress.pincode,
+    };
+
+
+    // Update invoice
+    const affectedRows = await updateInvoiceById({
+        invoiceId,
+        masterData: invoiceMaster,
+        items: invoiceItems,
+        billing,
+        shipping
+    });
+
+    // If no rows were affected, it means the invoice was not found or update failed
+    if (!affectedRows) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found or update failed' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice updated successfully.' })
+    );
+});
+
+/**
+ * Validate invoice totals by comparing frontend vs backend calculation
+ * @param {Array} items - Invoice line items
+ * @param {Object} invoice - Invoice header data (discount, gst, total, etc.)
+ */
+const validateInvoiceTotals = async ({
+    items,
+    invoice,
+}) => {
+    // 1. Get all GST slabs
+    const gstSlabResult = await fetchGSTSlabs() ?? [];
+
+    // 2. Convert gst slabs to key-value pairs for easy access
+    const gstSlabs = gstSlabResult.reduce((acc, item) => {
+        acc[item.id] = item;
+        return acc;
+    }, {});
+
+    // 3. Prepare backend calculation from items
+    const invoiceItemsCalculation = items.map(item => {
+        const qty = new Decimal(item.qty || 0);
+        const rate = new Decimal(item.rate || 0);
+        const amount = qty.times(rate);
+        const gstRate = new Decimal(gstSlabs[item.gstSlabId]?.gst_rate || 0);
+        const discountPercent = new Decimal(item.discountPercent || 0);
+        const discountAmount = new Decimal(item.discountAmount || 0);
+        const discount = calculateDiscount(amount, discountAmount, discountPercent);
+
+        return { quantity: qty, rate, gstRate, discount };
+    });
+
+    // 4. Backend totals
+    const backendTotals = calculateInvoiceTotals(invoiceItemsCalculation, invoice);
+
+    // 5. Frontend totals
+    const frontendTotals = {
+        discountTotal: invoice.discountAmount,
+        taxableTotal: invoice.taxableAmount,
+        gstTotal: new Decimal(invoice.cgst || 0)
+            .plus(invoice.sgst || 0)
+            .plus(invoice.igst || 0)
+            .toDecimalPlaces(2),
+        grandTotal: invoice.total
+    };
+
+    // 6. Compare frontend vs backend
+    const mismatches = compareWithFrontendValues(frontendTotals, backendTotals);
+
+    return mismatches;
+}
+
+// Utility: compare with tolerance
+const isWithinTolerance = (value1, value2) => {
+    return Math.abs(value1 - value2) <= TOLERANCE;
+}
+
+// Utility: compare frontend vs backend values
+const compareWithFrontendValues = (frontendTotals, backendTotals) => {
+    // 2. Compare with frontend values
+    const mismatches = [];
+    for (const key of Object.keys(frontendTotals)) {
+        if (!isWithinTolerance(frontendTotals[key], backendTotals[key])) {
+            mismatches.push({ field: key, frontend: frontendTotals[key], backend: backendTotals[key] });
+        }
+    }
+
+    return mismatches;
+}
+
+// Invoice calculation function
+const calculateInvoiceTotals = (items, invoice) => {
+    const { hasGst } = invoice
+    let taxableTotal = new Decimal(0);
+    let gstTotal = new Decimal(0);
+    let discountTotal = new Decimal(0);
+    const otherAmount = new Decimal(invoice.other)
+    const roundOff = new Decimal(invoice.roundOff)
+
+    items.forEach(item => {
+        const quantity = new Decimal(item.quantity);
+        const rate = new Decimal(item.rate);
+        const amount = quantity.times(rate);
+        const discount = new Decimal(item.discount || 0);
+        const total = amount.minus(discount);
+
+        discountTotal = discountTotal.plus(discount);
+        taxableTotal = taxableTotal.plus(total);
+
+        if (hasGst && item.gstRate) {
+            const gstAmt = total.times(new Decimal(item.gstRate).dividedBy(100));
+            gstTotal = gstTotal.plus(gstAmt);
+        }
+    });
+
+    const grandTotal = taxableTotal.plus(gstTotal).plus(otherAmount).plus(roundOff);
+
+    return {
+        discountTotal: discountTotal.toDecimalPlaces(2).toNumber(),
+        taxableTotal: taxableTotal.toDecimalPlaces(2).toNumber(),
+        gstTotal: gstTotal.toDecimalPlaces(2).toNumber(),
+        grandTotal: grandTotal.toDecimalPlaces(2).toNumber(),
+    };
+}
+
+// Utility: calculate discount
+const calculateDiscount = (total, discountAmount, discountPercent) => {
+    if (discountAmount && discountAmount > 0) {
+        return discountAmount;
+    } else if (discountPercent && discountPercent > 0) {
+        return (total * discountPercent) / 100;
+    } else {
+        return 0;
+    }
+}
+
+// Delete invoice by ID
+const deleteInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+    const { isPermanentDelete = false } = req.query;
+
+    // Delete invoice by ID
+    const deleted = await deleteInvoiceById(invoiceId, isPermanentDelete);
+
+    // If no rows were affected, it means the invoice was not found or already deleted
+    if (!deleted) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice deleted successfully.' })
+    );
+});
+
+// Generate and get invoice PDF
+const getInvoicePdf = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    // Fetch invoice data by ID
+    let invoiceData = await fetchInvoiceById(invoiceId);
+
+    // If invoiceData is not found, throw an error
+    if (!invoiceData) {
+        throw new ApiError({ statusCode: 404, errorCode: ERROR_CODES.NOT_FOUND, message: 'Invoice not found' });
+    }
+
+    // Fetch challan, PO, ewaybill data
+    const invoiceChallanPOEwaybillData = await fetchChallanPOEwayBillsForInvoice(invoiceId);
+    invoiceData = {
+        ...invoiceData,
+        ...invoiceChallanPOEwaybillData
+    }
+
+    // Prepare data for PDF
+    const invoicePdfJsonData = await prepareInvoicePdfJsonData(invoiceData);
+
+    // Get the path to the generated PDF file
+    const filePath = path.join(projectPaths.ROOT_DIR, './invoice.pdf');
+
+    // Generate the PDF
+    const pdfBuffer = await generateInvoicePDF(invoicePdfJsonData, puppeteer); // generates the PDF and saves it
+
+    // Set the headers for the response as a PDF file
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="invoice.pdf"');
+    // res.send(pdfBuffer);
+
+    // Stream the PDF file to the response
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    // Handle errors during the streaming
+    fileStream.on('end', () => {
+        fs.unlink(filePath, () => { }); // optional: clean up after download
+    });
+});
+
+// Prepare invoice PDF JSON data
+const prepareInvoicePdfJsonData = async (invoice) => {
+    if (!invoice || !invoice.items) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid invoice data while generating pdf' });
+    }
+
+    const { stateMap, cityMap } = await getCityAndStateMapping() || {}
+    const { taxDetailItems = [], taxDetailTotal = {} } = getUniqueTaxDetails(invoice.items) || {}
+    const companyAddress = `${invoice.company_address || ''} <br> ${cityMap[invoice.company_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.company_state_id]?.name) || ''}, ${invoice.company_pincode || ''}`;
+    const customerBillingAddress = `${invoice.billing_address || ''} <br> ${cityMap[invoice.billing_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.billing_state_id]?.name) || ''}, ${invoice.billing_pincode || ''}`;
+    const customerShippingAddress = `${invoice.shipping_address || ''} <br> ${cityMap[invoice.shipping_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.shipping_state_id]?.name) || ''}, ${invoice.shipping_pincode || ''}`;
+    const placeOfSupply = stateMap[invoice.billing_state_id]?.name.toUpperCase() || '';
+    const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : ''
+    const invoiceDate = invoice.invoice_date ? moment(invoice.invoice_date).format("DD MMM YYYY").toUpperCase() : '';
+    const invoiceSubtotal = []
+
+    // Invoice subtotal rows
+    if (invoice.discount_percent > 0 || invoice.discount_amount > 0) {
+        const discountLable = invoice.discount_percent > 0 ? `Discount ${invoice.discount_percent}%` : 'Discount'
+
+        invoiceSubtotal.push(...[
+            {  // use unshift() if you want it at the top
+                name: 'Sub Total',
+                totalAmount: formatAmount(invoice.sub_total, { showSymbol: true })
+            },
+            {  // use unshift() if you want it at the top
+                name: discountLable,
+                totalAmount: formatAmount(`-${invoice.discount_amount}`, { showSymbol: true })
+            }
+        ])
+    }
+
+    // Taxable amount, CGST, SGST, Round off
+    invoiceSubtotal.push(...[
+        { name: 'Taxable Amount', totalAmount: formatAmount(invoice.taxable_amount, { showSymbol: true }) },
+        { name: 'CGST', totalAmount: formatAmount(invoice.cgst, { showSymbol: true }) },
+        { name: 'SGST', totalAmount: formatAmount(invoice.sgst, { showSymbol: true }) },
+        { name: 'Round Off', totalAmount: formatAmount(invoice.round_off, { showSymbol: true }) }
+    ])
+
+    // Invoice total row
+    const invoiceTotalRow = {
+        qty: formatAmount(invoice.items?.reduce((acc, item) => acc + (item.quantity || 0), 0) || 0),
+        totalAmount: formatAmount(invoice.total, { showSymbol: true }),
+        totalAmountInWords: amountToWords(invoice.total || 0)
+    }
+
+    const invoiceData = {
+        id: invoice.id,
+        customerName: invoice.customerName,
+        company: {
+            logo: invoice.company_logo,
+            name: invoice.company_name,
+            gstNo: invoice.gst_number,
+            address: companyAddress,
+            mobile: invoice.company_phone_number,
+            email: invoice.company_email
+        },
+        customer: {
+            name: invoice.customer_name,
+            gstNo: invoice.gst_number,
+            billingAddress: customerBillingAddress,
+            shippingAddress: customerShippingAddress,
+            mobile: invoice.billing_phone_number,
+            email: invoice.billing_email,
+        },
+        invoiceDetails: {
+            invoiceNo: invoice.invoice_no,
+            invoiceDate: invoiceDate,
+            placeOfSupply: placeOfSupply,
+            dueDate: dueDate,
+            challanNo: invoice.challan || 'NA',
+            challanDate: 'NA',
+            poNumber: invoice.po || 'NA',
+            poDate: 'NA',
+            ewayBillNo: invoice.ewaybill || 'NA',
+            modeOfPayment: invoice.payment_label || ''
+        },
+        items: invoice.items?.map(item => ({
+            id: item.id,
+            name: item.description || '',
+            hsnAndSacCode: item.hsn_sac_code || '',
+            taxPercentage: `${Number(item.gst_rate) || 0}%`,
+            qty: Number(item.qty) || '',
+            unit: item.uqc || '',
+            price: formatAmount(item.rate) || '',
+            totalAmount: formatAmount(item.taxable_amount) || ''
+        })) ?? [],
+        subTotal: invoiceSubtotal,
+        total: invoiceTotalRow,
+        taxDetail: {
+            items: taxDetailItems.map(item => ({
+                taxableValue: formatAmount(item.taxableValue),
+                centralTaxPercentage: `${item.centralTaxPercentage}%`,
+                centralTaxAmount: formatAmount(item.centralTaxAmount),
+                stateTaxPercentage: `${item.stateTaxPercentage}%`,
+                stateTaxAmount: formatAmount(item.stateTaxAmount),
+                totalTaxAmount: formatAmount(item.totalTaxAmount)
+            })),
+            total: {
+                taxableValue: formatAmount(taxDetailTotal.taxableValue),
+                centralTaxAmount: formatAmount(taxDetailTotal.centralTaxAmount),
+                stateTaxAmount: formatAmount(taxDetailTotal.stateTaxAmount),
+                totalTaxAmount: formatAmount(taxDetailTotal.totalTaxAmount)
+            }
+        },
+        bank: {
+            bankName: invoice.bank_name,
+            accountNumber: invoice.account_number,
+            ifscCode: invoice.ifsc_code,
+            branch: invoice.branch_name
+        },
+        termsAndConditions: [
+            '1. Goods once sold will not be taken back or exchanged, except for manufacturing defects under applicable warranty.',
+            '2. We are the manufacturer of the goods supplied. Warranty, if any, will be as per our company’s standard terms and applicable law.',
+            '3. The buyer is responsible for verifying the quantity and quality of goods at the time of delivery.',
+            '4. Subject to local jurisdiction.'
+        ],
+        emptyRowHeightNeededInPx: 0
+    };
+
+    return invoiceData;
+}
+
+// Get unique tax details from invoice items
+const getUniqueTaxDetails = (invoiceItems = []) => {
+    const taxMap = {};
+
+    invoiceItems.forEach(item => {
+        const taxPercent = new Decimal(item.gst_rate || 0);
+        const taxableValue = new Decimal(item.taxable_amount || 0);
+        const taxKey = taxPercent.toString();
+
+        if (!taxMap[taxKey]) {
+            taxMap[taxKey] = {
+                taxableValue: new Decimal(0),
+                centralTaxPercentage: taxPercent.div(2).toNumber(),
+                centralTaxAmount: 0,
+                stateTaxPercentage: taxPercent.div(2).toNumber(),
+                stateTaxAmount: 0,
+                totalTaxAmount: 0
+            };
+        }
+
+        // accumulate taxable value slab-wise
+        taxMap[taxKey].taxableValue = taxMap[taxKey].taxableValue.plus(taxableValue);
+    });
+
+    // grand totals
+    let totalTaxable = new Decimal(0);
+    let totalCentral = new Decimal(0);
+    let totalState = new Decimal(0);
+    let totalTax = new Decimal(0);
+
+    // Calculate slab-wise tax amounts and accumulate totals
+    Object.values(taxMap).forEach(tax => {
+        const taxableValue = new Decimal(tax.taxableValue);
+        const centralPercent = new Decimal(tax.centralTaxPercentage || 0);
+        const statePercent = new Decimal(tax.stateTaxPercentage || 0);
+
+        tax.centralTaxAmount = taxableValue.mul(centralPercent).div(100).toDecimalPlaces(2).toNumber();
+        tax.stateTaxAmount = taxableValue.mul(statePercent).div(100).toDecimalPlaces(2).toNumber();
+        tax.totalTaxAmount = new Decimal(tax.centralTaxAmount).plus(tax.stateTaxAmount).toDecimalPlaces(2).toNumber();
+
+        // accumulate totals
+        totalTaxable = totalTaxable.plus(taxableValue);
+        totalCentral = totalCentral.plus(tax.centralTaxAmount);
+        totalState = totalState.plus(tax.stateTaxAmount);
+        totalTax = totalTax.plus(tax.totalTaxAmount);
+    });
+
+    // Add grand total row
+    const grandTotal = {
+        taxableValue: totalTaxable.toDecimalPlaces(2).toNumber(),
+        centralTaxPercentage: null,
+        centralTaxAmount: totalCentral.toDecimalPlaces(2).toNumber(),
+        stateTaxPercentage: null,
+        stateTaxAmount: totalState.toDecimalPlaces(2).toNumber(),
+        totalTaxAmount: totalTax.toDecimalPlaces(2).toNumber()
+    };
+
+    return {
+        taxDetailItems: Object.values(taxMap),
+        taxDetailTotal: grandTotal
+    };
+};
+
+// Get city and state mapping
+const getCityAndStateMapping = async () => {
+    const [states, cities] = await Promise.all([
+        fetchStates(),
+        fetchAllCities()
+    ]);
+
+    const stateMap = states.reduce((acc, state) => {
+        acc[state.id] = state;
+        return acc;
+    }, {});
+
+    const cityMap = cities.reduce((acc, city) => {
+        acc[city.id] = city;
+        return acc;
+    }, {});
+
+    return { stateMap, cityMap }
+}
 
 // Generate invoice PDF
 const generateInvoicePDF = async (invoiceData, puppeteer) => {
@@ -12,6 +675,8 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
             Pass 1: render with estimated filler rows
             =========================================
         */
+
+        const sampleInvoiceData = invoiceData
 
         // Get invoice template file
         const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'invoice-template.ejs');
@@ -79,7 +744,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         await page2.setContent(html, { waitUntil: 'networkidle0' });
 
         // Save the PDF to a file
-        await page2.pdf({
+        const pdfBuffer = await page2.pdf({
             format: 'A4',
             path: 'invoice.pdf', // Save to file
             printBackground: true,
@@ -90,8 +755,10 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         // Close the browser
         await browser2.close();
+
+        return pdfBuffer;
     } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError({statusCode: 500, message: 'Error generating PDF'})
+        throw error instanceof ApiError ? error : new ApiError({ statusCode: 500, message: 'Error generating PDF' })
     }
 };
 
@@ -111,4 +778,14 @@ const evaluatePage = () => {
     }
 }
 
-module.exports = { generateInvoicePDF };
+module.exports = {
+    getAllInvoice,
+    getInvoiceMeta,
+    getInvoiceById,
+    createInvoice,
+    updateInvoice,
+    deleteInvoice,
+    generateInvoicePDF,
+    prepareInvoicePdfJsonData,
+    getInvoicePdf
+};

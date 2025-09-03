@@ -81,7 +81,7 @@ const assignPermissionToRole = async (roleId, permissionId) => {
         }
 
         if (error.code === '23503') { // foreign key violation
-            throw new Error('Role or Permission not found.');
+            throw new ApiError({ statusCode: 404, message: 'Role or Permission not found.' });
         }
 
         throw new ApiError({ statusCode: 500, message: 'Failed to assign permission to role' });

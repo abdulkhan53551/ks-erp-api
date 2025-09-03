@@ -9,6 +9,12 @@ module.exports = (req, res, next) => {
     const token = authHeader.replace(/^Bearer\s+/i, '');
 
     let userId = 1;
+    const firmId = 1
+
+    const contextData = {
+        userId: userId,
+        firmId: firmId
+    }
 
     // try {
     //     if (token) {
@@ -19,7 +25,5 @@ module.exports = (req, res, next) => {
     //     console.warn('Invalid JWT:', err.message);
     // }
 
-    runWithContext({ userId }, () => {
-        next();
-    });
+    runWithContext(contextData, () => next());
 };

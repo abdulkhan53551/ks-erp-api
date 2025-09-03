@@ -3,7 +3,6 @@ const jwt = require('jsonwebtoken')
 const { JWT } = require('../../../config/config')
 const { ApiError } = require('../services/ApiError')
 const { db } = require('../database')
-const { logQuery } = require('../helpers/logQuery')
 const { getEnforcer } = require('../services/casbin')
 
 //  Is user exist
