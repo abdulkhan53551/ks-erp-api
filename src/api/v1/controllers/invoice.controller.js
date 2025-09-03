@@ -2,14 +2,17 @@ const { projectPaths, errorCodes } = require("../../../config/constants");
 const { sampleInvoiceData } = require("./sampleInvoiceData");
 const path = require('path')
 const ejs = require('ejs')
+const puppeteer = require('puppeteer');
+const fs = require('fs')
+const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const { default: Decimal } = require("decimal.js");
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
-const { formatAmount, amountToWords } = require("../services/conversion");
+const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
 const { getContext } = require("../helpers/requestContext");
 const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
@@ -414,172 +417,88 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+// Generate and get invoice PDF
+const getInvoicePdf = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    // Fetch invoice data by ID
+    let invoiceData = await fetchInvoiceById(invoiceId);
+
+    // If invoiceData is not found, throw an error
+    if (!invoiceData) {
+        throw new ApiError({ statusCode: 404, errorCode: ERROR_CODES.NOT_FOUND, message: 'Invoice not found' });
+    }
+
+    // Fetch challan, PO, ewaybill data
+    const invoiceChallanPOEwaybillData = await fetchChallanPOEwayBillsForInvoice(invoiceId);
+    invoiceData = {
+        ...invoiceData,
+        ...invoiceChallanPOEwaybillData
+    }
+
+    // Prepare data for PDF
+    const invoicePdfJsonData = await prepareInvoicePdfJsonData(invoiceData);
+
+    // Get the path to the generated PDF file
+    const filePath = path.join(projectPaths.ROOT_DIR, './invoice.pdf');
+
+    // Generate the PDF
+    const pdfBuffer = await generateInvoicePDF(invoicePdfJsonData, puppeteer); // generates the PDF and saves it
+
+    // Set the headers for the response as a PDF file
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename="invoice.pdf"');
+    // res.send(pdfBuffer);
+
+    // Stream the PDF file to the response
+    const fileStream = fs.createReadStream(filePath);
+    fileStream.pipe(res);
+
+    // Handle errors during the streaming
+    fileStream.on('end', () => {
+        fs.unlink(filePath, () => { }); // optional: clean up after download
+    });
+});
+
 // Prepare invoice PDF JSON data
 const prepareInvoicePdfJsonData = async (invoice) => {
     if (!invoice || !invoice.items) {
         throw new ApiError({ statusCode: 400, message: 'Invalid invoice data while generating pdf' });
     }
 
-    // const invoiceData = {
-    //     id: 1,
-    //     customerName: 'John Doe',
-    //     company: {
-    //         logo: 'https://www.unilever.com/Images/unilever-logo_tcm244-500123_w600.png',
-    //         name: 'Hindustan Uniliver Test',
-    //         gstNo: '27ABCDE1234F1Z5',
-    //         address: '64, Whilefield Main Rd, Palm Meadows, White field <br> Bengaluru KARNATAKA, 560066',
-    //         mobile: '+91 99800 12345',
-    //         email: 'info@unilever.com'
-    //     },
-    //     customer: {
-    //         name: 'Hein Schumacher',
-    //         gstNo: '27ABCDE1234F1Z5',
-    //         billingAddress: 'Marathahalli - Sarjapur Outer Ring Road, Kadabeesanahalli, <br> Bengaluru, Karnataka, 560087',
-    //         shippingAddress: 'Marathahalli - Sarjapur Outer Ring Road, Kadabeesanahalli test, <br> Bengaluru, Karnataka, 560087',
-    //         mobile: '9890241776',
-    //         email: 'hein.schumacher@unilever.com'
-    //     },
-    //     invoiceDetails: {
-    //         invoiceNo: "INV-11",
-    //         invoiceDate: "15 JUN 2023",
-    //         placeOfSupply: "29-KARNATAKA",
-    //         dueDate: "15 JUN 2023",
-    //         challanNo: "01, 02, 03, 04, 05",
-    //         challanDate: "15 JUN 2023",
-    //         poNumber: "PO123456",
-    //         poDate: "20 JUN 2023",
-    //         ewayBillNo: "PO123456",
-    //         modeOfPayment: "CASH / ONLINE"
-    //     },
-    //     items: [
-    //         {
-    //             id: 1,
-    //             name: 'Colgate 200 gm',
-    //             hsnAndSacCode: '33061020',
-    //             taxPercentage: '18',
-    //             qty: '5 NOS',
-    //             unit: 'NOS',
-    //             price: '64.41',
-    //             totalAmount: '322.03'
-    //         },
-    //         {
-    //             id: 2,
-    //             name: 'Surf Excel Easy Wash Detergent Powder 1kg',
-    //             hsnAndSacCode: '340119',
-    //             taxPercentage: '18',
-    //             qty: '2',
-    //             unit: 'NOS',
-    //             price: '126.27',
-    //             totalAmount: '252.54'
-    //         },
-    //         {
-    //             id: 3,
-    //             name: 'Dove Soap',
-    //             hsnAndSacCode: '34011919',
-    //             taxPercentage: '18',
-    //             qty: '10',
-    //             unit: 'NOS',
-    //             price: '33.05',
-    //             totalAmount: '330.51'
-    //         },
-    //         {
-    //             id: 4,
-    //             name: 'Head & Shoulders Shampoo',
-    //             hsnAndSacCode: '3304',
-    //             taxPercentage: '18',
-    //             qty: '5',
-    //             unit: 'NOS',
-    //             price: '253.39',
-    //             totalAmount: '1266.95'
-    //         },
-    //     ],
-    //     subTotal: [
-    //         { name: 'Discount 2.0%', totalAmount: '2172.03' },
-    //         { name: 'Taxable Amount', totalAmount: '2172.03' },
-    //         { name: 'CGST', totalAmount: '195.49' },
-    //         { name: 'SGST', totalAmount: '195.49' },
-    //     ],
-    //     total: {
-    //         qty: '22.000',
-    //         totalAmount: '₹2,563.00',
-    //         totalAmountInWords: 'Two Thousand, Five Hundred and Sixty Three Rupees Only.'
-    //     },
-    //     taxDetail: {
-    //         items: [
-    //             {
-    //                 taxableValue: '322.03',
-    //                 centralTaxPercentage: '9%',
-    //                 centralTaxAmount: '28.98',
-    //                 stateTaxPercentage: '9%',
-    //                 stateTaxAmount: '28.98',
-    //                 totalTaxAmount: '57.97'
-    //             },
-    //             {
-    //                 taxableValue: '252.54',
-    //                 centralTaxPercentage: '9%',
-    //                 centralTaxAmount: '22.73',
-    //                 stateTaxPercentage: '9%',
-    //                 stateTaxAmount: '22.73',
-    //                 totalTaxAmount: '45.46'
-    //             },
-    //             {
-    //                 taxableValue: '330.51',
-    //                 centralTaxPercentage: '9%',
-    //                 centralTaxAmount: '29.75',
-    //                 stateTaxPercentage: '9%',
-    //                 stateTaxAmount: '29.75',
-    //                 totalTaxAmount: '59.49'
-    //             },
-    //             {
-    //                 taxableValue: '1266.95',
-    //                 centralTaxPercentage: '9%',
-    //                 centralTaxAmount: '114.03',
-    //                 stateTaxPercentage: '9%',
-    //                 stateTaxAmount: '114.03',
-    //                 totalTaxAmount: '228.05'
-    //             },
-    //         ],
-    //         total: {
-    //             taxableValue: '2172.03',
-    //             centralTaxAmount: '195.49',
-    //             stateTaxAmount: '195.49',
-    //             totalTaxAmount: '390.97'
-    //         }
-    //     },
-    //     bank: {
-    //         bankName: 'YES BANK',
-    //         accountNumber: '66789999222445',
-    //         ifscCode: 'YESBBIN4567',
-    //         branch: 'Kodihalli'
-    //     },
-    //     termsAndConditions: [
-    //         '1. Goolds once sold cannot be taken back or exchanged.',
-    //         '2. We are not the manufacturers, company will stand for warranty as per their terms and conditions.',
-    //         '3. Interest @24% p.a. will be charged for uncleared bill beyond 15 days.',
-    //         '4. Subject to local jurisdiction.'
-    //     ],
-    // };
-
     const { stateMap, cityMap } = await getCityAndStateMapping() || {}
     const { taxDetailItems = [], taxDetailTotal = {} } = getUniqueTaxDetails(invoice.items) || {}
-    const customerBillingAddress = `${invoice.billing_address || ''} <br> ${cityMap[invoice.billing_city_id]?.name || ''}, ${stateMap[invoice.billing_state_id]?.name || ''}, ${invoice.billing_pincode || ''}`;
-    const customerShippingAddress = `${invoice.shipping_address || ''} <br> ${cityMap[invoice.shipping_city_id]?.name || ''}, ${stateMap[invoice.shipping_state_id]?.name || ''}, ${invoice.shipping_pincode || ''}`;
-    const placeOfSupply = stateMap[invoice.billing_state_id]?.gst_place_of_supply || '';
+    const companyAddress = `${invoice.company_address || ''} <br> ${cityMap[invoice.company_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.company_state_id]?.name) || ''}, ${invoice.company_pincode || ''}`;
+    const customerBillingAddress = `${invoice.billing_address || ''} <br> ${cityMap[invoice.billing_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.billing_state_id]?.name) || ''}, ${invoice.billing_pincode || ''}`;
+    const customerShippingAddress = `${invoice.shipping_address || ''} <br> ${cityMap[invoice.shipping_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.shipping_state_id]?.name) || ''}, ${invoice.shipping_pincode || ''}`;
+    const placeOfSupply = stateMap[invoice.billing_state_id]?.name.toUpperCase() || '';
     const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : ''
     const invoiceDate = invoice.invoice_date ? moment(invoice.invoice_date).format("DD MMM YYYY").toUpperCase() : '';
-    // const challanDate = invoice.challan_date ? moment(invoice.challan_date).format("DD MMM YYYY").toUpperCase() : '';
-    const invoiceSubtotal = [
+    const invoiceSubtotal = []
+
+    // Invoice subtotal rows
+    if (invoice.discount_percent > 0 || invoice.discount_amount > 0) {
+        const discountLable = invoice.discount_percent > 0 ? `Discount ${invoice.discount_percent}%` : 'Discount'
+
+        invoiceSubtotal.push(...[
+            {  // use unshift() if you want it at the top
+                name: 'Sub Total',
+                totalAmount: formatAmount(invoice.sub_total, { showSymbol: true })
+            },
+            {  // use unshift() if you want it at the top
+                name: discountLable,
+                totalAmount: formatAmount(`-${invoice.discount_amount}`, { showSymbol: true })
+            }
+        ])
+    }
+
+    // Taxable amount, CGST, SGST, Round off
+    invoiceSubtotal.push(...[
         { name: 'Taxable Amount', totalAmount: formatAmount(invoice.taxable_amount, { showSymbol: true }) },
         { name: 'CGST', totalAmount: formatAmount(invoice.cgst, { showSymbol: true }) },
         { name: 'SGST', totalAmount: formatAmount(invoice.sgst, { showSymbol: true }) },
-    ]
-
-    if (invoice.discount_percent > 0) {
-        invoiceSubtotal.unshift({  // use unshift() if you want it at the top
-            name: `Discount ${invoice.discount_percent}%`,
-            totalAmount: formatAmount(invoice.discount_amount, { showSymbol: true })
-        })
-    }
+        { name: 'Round Off', totalAmount: formatAmount(invoice.round_off, { showSymbol: true }) }
+    ])
 
     // Invoice total row
     const invoiceTotalRow = {
@@ -595,7 +514,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             logo: invoice.company_logo,
             name: invoice.company_name,
             gstNo: invoice.gst_number,
-            address: invoice.company_address,
+            address: companyAddress,
             mobile: invoice.company_phone_number,
             email: invoice.company_email
         },
@@ -612,22 +531,22 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             invoiceDate: invoiceDate,
             placeOfSupply: placeOfSupply,
             dueDate: dueDate,
-            challanNo: invoice.challan || '',
+            challanNo: invoice.challan || 'NA',
             challanDate: 'NA',
-            poNumber: invoice.po || '',
+            poNumber: invoice.po || 'NA',
             poDate: 'NA',
-            ewayBillNo: invoice.ewaybill || '',
+            ewayBillNo: invoice.ewaybill || 'NA',
             modeOfPayment: invoice.payment_label || ''
         },
         items: invoice.items?.map(item => ({
             id: item.id,
             name: item.description || '',
             hsnAndSacCode: item.hsn_sac_code || '',
-            taxPercentage: `${item.gst_rate || 0}%`,
-            qty: item.quantity || '',
+            taxPercentage: `${Number(item.gst_rate) || 0}%`,
+            qty: Number(item.qty) || '',
             unit: item.uqc || '',
             price: formatAmount(item.rate) || '',
-            totalAmount: formatAmount(item.amount) || ''
+            totalAmount: formatAmount(item.taxable_amount) || ''
         })) ?? [],
         subTotal: invoiceSubtotal,
         total: invoiceTotalRow,
@@ -661,20 +580,23 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         ],
         emptyRowHeightNeededInPx: 0
     };
+
+    return invoiceData;
 }
 
-// Get unique tax details
+// Get unique tax details from invoice items
 const getUniqueTaxDetails = (invoiceItems = []) => {
     const taxMap = {};
 
     invoiceItems.forEach(item => {
-        const taxPercent = Number(item.gst_rate || 0);
-        const taxableValue = Number(item.amount || 0);
+        const taxPercent = new Decimal(item.gst_rate || 0);
+        const taxableValue = new Decimal(item.taxable_amount || 0);
+        const taxKey = taxPercent.toString();
 
-        if (!taxMap[taxPercent]) {
-            taxMap[taxPercent] = {
-                taxableValue: 0,
-                centralTaxPercentage: taxPercent.div(2).toNumber(), // keep % as plain number
+        if (!taxMap[taxKey]) {
+            taxMap[taxKey] = {
+                taxableValue: new Decimal(0),
+                centralTaxPercentage: taxPercent.div(2).toNumber(),
                 centralTaxAmount: 0,
                 stateTaxPercentage: taxPercent.div(2).toNumber(),
                 stateTaxAmount: 0,
@@ -682,15 +604,17 @@ const getUniqueTaxDetails = (invoiceItems = []) => {
             };
         }
 
-        // Accumulate values
-        taxMap[taxPercent].taxableValue = taxMap[taxPercent].taxableValue.plus(taxableValue);
+        // accumulate taxable value slab-wise
+        taxMap[taxKey].taxableValue = taxMap[taxKey].taxableValue.plus(taxableValue);
     });
 
-    // Calculate tax amounts
-    let totalTaxable = 0, totalCentral = 0, totalState = 0, totalTax = 0;
+    // grand totals
+    let totalTaxable = new Decimal(0);
+    let totalCentral = new Decimal(0);
+    let totalState = new Decimal(0);
+    let totalTax = new Decimal(0);
 
-
-    // Calculate tax amounts
+    // Calculate slab-wise tax amounts and accumulate totals
     Object.values(taxMap).forEach(tax => {
         const taxableValue = new Decimal(tax.taxableValue);
         const centralPercent = new Decimal(tax.centralTaxPercentage || 0);
@@ -699,23 +623,29 @@ const getUniqueTaxDetails = (invoiceItems = []) => {
         tax.centralTaxAmount = taxableValue.mul(centralPercent).div(100).toDecimalPlaces(2).toNumber();
         tax.stateTaxAmount = taxableValue.mul(statePercent).div(100).toDecimalPlaces(2).toNumber();
         tax.totalTaxAmount = new Decimal(tax.centralTaxAmount).plus(tax.stateTaxAmount).toDecimalPlaces(2).toNumber();
+
+        // accumulate totals
+        totalTaxable = totalTaxable.plus(taxableValue);
+        totalCentral = totalCentral.plus(tax.centralTaxAmount);
+        totalState = totalState.plus(tax.stateTaxAmount);
+        totalTax = totalTax.plus(tax.totalTaxAmount);
     });
 
     // Add grand total row
     const grandTotal = {
-        taxableValue: new Decimal(totalTaxable).toDecimalPlaces(2),
+        taxableValue: totalTaxable.toDecimalPlaces(2).toNumber(),
         centralTaxPercentage: null,
-        centralTaxAmount: new Decimal(totalCentral).toDecimalPlaces(2),
+        centralTaxAmount: totalCentral.toDecimalPlaces(2).toNumber(),
         stateTaxPercentage: null,
-        stateTaxAmount: new Decimal(totalState).toDecimalPlaces(2),
-        totalTaxAmount: new Decimal(totalTax).toDecimalPlaces(2)
+        stateTaxAmount: totalState.toDecimalPlaces(2).toNumber(),
+        totalTaxAmount: totalTax.toDecimalPlaces(2).toNumber()
     };
 
     return {
         taxDetailItems: Object.values(taxMap),
         taxDetailTotal: grandTotal
     };
-}
+};
 
 // Get city and state mapping
 const getCityAndStateMapping = async () => {
@@ -814,7 +744,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         await page2.setContent(html, { waitUntil: 'networkidle0' });
 
         // Save the PDF to a file
-        await page2.pdf({
+        const pdfBuffer = await page2.pdf({
             format: 'A4',
             path: 'invoice.pdf', // Save to file
             printBackground: true,
@@ -825,6 +755,8 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         // Close the browser
         await browser2.close();
+
+        return pdfBuffer;
     } catch (error) {
         throw error instanceof ApiError ? error : new ApiError({ statusCode: 500, message: 'Error generating PDF' })
     }
@@ -854,5 +786,6 @@ module.exports = {
     updateInvoice,
     deleteInvoice,
     generateInvoicePDF,
-    prepareInvoicePdfJsonData
+    prepareInvoicePdfJsonData,
+    getInvoicePdf
 };

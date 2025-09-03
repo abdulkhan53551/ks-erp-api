@@ -72,9 +72,24 @@ const toCamelCase = (obj) => {
     return obj;
 }
 
+// Convert string to Title Case
+const toTitleCase = (str) => {
+    if (typeof str !== "string" || !str.trim()) {
+        return ""; // return empty string for invalid input
+    }
+
+    return str
+        .toLowerCase()
+        .trim()
+        .split(/\s+/) // split on one or more spaces
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
 module.exports = {
     pixelsToMm,
     amountToWords,
     formatAmount,
-    toCamelCase
+    toCamelCase,
+    toTitleCase
 };

@@ -129,6 +129,8 @@ const fetchInvoiceById = async (id) => {
                 'UC.address_line1 AS company_address',
                 'UC.website AS company_website',
                 'UC.website AS company_website',
+                'UC.city_id AS company_city_id',
+                'UC.state_id AS company_state_id',
                 'UC.pincode AS company_pincode',
                 'I.customer_name',
                 'I.has_gst',
@@ -504,23 +506,23 @@ const fetchChallanPOEwayBillsForInvoice = async (invoiceId) => {
 
         const result = await db('invoice_challans as ic')
             .select(
-                'i.invoice_id',
+                'i.id as invoice_id',
                 db.raw('STRING_AGG(ic.challan_no::text, \',\') as challan'),
-                'po.po_no as po',
-                'eb.ewaybill_no as ewaybill',
-                'PM.code as payment_code',
-                'PM.label as payment_label'
+                db.raw('MAX(po.po_no) as po'),
+                db.raw('MAX(eb.eway_bill_no) as ewaybill'),
+                db.raw('MAX(pm.code) as payment_code'),
+                db.raw('MAX(pm.label) as payment_label')
             )
             .leftJoin('invoices as i', 'i.id', 'ic.invoice_id')
             .leftJoin('purchase_orders as po', 'i.id', 'po.invoice_id')
             .leftJoin('eway_bills as eb', 'i.id', 'eb.invoice_id')
-            .leftJoin('payment_modes as PM', 'i.payment_mode_id', 'PM.id')
+            .leftJoin('payment_modes as pm', 'i.payment_mode_id', 'pm.id')
             .where('i.id', invoiceId)
             .andWhere('i.is_active', true)
-            .groupBy('i.id', 'po.po_no', 'eb.ewaybill_no');
+            .groupBy('i.id')
+            .first();
 
-
-        return result;
+        return result || {};
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
