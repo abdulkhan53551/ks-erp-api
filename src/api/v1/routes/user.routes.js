@@ -13,13 +13,13 @@ router.post('/register', upload.fields([
     {name: 'coverImage', maxCount: 1}
 ]), validate(userValidationSchema), registerUser)
 
-router.post('/login', loginUser)
+// router.post('/login', loginUser)
 
 // Secured route
-router.post('/logout', verifyJWT, logoutUser)
-router.post('/refresh-token', refreshAccessToken)
+// router.post('/logout', verifyJWT, logoutUser)
+// router.post('/refresh-token', refreshAccessToken)
 router.patch('/change-password', verifyJWT, changeCurrentPassword)
-router.get('/current-user', verifyJWT, getCurrentUser)
+router.get('/current-user', getCurrentUser)
 router.patch('/update-account-detail', verifyJWT, updateAccountDetail)
 router.patch('/update-avatar', verifyJWT, updateAccountDetail)
 

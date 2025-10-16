@@ -31,6 +31,29 @@ const findUserById = async (id) => {
     return user;
 }
 
+// Fetch user by ID
+const fetchUserById = async (id) => {
+    try {
+        const result = await db('users')
+            .select(
+                'id',
+                'email',
+                'first_name',
+                'last_name',
+                'role_id'
+            )
+            .where({ id: id, is_active: true })
+            .first();
+
+        return result || null;
+    } catch (err) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching user by ID.',
+        });
+    }
+};
+
 const updatePassword = async (oldPassword, newPassword) => {
     try {
         // Check if the old password and new password is present
@@ -106,6 +129,7 @@ const generateRefreshToken = (data) => {
 
 module.exports = {
     isUserExist,
+    fetchUserById,
     updatePassword,
     isPasswordCorrect,
     getHashedPassword,
