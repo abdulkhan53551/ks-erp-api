@@ -37,7 +37,7 @@ exports.up = async function (knex) {
 
         // Invoice Preferences
         table.string('invoice_prefix').defaultTo('INV');
-        table.integer('invoice_start_number').defaultTo(1);
+        table.string('invoice_start_number', 10).defaultTo('1');
         table.text('notes_footer');
 
         // Audit fields

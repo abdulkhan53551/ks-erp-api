@@ -10,6 +10,7 @@ const fetchAllFirm = async (query) => {
     const baseQuery = db('firms AS F')
         .select(
             'F.id as firm_id',
+            'F.logo_url',
             'F.firm_name',
             'F.trade_name',
             'F.gstin',
@@ -17,10 +18,14 @@ const fetchAllFirm = async (query) => {
             'C.name AS city',
             'S.name AS state',
             'UC.pincode',
+            'UC.phone_number',
             'FBA.account_number',
             'FBA.ifsc_code',
             'FBA.bank_name',
-            'FBA.branch_name'
+            'FBA.branch_name',
+            db.raw(`CONCAT(u.first_name, '', u.last_name) AS created_by`),
+            'F.created_at',
+            'F.updated_at',
         )
         .join('user_contacts AS UC', function () {
             this.on('F.id', '=', 'UC.entity_id')
@@ -29,12 +34,15 @@ const fetchAllFirm = async (query) => {
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
         .leftJoin('city AS C', 'UC.city_id', 'C.id')
         .leftJoin('state AS S', 'UC.state_id', 'S.id')
+        .leftJoin('users AS u', 'F.created_by', 'u.id')
         .where('F.is_active', true)
         .andWhere('F.created_by', userId)  // Show only firms created by the user
 
     // if (search) {
     //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
     // }
+
+    baseQuery.orderBy('F.id', 'desc');
 
     const firms = await fetchPageData({ baseQuery, page, pageSize });
 
@@ -73,21 +81,35 @@ const fetchFirmById = async (id = 0) => {
             'F.trade_name',
             'F.gstin',
             'F.firm_type',
-            'C.name AS city',
-            'S.name AS state',
+            'F.business_activity',
+            'F.pan_number',
+            'F.cin_number',
+            'F.tan_number',
+            'F.invoice_prefix',
+            'F.invoice_start_number',
+            'F.notes_footer',
+            'UC.id as firm_address_id',
+            'UC.email',
+            'UC.phone_number',
+            'UC.website',
+            'UC.address_line1',
+            'UC.city_id',
+            'UC.state_id',
             'UC.pincode',
+            'FBA.id as firm_bank_account_id',
+            'FBA.upi_id',
+            'FBA.account_holder_name',
             'FBA.account_number',
             'FBA.ifsc_code',
             'FBA.bank_name',
-            'FBA.branch_name'
+            'FBA.branch_name',
+            'FBA.account_type'
         )
         .leftJoin('user_contacts AS UC', function () {
             this.on('F.id', '=', 'UC.entity_id')
                 .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
         })
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
-        .leftJoin('city AS C', 'UC.city_id', 'C.id')
-        .leftJoin('state AS S', 'UC.state_id', 'S.id')
         .where('F.id', id)
         .first();
 
