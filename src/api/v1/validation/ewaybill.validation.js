@@ -17,13 +17,13 @@ const getEWayBillsByInvoiceValidationSchema = {
 // Validation schema for creating a new E-Way Bill
 const createEWayBillValidationSchema = {
     body: Joi.object({
-        ewaybillNo: Joi.string().max(50).required(),
-        ewaybillDate: Joi.date().required(),
+        ewayBillNo: Joi.string().max(50).required(),
+        ewayBillDate: Joi.date().required(),
         ewaybillValidUpto: Joi.date()
-            .min(Joi.ref('ewaybillDate')) // must be same or after ewaybillDate
+            .min(Joi.ref('ewayBillDate')) // must be same or after ewayBillDate
             .required()
             .messages({
-                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewaybillDate"',
+                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewayBillDate"',
             }),
         customerName: Joi.string().max(255).required(),
         isInvoiced: Joi.boolean().when('invoiceId', {
@@ -41,13 +41,13 @@ const updateEWayBillValidationSchema = {
         id: Joi.number().integer().required().label('E-Way Bill ID'),
     }),
     body: Joi.object({
-        ewaybillNo: Joi.string().max(50).required(),
-        ewaybillDate: Joi.date().required(),
+        ewayBillNo: Joi.string().max(50).required(),
+        ewayBillDate: Joi.date().required(),
         ewaybillValidUpto: Joi.date()
-            .min(Joi.ref('ewaybillDate')) // must be same or after ewaybillDate
+            .min(Joi.ref('ewayBillDate')) // must be same or after ewayBillDate
             .required()
             .messages({
-                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewaybillDate"',
+                'date.min': '"ewaybillValidUpto" must be greater than or equal to "ewayBillDate"',
             }),
         customerName: Joi.string().max(255).required(),
         isInvoiced: Joi.boolean().when('invoiceId', {

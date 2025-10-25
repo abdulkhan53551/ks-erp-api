@@ -10,14 +10,10 @@ const getAllPurchaseOrder = asyncHandler(async (req, res) => {
 
     const purchaseOrder = await fetchAllPurchaseOrder({ page, pageSize, search });
 
-    if (!purchaseOrder.length) {
-        throw new ApiError({ statusCode: 404, message: 'No purchase order found.' });
-    }
-
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            message: 'Purchase order fetched successfully.',
+            message: purchaseOrder.length ? 'Purchase order fetched successfully.' : 'No purchase order found.',
             data: purchaseOrder,
         })
     );
@@ -26,10 +22,6 @@ const getAllPurchaseOrder = asyncHandler(async (req, res) => {
 // Fetch purchase order meta data for pagination
 const getPurchaseOrderMeta = asyncHandler(async (req, res) => {
     const result = await fetchPurchaseOrderMeta(req.query);
-
-    if (!result) {
-        throw new ApiError({ statusCode: 404, message: 'No purchase order found.' });
-    }
 
     return res
         .status(200)
@@ -100,8 +92,13 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating purchase order' })
     }
 
+    // Response
+    const response = {
+        id: challanId
+    }
+
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Purchase order created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: 'Purchase order created successfully.' })
     )
 });
 

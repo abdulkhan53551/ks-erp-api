@@ -15,9 +15,12 @@ const fetchAllInvoiceChallans = async (query) => {
                 'IC.challan_date',
                 'IC.is_invoiced',
                 'I.invoice_no',
-                'IC.customer_name'
+                'IC.customer_name',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
+                'IC.updated_at'
             )
-            .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id') // double check your table name
+            .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
+            .leftJoin('users AS u', 'IC.created_by', 'u.id')
             .where('IC.is_active', true);
 
         if (search) {

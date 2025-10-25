@@ -15,9 +15,13 @@ const fetchAllEwayBill = async (query) => {
                 'EB.valid_upto',
                 'EB.is_invoiced',
                 'I.invoice_no',
-                'EB.customer_name'
+                'EB.customer_name',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
+                'EB.created_at',
+                'EB.updated_at'
             )
             .leftJoin('invoices AS I', 'EB.invoice_id', 'I.id')
+            .leftJoin('users AS u', 'EB.created_by', 'u.id')
             .where('EB.is_active', true);
 
         if (search) {

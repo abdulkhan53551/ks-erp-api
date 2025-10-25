@@ -23,7 +23,7 @@ const fetchAllFirm = async (query) => {
             'FBA.ifsc_code',
             'FBA.bank_name',
             'FBA.branch_name',
-            db.raw(`CONCAT(u.first_name, '', u.last_name) AS created_by`),
+            db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
             'F.created_at',
             'F.updated_at',
         )

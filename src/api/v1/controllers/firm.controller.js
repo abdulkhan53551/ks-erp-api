@@ -6,12 +6,10 @@ const { asyncHandler } = require("../services/asyncHandler");
 // Get all firm
 const getAllFirm = asyncHandler(async (req, res) => {
     const firms = await fetchAllFirm(req.query);
-    if (!firms) {
-        throw new ApiError({ statusCode: 404, message: 'No firms found.' });
-    }
+
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: firms, message: 'Firms fetched successfully.' }));
+        .json(new ApiResponse({ statusCode: 200, data: firms, message: firms.length ? 'Firms fetched successfully.' : 'No firms found.' }));
 });
 
 // Get firm meta data for pagination

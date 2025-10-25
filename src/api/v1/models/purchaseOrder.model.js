@@ -15,9 +15,12 @@ const fetchAllPurchaseOrder = async (query) => {
                 'PO.po_date',
                 'PO.is_invoiced',
                 'I.invoice_no',
-                'PO.customer_name'
+                'PO.customer_name',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
+                'PO.updated_at'
             )
             .leftJoin('invoices AS I', 'PO.invoice_id', 'I.id')
+            .leftJoin('users AS u', 'PO.created_by', 'u.id')
             .where('PO.is_active', true);
 
         if (search) {

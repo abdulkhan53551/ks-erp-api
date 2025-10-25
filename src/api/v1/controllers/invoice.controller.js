@@ -22,17 +22,10 @@ const getAllInvoice = asyncHandler(async (req, res) => {
 
     const result = await fetchAllInvoice({ page, pageSize, search });
 
-    console.log('result => ', result);
-
-
-    if (!result.length) {
-        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
-    }
-
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            message: 'Invoice fetched successfully.',
+            message: result.length ? 'Invoice fetched successfully.' : 'No invoice found.',
             data: result,
         })
     );
@@ -41,10 +34,6 @@ const getAllInvoice = asyncHandler(async (req, res) => {
 // Fetch invoice meta
 const getInvoiceMeta = asyncHandler(async (req, res) => {
     const result = await fetchInvoiceMeta(req.query);
-
-    if (!result) {
-        throw new ApiError({ statusCode: 404, message: 'No invoice found.' });
-    }
 
     return res
         .status(200)

@@ -10,14 +10,10 @@ const getAllEwayBill = asyncHandler(async (req, res) => {
 
     const result = await fetchAllEwayBill({ page, pageSize, search });
 
-    if (!result.length) {
-        throw new ApiError({ statusCode: 404, message: 'No eway bill found.' });
-    }
-
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            message: 'Eway bill fetched successfully.',
+            message: result.length ? 'Eway bill fetched successfully.' : 'No eway bill found.',
             data: result,
         })
     );
@@ -26,10 +22,6 @@ const getAllEwayBill = asyncHandler(async (req, res) => {
 // Fetch eway bill meta data for pagination
 const getEwayBillMeta = asyncHandler(async (req, res) => {
     const result = await fetchEwayBillMeta(req.query);
-
-    if (!result) {
-        throw new ApiError({ statusCode: 404, message: 'No eway bill found.' });
-    }
 
     return res
         .status(200)
@@ -87,8 +79,8 @@ const createEwayBill = asyncHandler(async (req, res) => {
     // Create eway bill
     const data = {
         invoice_id: body.invoiceId,
-        eway_bill_no: body.ewaybillNo,
-        eway_bill_date: body.ewaybillDate,
+        eway_bill_no: body.ewayBillNo,
+        eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
         firm_id: firmId,
@@ -101,8 +93,13 @@ const createEwayBill = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating eway bill' })
     }
 
+    // Response
+    const response = {
+        id: ewayBillid
+    }
+
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Eway bill created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: 'Eway bill created successfully.' })
     )
 });
 
@@ -113,8 +110,8 @@ const updateEwayBill = asyncHandler(async (req, res) => {
 
     const updatedData = {
         invoice_id: body.invoiceId,
-        eway_bill_no: body.ewaybillNo,
-        eway_bill_date: body.ewaybillDate,
+        eway_bill_no: body.ewayBillNo,
+        eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
         firm_id: firmId,

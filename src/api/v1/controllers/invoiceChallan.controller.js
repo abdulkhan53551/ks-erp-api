@@ -10,14 +10,10 @@ const getAllInvoiceChallans = asyncHandler(async (req, res) => {
 
     const challans = await fetchAllInvoiceChallans({ page, pageSize, search });
 
-    if (!challans.length) {
-        throw new ApiError({ statusCode: 404, message: 'No invoice challan found.' });
-    }
-
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            message: 'Invoice challans fetched successfully.',
+            message: challans.length ? 'Invoice challans fetched successfully.' : 'No invoice challan found.',
             data: challans,
         })
     );
@@ -26,10 +22,6 @@ const getAllInvoiceChallans = asyncHandler(async (req, res) => {
 // Fetch invoice challan meta data for pagination
 const getInvoiceChallanMeta = asyncHandler(async (req, res) => {
     const result = await fetchInvoiceChallanMeta(req.query);
-
-    if (!result) {
-        throw new ApiError({ statusCode: 404, message: 'No invoice challans found' });
-    }
 
     return res
         .status(200)
@@ -97,8 +89,13 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice challan' })
     }
 
+    // Response
+    const response = {
+        id: challanId
+    }
+
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice challan created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: 'Invoice challan created successfully.' })
     )
 });
 
