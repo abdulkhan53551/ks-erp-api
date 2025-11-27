@@ -168,7 +168,12 @@ const updateInvoiceValidationSchema = {
       Joi.object({
         id: Joi.number().integer().allow(null), // For identifying existing items
         description: Joi.string().max(255).required(),
-        hsnSacCode: Joi.string().max(20).allow(null, ''),
+        hsnSacCode: Joi.string()
+          .allow(null, "")        // ✅ allows empty string
+          .pattern(/^\d{4}$|^\d{6}$|^\d{8}$/)
+          .messages({
+            "string.pattern.base": "HSN/SAC Code must be 4, 6, or 8 digits numeric."
+          }),
         qty: Joi.number().precision(2).min(0).required(),
         itemUnitId: Joi.number().integer(),
         rate: Joi.number().precision(2).min(0).required(),

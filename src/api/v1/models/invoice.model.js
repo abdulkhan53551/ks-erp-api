@@ -16,6 +16,11 @@ const fetchAllInvoice = async (query) => {
                 'I.invoice_date',
                 'I.due_date',
                 'I.customer_name',
+                'I.gst_number',
+                'I.sub_total',
+                'I.taxable_amount',
+                'I.cgst',
+                'I.sgst',
                 'I.total',
                 'PS.code AS payment_status_code',
                 'PM.code AS payment_mode_code',
@@ -183,7 +188,7 @@ const fetchInvoiceById = async (id) => {
 
         // 2. Fetch invoice items (detail)
         const items = await db('invoice_items AS II')
-            .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'IU.uqc', 'II.qty', 'II.rate', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
+            .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
             .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
             .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
             .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
