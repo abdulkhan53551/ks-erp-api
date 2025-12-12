@@ -50,20 +50,14 @@ const getInvoiceChallanById = asyncHandler(async (req, res) => {
 // Fetch invoice challans by invoice ID
 const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoiceId;
-    const challans = await fetchInvoiceChallansByInvoiceId(invoiceId);
-
-    if (!challans.length) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'No challans found for the given invoice ID.',
-        });
-    }
+    const { includeUnmappedChallans } = req.query;
+    const challans = await fetchInvoiceChallansByInvoiceId(invoiceId, includeUnmappedChallans);
 
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
             data: challans,
-            message: 'Invoice challans fetched successfully.',
+            message:challans.length > 0 ? 'Invoice challans fetched successfully.' : 'No challans found for the given invoice ID.',
         })
     );
 });

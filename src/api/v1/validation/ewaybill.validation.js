@@ -12,6 +12,9 @@ const getEWayBillsByInvoiceValidationSchema = {
     params: Joi.object({
         invoiceId: Joi.number().integer().required().label('Invoice ID'),
     }),
+    query: Joi.object({
+        includeUnmappedEwayBills: Joi.boolean().optional().default(false),
+    })
 };
 
 // Validation schema for creating a new E-Way Bill

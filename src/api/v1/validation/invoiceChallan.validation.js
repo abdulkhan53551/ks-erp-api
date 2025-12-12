@@ -12,6 +12,9 @@ const getInvoiceChallansByInvoiceIdValidationSchema = {
     params: Joi.object({
         invoiceId: Joi.number().integer().required().label('Invoice ID'),
     }),
+    query: Joi.object({
+        includeUnmappedChallans: Joi.boolean().optional().default(false),
+    })
 };
 
 // Schema: Create a new invoice challan

@@ -12,6 +12,9 @@ const getPurchaseOrdersByInvoiceIdValidationSchema = {
     params: Joi.object({
         invoiceId: Joi.number().integer().required().label('Invoice ID'),
     }),
+    query: Joi.object({
+        includeUnmappedPurchaseOrders: Joi.boolean().optional().default(false),
+    })
 };
 
 // Validation schema for creating a new purchase order

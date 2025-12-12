@@ -1,5 +1,6 @@
 const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
+const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 
 // Fetch all eway bill
@@ -95,9 +96,10 @@ const fetchEwayBillById = async (id) => {
 };
 
 // Fetch eway bill by invoice ID
-const fetchEwayBillByInvoiceId = async (invoiceId) => {
+const fetchEwayBillByInvoiceId = async (invoiceId, includeUnmappedEwayBills) => {
     try {
-        const result = await db('eway_bills AS EB')
+        const { firmId = 0 } = getContext();
+        const baseQuery = db('eway_bills AS EB')
             .select(
                 'EB.id AS eway_bill_id',
                 'EB.eway_bill_no',
@@ -108,8 +110,18 @@ const fetchEwayBillByInvoiceId = async (invoiceId) => {
                 'EB.customer_name'
             )
             .leftJoin('invoices AS I', 'EB.invoice_id', 'I.id')
-            .where('EB.invoice_id', invoiceId)
+            .where('EB.firm_id', firmId)
             .andWhere('EB.is_active', true);
+
+        if (includeUnmappedEwayBills) {
+            baseQuery.andWhere(function () {
+                this.where('EB.is_invoiced', false).orWhere('EB.invoice_id', invoiceId);
+            })
+        } else {
+            baseQuery.where('EB.invoice_id', invoiceId)
+        }
+
+        const result = await baseQuery;
 
         return result;
     } catch (err) {
@@ -191,6 +203,60 @@ const deleteEwayBillById = async (id, isPermanentDelete) => {
     }
 };
 
+/**
+ * Safely update eway-bill → invoice mapping using comparison method
+ * with strict validation to prevent cross-invoice tampering.
+ */
+const updateInvoiceEwayBillMapping = async (trx, invoiceId, newEwayBillIds) => {
+    const { firmId = 0 } = getContext();
+
+    // 0️⃣ Validate: All eway bills must exist in this firm and be active
+    const ewayBills = await trx('eway_bills')
+        .select('id')
+        .whereIn('id', newEwayBillIds)
+        .where('firm_id', firmId)
+        .where('is_active', true);
+
+    // If any invalid/mismatched ID is passed
+    if (ewayBills.length !== newEwayBillIds.length) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Invalid eWay Bill ID provided.',
+        });
+    }
+
+    // 1️⃣ Fetch existing eway bills mapped to this invoice
+    const existing = await trx('eway_bills')
+        .select('id')
+        .where({
+            invoice_id: invoiceId,
+            firm_id: firmId,
+            is_active: true,
+        });
+
+    const oldIds = existing.map(b => b.id);
+
+    // 2️⃣ Calculate diff
+    const toAdd = newEwayBillIds.filter(id => !oldIds.includes(id));
+    const toRemove = oldIds.filter(id => !newEwayBillIds.includes(id));
+
+    // 3️⃣ Map newly selected eway bills
+    if (toAdd.length > 0) {
+        await trx('eway_bills')
+            .whereIn('id', toAdd)
+            .update({ invoice_id: invoiceId });
+    }
+
+    // 4️⃣ Unmap removed eway bills
+    if (toRemove.length > 0) {
+        await trx('eway_bills')
+            .whereIn('id', toRemove)
+            .update({ invoice_id: null });
+    }
+
+    return { added: toAdd, removed: toRemove };
+};
+
 module.exports = {
     fetchAllEwayBill,
     fetchEwayBillMeta,
@@ -198,5 +264,6 @@ module.exports = {
     fetchEwayBillByInvoiceId,
     insertEwayBill,
     updateEwayBillById,
-    deleteEwayBillById
+    deleteEwayBillById,
+    updateInvoiceEwayBillMapping
 };

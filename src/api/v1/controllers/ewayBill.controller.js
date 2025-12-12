@@ -50,23 +50,16 @@ const getEwayBillById = asyncHandler(async (req, res) => {
 // Fetch eway bill by invoice ID
 const getEwayBillByInvoiceId = asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoiceId;
+    const { includeUnmappedEwayBills } = req.query;
 
     // Fetch all challans for the given invoice ID
-    const result = await fetchEwayBillByInvoiceId(invoiceId);
-
-    // If no eway bill is found, throw an error
-    if (!result.length) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'No eway bill found for the given invoice ID.',
-        });
-    }
+    const result = await fetchEwayBillByInvoiceId(invoiceId, includeUnmappedEwayBills);
 
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            data: challans,
-            message: 'Eway bill fetched successfully.',
+            data: result,
+            message: result.length > 0 ? 'Eway bill fetched successfully.' : 'No eway bill found for the given invoice ID.',
         })
     );
 });

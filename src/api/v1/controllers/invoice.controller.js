@@ -345,9 +345,11 @@ const compareWithFrontendValues = (frontendTotals, backendTotals) => {
 // Invoice calculation function
 const calculateInvoiceTotals = (items, invoice) => {
     const { hasGst } = invoice
+    let subTotal = new Decimal(0);
     let taxableTotal = new Decimal(0);
     let gstTotal = new Decimal(0);
-    let discountTotal = new Decimal(0);
+    // let discountTotal = new Decimal(0);
+    let discountTotal = new Decimal(invoice.discountAmount || 0);
     const otherAmount = new Decimal(invoice.other)
     const roundOff = new Decimal(invoice.roundOff)
 
@@ -358,8 +360,8 @@ const calculateInvoiceTotals = (items, invoice) => {
         const discount = new Decimal(item.discount || 0);
         const total = amount.minus(discount);
 
-        discountTotal = discountTotal.plus(discount);
-        taxableTotal = taxableTotal.plus(total);
+        // discountTotal = discountTotal.plus(discount);
+        subTotal = subTotal.plus(total);
 
         if (hasGst && item.gstRate) {
             const gstAmt = total.times(new Decimal(item.gstRate).dividedBy(100));
@@ -367,7 +369,14 @@ const calculateInvoiceTotals = (items, invoice) => {
         }
     });
 
+    taxableTotal = subTotal.minus(discountTotal);
     const grandTotal = taxableTotal.plus(gstTotal).plus(otherAmount).plus(roundOff);
+
+    // console.log('subTotal => ', subTotal);
+    // console.log('taxableTotal => ', taxableTotal);
+    // console.log('gstTotal => ', gstTotal);
+    // console.log('grandTotal => ', grandTotal);
+    
 
     return {
         discountTotal: discountTotal.toDecimalPlaces(2).toNumber(),
