@@ -23,8 +23,8 @@ exports.up = function (knex) {
         table.string('gst_number', 20).nullable();                // GST number
 
         // Invoice address
-        table.integer('billing_address_id').unsigned().references('id').inTable('invoice_contacts').onDelete('SET NULL');
-        table.integer('shipping_address_id').unsigned().references('id').inTable('invoice_contacts').onDelete('SET NULL');
+        table.integer('billing_address_id')
+        table.integer('shipping_address_id')
 
         // Challan
         table.boolean('has_challan').notNullable().defaultTo(false);

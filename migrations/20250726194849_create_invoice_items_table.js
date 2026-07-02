@@ -15,6 +15,7 @@ exports.up = function (knex) {
         table.decimal('discount_percent', 5, 2).defaultTo(0); // per-item %
         table.decimal('discount_amount', 12, 2).defaultTo(0); // optional
 
+        table.decimal('sub_total', 12, 2).notNullable();
         table.decimal('taxable_amount', 12, 2).notNullable();
         // 🔽 Add this line to link to gst_slabs
         table.integer('gst_slab_id').unsigned().notNullable().references('id').inTable('gst_slabs').onDelete('RESTRICT');
