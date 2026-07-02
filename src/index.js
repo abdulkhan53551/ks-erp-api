@@ -22,12 +22,12 @@ process.on('SIGINT', async () => {
 });
 
 connectDB()
-    .then(() => {
-        return connectRedis(); // Ensure Redis is connected
-    })
-    .then((redisClient) => {
-        return initCasbin(redisClient)
-    })
+    // .then(() => {
+    //     return connectRedis(); // Ensure Redis is connected
+    // })
+    // .then((redisClient) => {
+    //     return initCasbin(redisClient)
+    // })
     .then(() => {
         app.listen(PORT, () => console.log('✅ Server listing on port ' + PORT));
     })

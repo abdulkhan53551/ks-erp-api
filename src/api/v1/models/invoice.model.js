@@ -1,7 +1,11 @@
 const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
+const { printQuery } = require("../helpers/debugSql");
 const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
+const { updateInvoiceEwayBillMapping } = require("./ewayBill.model");
+const { updateInvoiceChallanMapping } = require("./invoiceChallan.model");
+const { updateInvoicePurchaseOrderMapping } = require("./purchaseOrder.model");
 
 // Fetch all invoice
 const fetchAllInvoice = async (query) => {
@@ -140,6 +144,7 @@ const fetchInvoiceById = async (id) => {
                 'I.customer_name',
                 'I.has_gst',
                 'I.gst_number',
+                'ICB.id AS billing_id',
                 'ICB.email AS billing_email',
                 'ICB.phone_number AS billing_phone_number',
                 'ICB.website AS billing_website',
@@ -147,6 +152,7 @@ const fetchInvoiceById = async (id) => {
                 'ICB.city_id AS billing_city_id',
                 'ICB.state_id AS billing_state_id',
                 'ICB.pincode AS billing_pincode',
+                'ICS.id AS shipping_id',
                 'ICS.email AS shipping_email',
                 'ICS.phone_number AS shipping_phone_number',
                 'ICS.address_line1 AS shipping_address',
@@ -180,24 +186,58 @@ const fetchInvoiceById = async (id) => {
                 this.on('F.id', '=', 'UC.entity_id')
                     .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
             })
-            .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.id')
+            .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.firm_id')
             .where('I.is_active', true)
             .andWhere('I.id', id)
             .andWhere('I.firm_id', firmId)
             .first();
 
+        // printQuery(result)
+
+        // 2️⃣ Fetch child tables in parallel
+        const [challans, pos, ewayBills, items] = await Promise.all([
+            db('invoice_challans AS IC')
+                .select(db.raw(`array_remove(ARRAY_AGG("IC"."id"), NULL) AS ids`))
+                .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
+                .where({ 'IC.invoice_id': id, 'IC.is_invoiced': true, 'IC.is_active': true, 'I.is_active': true })
+                .first(),
+
+            db('purchase_orders AS PO')
+                .select(db.raw(`array_remove(ARRAY_AGG("PO"."id"), NULL) AS ids`))
+                .leftJoin('invoices AS I', 'PO.invoice_id', 'I.id')
+                .where({ 'PO.invoice_id': id, 'PO.is_invoiced': true, 'PO.is_active': true, 'I.is_active': true })
+                .first(),
+
+            db('eway_bills AS EWB')
+                .select(db.raw(`array_remove(ARRAY_AGG("EWB"."id"), NULL) AS ids`))
+                .leftJoin('invoices AS I', 'EWB.invoice_id', 'I.id')
+                .where({ 'EWB.invoice_id': id, 'EWB.is_invoiced': true, 'EWB.is_active': true, 'I.is_active': true })
+                .first(),
+
+            db('invoice_items AS II')
+                .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
+                .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
+                .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
+                .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
+                .where('I.is_active', true)
+                .where('I.id', id)
+        ]);
+
         // 2. Fetch invoice items (detail)
-        const items = await db('invoice_items AS II')
-            .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
-            .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
-            .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
-            .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
-            .where('I.is_active', true)
-            .where('I.id', id);
+        // const items = await db('invoice_items AS II')
+        //     .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
+        //     .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
+        //     .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
+        //     .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
+        //     .where('I.is_active', true)
+        //     .where('I.id', id);
 
         // 3. Attach items to invoice
         if (result) {
             result.items = items;
+            result.challan_ids = challans ? challans.ids : [];
+            result.po_ids = pos ? pos.ids : [];
+            result.ewb_ids = ewayBills ? ewayBills.ids : [];
         }
 
         return result || null;
@@ -222,7 +262,10 @@ const insertInvoice = async (data) => {
         // 2 & 3. Run in parallel
         const [itemsResult, addressResult] = await Promise.all([
             insertInvoiceItems(trx, invoiceId, items),
-            insertInvoiceAddresses(trx, invoiceId, address)
+            insertInvoiceAddresses(trx, invoiceId, address),
+            updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || []),
+            updateInvoicePurchaseOrderMapping(trx, invoiceId, masterData.purchaseOrderIds || []),
+            updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || [])
         ]);
 
         // Update billing & shipping address id into invoice
@@ -335,7 +378,10 @@ const updateInvoiceById = async (data) => {
         // 2 & 3. Run in parallel
         await Promise.all([
             updateInvoiceItems(trx, invoiceId, items),
-            insertInvoiceAddresses(trx, invoiceId, address)
+            insertInvoiceAddresses(trx, invoiceId, address),
+            // updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || []),
+            // updateInvoicePurchaseOrderMapping(trx, invoiceId, masterData.purchaseOrderIds || []),
+            // updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || [])
         ]);
 
         return invoiceId;
@@ -345,7 +391,7 @@ const updateInvoiceById = async (data) => {
 // Update invoice master data
 const updateInvoiceMaster = async (trx, invoiceId, data) => {
     try {
-        trx('invoices').update(data).where({ id: invoiceId });
+        await trx('invoices').update(data).where({ id: invoiceId });
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -400,27 +446,32 @@ const updateInvoiceItems = async (trx, invoiceId, items) => {
 const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
     try {
         const { firmId = 0 } = getContext();
-        let affectedInvoices;
 
         return db.transaction(async trx => {
+
+            let result;
+
             if (isPermanentDelete) {
-                // Hard delete
-                await trx('invoice_contacts').where({ invoice_id: invoiceId }).del();
-                await trx('invoice_items').where({ invoice_id: invoiceId }).del();
-                affectedInvoices = await trx('invoices').where({ id: invoiceId, firm_id: firmId }).del();
+                // HARD DELETE - run in parallel
+                const [contacts, items, invoice] = await Promise.all([
+                    trx('invoice_contacts').where({ invoice_id: invoiceId }).del(),
+                    trx('invoice_items').where({ invoice_id: invoiceId }).del(),
+                    trx('invoices').where({ id: invoiceId, firm_id: firmId }).del()
+                ]);
+
+                result = invoice; // number of affected invoice rows
             } else {
-                // 1. Delete invoice contacts
-                await trx('invoice_contacts').update({ is_active: false }).where({ invoice_id: invoiceId });
+                // SOFT DELETE - run in parallel
+                const [contacts, items, invoice] = await Promise.all([
+                    trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                    trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                    trx('invoices').where({ id: invoiceId }).update({ is_active: false })
+                ]);
 
-                // 2. Delete invoice items 
-                await trx('invoice_items').update({ is_active: false }).where({ invoice_id: invoiceId })
-
-                // 3. Delete invoice
-                affectedInvoices = await trx('invoices').update({ is_active: false }).where({ id: invoiceId });
+                result = invoice;
             }
 
-            // return true/false
-            return affectedInvoices > 0;
+            return result > 0;
         });
     } catch (error) {
         throw new ApiError({
@@ -543,8 +594,8 @@ module.exports = {
     insertInvoice,
     updateInvoiceById,
     deleteInvoiceById,
-    fetchChallansForInvoice,
-    fetchPurchaseOrdersForInvoice,
-    fetchEwayBillsForInvoice,
+    // fetchChallansForInvoice,
+    // fetchPurchaseOrdersForInvoice,
+    // fetchEwayBillsForInvoice,
     fetchChallanPOEwayBillsForInvoice
 };

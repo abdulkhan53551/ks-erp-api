@@ -1,5 +1,7 @@
 const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
+const { printQuery } = require("../helpers/debugSql");
+const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 
@@ -93,9 +95,10 @@ const fetchInvoiceChallanById = async (id) => {
 };
 
 // Fetch invoice challans by invoice ID
-const fetchInvoiceChallansByInvoiceId = async (invoiceId) => {
+const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallans) => {
     try {
-        const challans = await db('invoice_challans AS IC')
+        const { firmId = 0 } = getContext();
+        const baseQuery = db('invoice_challans AS IC')
             .select(
                 'IC.id AS challan_id',
                 'IC.challan_no',
@@ -105,9 +108,18 @@ const fetchInvoiceChallansByInvoiceId = async (invoiceId) => {
                 'IC.customer_name'
             )
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
-            .where('IC.invoice_id', invoiceId)
+            .where('IC.firm_id', firmId)
             .andWhere('IC.is_active', true);
 
+        if (includeUnmappedChallans) {
+            baseQuery.andWhere(function () {
+                this.where('IC.is_invoiced', false).orWhere('IC.invoice_id', invoiceId);
+            })
+        } else {
+            baseQuery.where('IC.invoice_id', invoiceId)
+        }
+
+        const challans = await baseQuery;
         return challans;
     } catch (err) {
         throw new ApiError({
@@ -197,6 +209,56 @@ const deleteInvoiceChallanById = async (id, isPermanentDelete) => {
     }
 };
 
+/**
+ * Safely update challan-invoice mapping using comparison method
+ * with strict validation to prevent cross-invoice tampering.
+ */
+const updateInvoiceChallanMapping = async (trx, invoiceId, newChallanIds) => {
+    const { firmId = 0 } = getContext();
+
+    // 0️⃣ Fetch all challans being requested (validation)
+    const challans = await trx('invoice_challans')
+        .select('id')
+        .whereIn('id', newChallanIds)
+        .where('firm_id', firmId)
+        .where('is_active', true);
+
+    // Validate: All challans must exist
+    if (challans.length !== newChallanIds.length) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Invalid challan ID provided.',
+        });
+    }
+
+    // 1️⃣ Fetch existing challans mapped to this invoice
+    const existing = await trx('invoice_challans')
+        .select('id')
+        .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true });
+
+    const oldIds = existing.map(c => c.id);
+
+    // 2️⃣ Calculate diff
+    const toAdd = newChallanIds.filter(id => !oldIds.includes(id));
+    const toRemove = oldIds.filter(id => !newChallanIds.includes(id));
+
+    // 3️⃣ Map new challans
+    if (toAdd.length > 0) {
+        await trx('invoice_challans')
+            .whereIn('id', toAdd)
+            .update({ invoice_id: invoiceId });
+    }
+
+    // 4️⃣ Unmap removed challans
+    if (toRemove.length > 0) {
+        await trx('invoice_challans')
+            .whereIn('id', toRemove)
+            .update({ invoice_id: null });
+    }
+
+    return { added: toAdd, removed: toRemove };
+}
+
 module.exports = {
     fetchAllInvoiceChallans,
     fetchInvoiceChallanMeta,
@@ -205,4 +267,5 @@ module.exports = {
     insertInvoiceChallan,
     updateInvoiceChallanById,
     deleteInvoiceChallanById,
+    updateInvoiceChallanMapping
 };

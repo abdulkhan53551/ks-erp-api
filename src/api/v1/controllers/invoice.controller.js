@@ -102,6 +102,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
+        status: 'Final',
         firm_id: firmId
     };
 
@@ -114,6 +115,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
         discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
         discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        sub_total: new Decimal(item.subTotal).toDecimalPlaces(2).toNumber(),
         taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
         gst_slab_id: item.gstSlabId,
         cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
@@ -159,8 +161,12 @@ const createInvoice = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice' })
     }
 
+    const response = {
+        id: invoiceId,
+    }
+
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: 'Invoice created successfully.' })
     )
 })
 
@@ -207,6 +213,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
+        status: 'Final',
         firm_id: firmId
     };
 
@@ -219,6 +226,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         rate: new Decimal(item.rate).toDecimalPlaces(2).toNumber(),
         discount_percent: new Decimal(item.discountPercent).toDecimalPlaces(2).toNumber(),
         discount_amount: new Decimal(item.discountAmount).toDecimalPlaces(2).toNumber(),
+        sub_total: new Decimal(item.subTotal).toDecimalPlaces(2).toNumber(),
         taxable_amount: new Decimal(item.taxableAmount).toDecimalPlaces(2).toNumber(),
         gst_slab_id: item.gstSlabId,
         cgst: new Decimal(item.cgst).toDecimalPlaces(2).toNumber(),
@@ -326,7 +334,10 @@ const validateInvoiceTotals = async ({
 
 // Utility: compare with tolerance
 const isWithinTolerance = (value1, value2) => {
-    return Math.abs(value1 - value2) <= TOLERANCE;
+    return new Decimal(value1)
+        .minus(value2)
+        .abs()
+        .lte(TOLERANCE);
 }
 
 // Utility: compare frontend vs backend values
@@ -345,9 +356,11 @@ const compareWithFrontendValues = (frontendTotals, backendTotals) => {
 // Invoice calculation function
 const calculateInvoiceTotals = (items, invoice) => {
     const { hasGst } = invoice
+    let subTotal = new Decimal(0);
     let taxableTotal = new Decimal(0);
     let gstTotal = new Decimal(0);
-    let discountTotal = new Decimal(0);
+    // let discountTotal = new Decimal(0);
+    let discountTotal = new Decimal(invoice.discountAmount || 0);
     const otherAmount = new Decimal(invoice.other)
     const roundOff = new Decimal(invoice.roundOff)
 
@@ -358,16 +371,25 @@ const calculateInvoiceTotals = (items, invoice) => {
         const discount = new Decimal(item.discount || 0);
         const total = amount.minus(discount);
 
-        discountTotal = discountTotal.plus(discount);
-        taxableTotal = taxableTotal.plus(total);
+        // discountTotal = discountTotal.plus(discount);
+        // subTotal = subTotal.plus(total);
+        subTotal = subTotal.plus(amount);
+        taxableTotal = taxableTotal.plus(amount).minus(discount);
 
-        if (hasGst && item.gstRate) {
+        if (item.gstRate) {
             const gstAmt = total.times(new Decimal(item.gstRate).dividedBy(100));
             gstTotal = gstTotal.plus(gstAmt);
         }
     });
 
+    // taxableTotal = subTotal.plus(discountTotal);
     const grandTotal = taxableTotal.plus(gstTotal).plus(otherAmount).plus(roundOff);
+
+    // console.log('subTotal => ', subTotal);
+    // console.log('taxableTotal => ', taxableTotal);
+    // console.log('gstTotal => ', gstTotal);
+    // console.log('grandTotal => ', grandTotal);
+
 
     return {
         discountTotal: discountTotal.toDecimalPlaces(2).toNumber(),

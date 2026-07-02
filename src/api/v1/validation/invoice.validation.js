@@ -62,6 +62,42 @@ const createInvoiceValidationSchema = {
     hasPo: Joi.boolean().default(false),
     hasEwayBill: Joi.boolean().default(false),
 
+    // Challans
+    challanIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasChallan', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'Challan IDs are required when challan is selected.',
+          'array.min': 'Please select at least one challan.'
+        })
+      }),
+
+    // Purchase Orders
+    poIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasPo', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'Purchase order IDs are required when PO is selected.',
+          'array.min': 'Please select at least one PO.'
+        })
+      }),
+
+    // E-Way Bills
+    ewayBillIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasEwayBill', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'E-way bill IDs are required when e-way bill is selected.',
+          'array.min': 'Please select at least one e-way bill.'
+        })
+      }),
+
     items: Joi.array().items(
       Joi.object({
         description: Joi.string().max(255).required(),
@@ -71,6 +107,7 @@ const createInvoiceValidationSchema = {
         rate: Joi.number().precision(2).min(0).required(),
         discountPercent: Joi.number().precision(2).min(0).max(100).allow(0),
         discountAmount: Joi.number().precision(2).min(0).allow(0),
+        subTotal: Joi.number().precision(2).min(0).allow(0),
         taxableAmount: Joi.number().precision(2).min(0).allow(0),
         gstSlabId: Joi.number().integer().required(),
         cgst: Joi.number().precision(2).min(0).allow(0),
@@ -83,15 +120,15 @@ const createInvoiceValidationSchema = {
     ).min(1).required(),
 
     subTotal: Joi.number().precision(2).min(0).required(),
-    discountPercent: Joi.number().precision(2).min(0).max(100).allow(null, 0),
-    discountAmount: Joi.number().precision(2).min(0).allow(null, 0),
-    taxableAmount: Joi.number().precision(2).min(0).allow(null, 0),
-    cgst: Joi.number().precision(2).min(0).allow(null, 0),
-    sgst: Joi.number().precision(2).min(0).allow(null, 0),
-    igst: Joi.number().precision(2).min(0).allow(null, 0),
+    discountPercent: Joi.number().precision(2).min(0).max(100).default(0).allow(0),
+    discountAmount: Joi.number().precision(2).min(0).default(0).allow(0),
+    taxableAmount: Joi.number().precision(2).min(0).default(0).allow(0),
+    cgst: Joi.number().precision(2).min(0).default(0).allow(0),
+    sgst: Joi.number().precision(2).min(0).default(0).allow(0),
+    igst: Joi.number().precision(2).min(0).default(0).allow(0),
     total: Joi.number().precision(2).min(0).required(),
-    roundOff: Joi.number().precision(2).allow(null, 0),
-    other: Joi.number().precision(2).allow(null, 0),
+    roundOff: Joi.number().precision(2).default(0).allow(0),
+    other: Joi.number().precision(2).default(0).allow(0),
 
     paymentStatusId: Joi.number().integer().min(1).required(),
     paymentModeId: Joi.number().integer().min(0).required()
@@ -163,6 +200,42 @@ const updateInvoiceValidationSchema = {
     hasPo: Joi.boolean().default(false),
     hasEwayBill: Joi.boolean().default(false),
 
+    // Challans
+    challanIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasChallan', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'Challan IDs are required when challan is selected.',
+          'array.min': 'Please select at least one challan.'
+        })
+      }),
+
+    // Purchase Orders
+    poIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasPo', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'Purchase order IDs are required when PO is selected.',
+          'array.min': 'Please select at least one PO.'
+        })
+      }),
+
+    // E-Way Bills
+    ewayBillIds: Joi.array()
+      .items(Joi.number().integer().positive())
+      .default([])
+      .when('hasEwayBill', {
+        is: true,
+        then: Joi.array().min(1).required().messages({
+          'any.required': 'E-way bill IDs are required when e-way bill is selected.',
+          'array.min': 'Please select at least one e-way bill.'
+        })
+      }),
+
     // Invoice items validation for update
     items: Joi.array().items(
       Joi.object({
@@ -177,13 +250,14 @@ const updateInvoiceValidationSchema = {
         qty: Joi.number().precision(2).min(0).required(),
         itemUnitId: Joi.number().integer(),
         rate: Joi.number().precision(2).min(0).required(),
-        discountPercent: Joi.number().precision(2).min(0).max(100).allow(0, null),
-        discountAmount: Joi.number().precision(2).min(0).allow(0, null),
+        discountPercent: Joi.number().precision(2).min(0).max(100).default(0).allow(0, null).empty(null),
+        discountAmount: Joi.number().precision(2).min(0).default(0).allow(0, null).empty(null),
+        subTotal: Joi.number().precision(2).min(0).allow(0),
         taxableAmount: Joi.number().precision(2).min(0).allow(0, null),
         gstSlabId: Joi.number().integer().required(),
         cgst: Joi.number().precision(2).min(0).allow(0, null),
         sgst: Joi.number().precision(2).min(0).allow(0, null),
-        igst: Joi.number().precision(2).min(0).allow(0, null),
+        igst: Joi.number().precision(2).min(0).default(0).allow(0, null).empty(null),
         total: Joi.number().precision(2).min(0).allow(0).required()
       })
         .custom(invoiceItemCustomValidation)
@@ -191,15 +265,15 @@ const updateInvoiceValidationSchema = {
     ).min(1).required(),
 
     subTotal: Joi.number().precision(2).min(0),
-    discountPercent: Joi.number().precision(2).min(0).max(100).allow(null, 0),
-    discountAmount: Joi.number().precision(2).min(0).allow(null, 0),
+    discountPercent: Joi.number().precision(2).min(0).max(100).default(0).allow(null, 0).empty(null),
+    discountAmount: Joi.number().precision(2).min(0).default(0).allow(null, 0).empty(null),
     taxableAmount: Joi.number().precision(2).min(0).allow(null, 0),
-    cgst: Joi.number().precision(2).min(0).allow(null, 0),
-    sgst: Joi.number().precision(2).min(0).allow(null, 0),
-    igst: Joi.number().precision(2).min(0).allow(null, 0),
+    cgst: Joi.number().precision(2).min(0).allow(0),
+    sgst: Joi.number().precision(2).min(0).allow(0),
+    igst: Joi.number().precision(2).min(0).allow(0),
     total: Joi.number().precision(2).min(0),
-    roundOff: Joi.number().precision(2).allow(null, 0),
-    other: Joi.number().precision(2).allow(null, 0),
+    roundOff: Joi.number().precision(2).allow(0),
+    other: Joi.number().precision(2).default(0).allow(0),
 
     paymentStatusId: Joi.number().integer().min(1),
     paymentModeId: Joi.number().integer().min(0)
@@ -246,7 +320,7 @@ const deleteInvoiceValidationSchema = {
 
 // Custom validation function for create/update
 function validateCreateOrUpdateCustom(item, helpers) {
-  const gross = new Decimal(item.subTotal);
+  const gross = new Decimal(item.subTotal || 0);
 
   // Rule: If discountPercent > 0 → discountAmount must be > 0
   if (item.discountPercent && item.discountPercent > 0) {
@@ -264,7 +338,7 @@ function validateCreateOrUpdateCustom(item, helpers) {
   }
 
   // Rule: discount amount cannot exceed gross
-  if (gross.lessThan(item.discountAmount)) {
+  if (gross.lessThan(item.discountAmount || 0)) {
     return helpers.error("any.invalid", { customMessage: "Discount amount cannot exceed gross amount of invoice" });
   }
 
@@ -278,7 +352,7 @@ function invoiceItemCustomValidation(item, helpers) {
   const grossAmount = qty.times(rate);
 
   // Rule 1: discount amount <= gross
-  if (grossAmount.lessThan(item.discountAmount)) {
+  if (grossAmount.lessThan(item.discountAmount || 0)) {
     return helpers.error("any.invalid", { customMessage: "Discount amount cannot exceed gross amount (rate * qty) of invoice item" });
   }
 

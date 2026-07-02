@@ -3,6 +3,11 @@ const { getContext } = require("./requestContext");
 
 function patchKnex(knex) {
   const proto = Object.getPrototypeOf(knex.queryBuilder());
+  const ignoredTables = [
+    "knex_migrations",
+    "knex_migrations_lock",
+    "policies",
+  ];
 
   // PATCH: .insert()
   const originalInsert = proto.insert;
@@ -12,7 +17,7 @@ function patchKnex(knex) {
     const tableName = this._single?.table;
 
     // Skip patching knex_migrations_lock table
-    if (tableName !== 'knex_migrations_lock' && tableName !== 'policies') {
+    if (!ignoredTables.includes(tableName)) {
       if (Array.isArray(data)) {
         data = data.map((record) => ({
           ...record,
@@ -45,7 +50,7 @@ function patchKnex(knex) {
     const tableName = this._single?.table;
 
     // Skip patching knex_migrations_lock table
-    if (tableName !== 'knex_migrations_lock' && tableName !== 'policies') {
+    if (!ignoredTables.includes(tableName)) {
       if (typeof data === 'object' && data !== null) {
         data = {
           ...data,

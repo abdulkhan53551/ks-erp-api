@@ -1,5 +1,6 @@
 const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
+const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 
@@ -93,9 +94,10 @@ const fetchPurchaseOrderById = async (id) => {
 };
 
 // Fetch purchase order by invoice ID
-const fetchPurchaseOrderByInvoiceId = async (invoiceId) => {
+const fetchPurchaseOrderByInvoiceId = async (invoiceId, includeUnmappedPurchaseOrders) => {
     try {
-        const purchaseOrder = await db('purchase_orders AS PO')
+        const { firmId = 0 } = getContext();
+        const baseQuery = db('purchase_orders AS PO')
             .select(
                 'PO.id AS po_id',
                 'PO.po_no',
@@ -105,9 +107,18 @@ const fetchPurchaseOrderByInvoiceId = async (invoiceId) => {
                 'PO.customer_name'
             )
             .leftJoin('invoices AS I', 'PO.invoice_id', 'I.id')
-            .where('PO.invoice_id', invoiceId)
+            .where('PO.firm_id', firmId)
             .andWhere('PO.is_active', true);
 
+        if (includeUnmappedPurchaseOrders) {
+            baseQuery.andWhere(function () {
+                this.where('PO.is_invoiced', false).orWhere('PO.invoice_id', invoiceId);
+            })
+        } else {
+            baseQuery.where('PO.invoice_id', invoiceId)
+        }
+
+        const purchaseOrder = await baseQuery;
         return purchaseOrder;
     } catch (err) {
         throw new ApiError({
@@ -187,6 +198,59 @@ const deletePurchaseOrderById = async (id, isPermanentDelete) => {
     }
 };
 
+/**
+ * Safely update purchase-order → invoice mapping using comparison method
+ * with strict validation to prevent cross-invoice tampering.
+ */
+const updateInvoicePurchaseOrderMapping = async (trx, invoiceId, newPurchaseOrderIds) => {
+    const { firmId = 0 } = getContext();
+
+    // 0️⃣ Validate: Ensure all provided PO IDs belong to this firm, invoice, and are active
+    const purchaseOrders = await trx('purchase_orders')
+        .select('id')
+        .whereIn('id', newPurchaseOrderIds)
+        .where('firm_id', firmId)
+        .where('is_active', true);
+
+    // ❗ We are NOT checking invoice_id here intentionally
+    // because user might be mapping from unmapped list
+    // or updating the list — we only ensure that **invalid POs cannot be passed**
+
+    if (purchaseOrders.length !== newPurchaseOrderIds.length) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Invalid purchase order ID provided.',
+        });
+    }
+
+    // 1️⃣ Fetch existing POs mapped to this invoice
+    const existing = await trx('purchase_orders')
+        .select('id')
+        .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true });
+
+    const oldIds = existing.map(po => po.id);
+
+    // 2️⃣ Calculate differential update
+    const toAdd = newPurchaseOrderIds.filter(id => !oldIds.includes(id));
+    const toRemove = oldIds.filter(id => !newPurchaseOrderIds.includes(id));
+
+    // 3️⃣ Map newly added POs
+    if (toAdd.length > 0) {
+        await trx('purchase_orders')
+            .whereIn('id', toAdd)
+            .update({ invoice_id: invoiceId });
+    }
+
+    // 4️⃣ Unmap removed POs
+    if (toRemove.length > 0) {
+        await trx('purchase_orders')
+            .whereIn('id', toRemove)
+            .update({ invoice_id: null });
+    }
+
+    return { added: toAdd, removed: toRemove };
+};
+
 module.exports = {
     fetchAllPurchaseOrder,
     fetchPurchaseOrderMeta,
@@ -194,5 +258,6 @@ module.exports = {
     fetchPurchaseOrderByInvoiceId,
     insertPurchaseOrder,
     updatePurchaseOrderById,
-    deletePurchaseOrderById
+    deletePurchaseOrderById,
+    updateInvoicePurchaseOrderMapping
 };

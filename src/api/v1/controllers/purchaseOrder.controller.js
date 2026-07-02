@@ -50,23 +50,16 @@ const getPurchaseOrderById = asyncHandler(async (req, res) => {
 // Fetch purchase orders by invoice ID
 const getPurchaseOrderByInvoiceId = asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoiceId;
+    const { includeUnmappedPurchaseOrders } = req.query;
 
     // Fetch all challans for the given invoice ID
-    const purchaseOrder = await fetchPurchaseOrderByInvoiceId(invoiceId);
-
-    // If no purchase order is found, throw an error
-    if (!purchaseOrder.length) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'No purchase order found for the given invoice ID.',
-        });
-    }
+    const purchaseOrder = await fetchPurchaseOrderByInvoiceId(invoiceId, includeUnmappedPurchaseOrders);
 
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            data: challans,
-            message: 'Purchase order fetched successfully.',
+            data: purchaseOrder,
+            message: purchaseOrder.length > 0 ? 'Purchase order fetched successfully.' : 'No purchase order found for the given invoice ID.',
         })
     );
 });
