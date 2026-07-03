@@ -11,6 +11,7 @@ const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
 const { productRoutes } = require('./product');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
+const { db } = require('../database');
 
 // const { customerRoutes } = require('./customer');
 // const { personRoutes } = require('./person');
@@ -20,6 +21,11 @@ const { verifyAccessToken } = require('../middlewares/auth.middleware');
 
 // 🔓 Public routes (no auth needed)
 router.use('/auth', authRoutes)
+router.get('/test', async (req, res) => {
+    const result = await db.raw("SELECT current_database(), current_user, version();");
+    console.log(result.rows);
+    return res.send("OK");
+});
 
 // 🔐 Protected routes (require valid access token)
 router.use(verifyAccessToken);

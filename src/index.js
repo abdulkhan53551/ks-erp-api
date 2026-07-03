@@ -5,21 +5,21 @@ const { app } = require('./app')
 const { PORT } = require('./config');
 
 // Listen for the SIGINT signal (e.g., Ctrl + C in the terminal)
-process.on('SIGINT', async () => {
-    try {
-        const redisClient = getRedisClient()
-        console.log('Closing database connection...');
-        await db.destroy();
+// process.on('SIGINT', async () => {
+//     try {
+//         const redisClient = getRedisClient()
+//         console.log('Closing database connection...');
+//         await db.destroy();
 
-        console.log('Closing Redis connection...');
-        await redisClient.disconnect(); // Optional if Redis needs cleanup
+//         console.log('Closing Redis connection...');
+//         await redisClient.disconnect(); // Optional if Redis needs cleanup
 
-        process.exit(0);
-    } catch (error) {
-        console.error('Error during shutdown:', error);
-        process.exit(1);
-    }
-});
+//         process.exit(0);
+//     } catch (error) {
+//         console.error('Error during shutdown:', error);
+//         process.exit(1);
+//     }
+// });
 
 connectDB()
     // .then(() => {
