@@ -124,7 +124,7 @@ const loginUser = asyncHandler(async (req, res) => {
     const optionsCookie = {
         httpOnly: true,
         secure: true,
-        sameSite: 'Strict',
+        sameSite: 'None',
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
     }
 
