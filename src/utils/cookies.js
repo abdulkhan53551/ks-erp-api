@@ -3,7 +3,7 @@ const clearAccessAndRefreshTokenCookie = (res) => {
     const cookieOptions = {
         httpOnly: true,
         secure: true,
-        sameSite: 'Strict',
+        sameSite: 'None',
     }
 
     res.clearCookie('refreshToken', cookieOptions);
