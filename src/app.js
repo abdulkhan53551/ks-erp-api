@@ -14,6 +14,19 @@ const { ERROR_CODES } = require('./config/constants/statusCodeMap')
 const { fetchChallanPOEwayBillsForInvoice } = require('./api/v1/models/invoice.model')
 
 const app = express()
+app.get('/test-pdf', async (req, res, next) => {
+      const browser = await puppeteer.launch();
+      const page = await browser.newPage();
+      await page.setContent("<h1>Hello, World!</h1>");
+      const pdf = await page.pdf();
+      const pdfBuffer = Buffer.from(pdf);
+
+      await browser.close();
+  
+      // Set the headers for the response as a PDF file
+      res.setHeader('Content-Type', 'application/pdf');
+      res.send(pdfBuffer);
+})
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
 app.use(express.json({ limit: '16kb' }));
 app.use(setUserContext);
