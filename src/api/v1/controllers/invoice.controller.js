@@ -460,6 +460,7 @@ const getInvoicePdf = asyncHandler(async (req, res) => {
     const fileName = `Invoice_${invoiceData.invoice_no}`.replace(/[<>:"/\\|?*]/g, '_') + '.pdf';
 
     // Set the headers for the response as a PDF file
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     res.send(pdfBuffer);
@@ -744,10 +745,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Save the PDF to a file
         const pdf = await page2.pdf({
             format: 'A4',
-            path: 'invoice.pdf', // Save to file
             printBackground: true,
-            width: `210mm`,
-            height: `297mm`,
             margin: { top: '6mm', bottom: '6mm', left: '6mm', right: '6mm' },
         });
 
