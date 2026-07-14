@@ -690,8 +690,33 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Fill the template with invoice data
         const filledHtml = await ejs.renderFile(templatePath, sampleInvoiceData);
 
-        // Launch the browser and open a new blank page
-        const browser = await puppeteer.launch();
+        let browser;
+        let executablePath;
+        if (process.env.NODE_ENV === 'production') {
+             const chromeRoot = path.join(
+                process.cwd(),
+                ".cache",
+                "puppeteer",
+                "chrome"
+            );
+
+            const version = fs.readdirSync(chromeRoot)[0];
+
+            executablePath = path.join(
+                chromeRoot,
+                version,
+                "chrome-linux64",
+                "chrome"
+            );
+
+            browser = await puppeteer.launch({
+                executablePath: executablePath,
+                headless: true
+            });
+        } else {
+            // Launch the browser and open a new blank page
+            browser = await puppeteer.launch();
+        }
 
         // Initialize a new page
         const page = await browser.newPage();
@@ -733,8 +758,16 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         // Fill the template again with updated data
         const html = await ejs.renderFile(templatePath, sampleInvoiceData);
 
-        // Launch the browser and open a new blank page
-        const browser2 = await puppeteer.launch();
+        let browser2;
+        if (process.env.NODE_ENV === 'production') {
+            browser2 = await puppeteer.launch({
+                executablePath: executablePath,
+                headless: true
+            });
+        } else {
+            // Launch the browser and open a new blank page
+            browser2 = await puppeteer.launch();
+        }
 
         // Initialize a new page
         const page2 = await browser2.newPage();
