@@ -16,8 +16,16 @@ const { fetchChallanPOEwayBillsForInvoice } = require('./api/v1/models/invoice.m
 const app = express()
 app.get('/test-pdf', async (req, res, next) => {
       const browser = await puppeteer.launch({
-        executablePath: "/opt/render/.cache/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome",
+        executablePath: path.join(
+          process.cwd(),
+          ".cache/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome"
+        ),
         headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+        ],
       });
       const page = await browser.newPage();
       await page.setContent("<h1>Hello, World!</h1>");
