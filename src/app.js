@@ -20,7 +20,7 @@ app.get('/test-pdf', async (req, res, next) => {
         //   process.cwd(),
         //   ".cache/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome"
         // ),
-        executablePath: puppeteer.executablePath(),
+        executablePath: await puppeteer.executablePath(),
         headless: true,
         args: [
           "--no-sandbox",
