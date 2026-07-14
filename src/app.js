@@ -47,11 +47,11 @@ app.get('/test-pdf', async (req, res, next) => {
       const browser = await puppeteer.launch({
         executablePath,
         headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-        ],
+        // args: [
+        //   "--no-sandbox",
+        //   "--disable-setuid-sandbox",
+        //   "--disable-dev-shm-usage",
+        // ],
       });
       const page = await browser.newPage();
       await page.setContent("<h1>Hello, World!</h1>");
