@@ -674,125 +674,270 @@ const getCityAndStateMapping = async () => {
 }
 
 // Generate invoice PDF
+// const generateInvoicePDF = async (invoiceData, puppeteer) => {
+//     try {
+//         /* 
+//             =========================================
+//             Pass 1: render with estimated filler rows
+//             =========================================
+//         */
+
+//         const sampleInvoiceData = invoiceData
+
+//         // Get invoice template file
+//         const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'invoice-template.ejs');
+
+//         // Fill the template with invoice data
+//         const filledHtml = await ejs.renderFile(templatePath, sampleInvoiceData);
+
+//         let browser;
+//         let executablePath;
+//         if (process.env.NODE_ENV === 'production') {
+//              const chromeRoot = path.join(
+//                 process.cwd(),
+//                 ".cache",
+//                 "puppeteer",
+//                 "chrome"
+//             );
+
+//             const version = fs.readdirSync(chromeRoot)[0];
+
+//             executablePath = path.join(
+//                 chromeRoot,
+//                 version,
+//                 "chrome-linux64",
+//                 "chrome"
+//             );
+
+//             browser = await puppeteer.launch({
+//                 executablePath: executablePath,
+//                 headless: true
+//             });
+//         } else {
+//             // Launch the browser and open a new blank page
+//             browser = await puppeteer.launch();
+//         }
+
+//         // Initialize a new page
+//         const page = await browser.newPage();
+
+//         // Set the content of the page to the filled HTML
+//         await page.setContent(filledHtml, { waitUntil: 'networkidle0' });
+
+//         // Measure rendered table height
+//         const { invoiceHeight, invoiceOccupiedHeight } = await page.evaluate(evaluatePage);
+
+//         // Close the browser
+//         await browser.close();
+
+//         // Check if the occupied height exceeds the allowed height
+//         if (invoiceOccupiedHeight > invoiceHeight) {
+//             // Throw an error if the occupied height exceeds the allowed height
+//             throw new ApiError({
+//                 statusCode: 422,
+//                 message: 'Invoice content exceeds allowed page height',
+//                 errors: [{
+//                     maxHeight: invoiceHeight,
+//                     actualHeight: invoiceOccupiedHeight
+//                 }]
+//             })
+
+//         }
+
+//         // Calculate the remaining height
+//         const remainingHeight = invoiceHeight - invoiceOccupiedHeight;
+
+//         /* 
+//             =========================================
+//             Pass 2: re-render with correct blank rows
+//             =========================================
+//         */
+//         // Update the remaining height in the sample invoice data
+//         sampleInvoiceData.emptyRowHeightNeededInPx = remainingHeight;
+
+//         // Fill the template again with updated data
+//         const html = await ejs.renderFile(templatePath, sampleInvoiceData);
+
+//         let browser2;
+//         if (process.env.NODE_ENV === 'production') {
+//             browser2 = await puppeteer.launch({
+//                 executablePath: executablePath,
+//                 headless: true
+//             });
+//         } else {
+//             // Launch the browser and open a new blank page
+//             browser2 = await puppeteer.launch();
+//         }
+
+//         // Initialize a new page
+//         const page2 = await browser2.newPage();
+
+//         // Set the content of the page to the filled HTML
+//         await page2.setContent(html, { waitUntil: 'networkidle0' });
+
+//         // Save the PDF to a file
+//         const pdf = await page2.pdf({
+//             format: 'A4',
+//             printBackground: true,
+//             margin: { top: '6mm', bottom: '6mm', left: '6mm', right: '6mm' },
+//         });
+
+//         // Convert the PDF to a buffer
+//         const pdfBuffer = Buffer.from(pdf);
+
+//         // Close the browser
+//         await browser2.close();
+
+//         return pdfBuffer;
+//     } catch (error) {
+//         throw error instanceof ApiError ? error : new ApiError({ statusCode: 500, message: 'Error generating PDF' })
+//     }
+// };
+
+let browserInstance = null;
+
+const getBrowser = async (puppeteer) => {
+
+    if (browserInstance) {
+        return browserInstance;
+    }
+
+    let executablePath;
+
+    if (process.env.NODE_ENV === 'production') {
+
+        const chromeRoot = path.join(
+            process.cwd(),
+            ".cache",
+            "puppeteer",
+            "chrome"
+        );
+
+        const version = fs.readdirSync(chromeRoot)[0];
+
+        executablePath = path.join(
+            chromeRoot,
+            version,
+            "chrome-linux64",
+            "chrome"
+        );
+    }
+
+    browserInstance = await puppeteer.launch({
+        executablePath,
+        headless: true,
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage"
+        ]
+    });
+
+    return browserInstance;
+};
+
 const generateInvoicePDF = async (invoiceData, puppeteer) => {
+
+    const templatePath = path.join(
+        `${projectPaths.ROOT_DIR}/templates/invoice/`,
+        'invoice-template.ejs'
+    );
+
+    const browser = await getBrowser(puppeteer);
+
+    let page;
+
     try {
-        /* 
-            =========================================
-            Pass 1: render with estimated filler rows
-            =========================================
-        */
 
-        const sampleInvoiceData = invoiceData
+        const sampleInvoiceData = {
+            ...invoiceData
+        };
 
-        // Get invoice template file
-        const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/invoice/`, 'invoice-template.ejs');
+        const filledHtml = await ejs.renderFile(
+            templatePath,
+            sampleInvoiceData
+        );
 
-        // Fill the template with invoice data
-        const filledHtml = await ejs.renderFile(templatePath, sampleInvoiceData);
 
-        let browser;
-        let executablePath;
-        if (process.env.NODE_ENV === 'production') {
-             const chromeRoot = path.join(
-                process.cwd(),
-                ".cache",
-                "puppeteer",
-                "chrome"
-            );
+        // PASS 1
+        page = await browser.newPage();
 
-            const version = fs.readdirSync(chromeRoot)[0];
+        await page.setContent(
+            filledHtml,
+            {
+                waitUntil: 'networkidle0'
+            }
+        );
 
-            executablePath = path.join(
-                chromeRoot,
-                version,
-                "chrome-linux64",
-                "chrome"
-            );
 
-            browser = await puppeteer.launch({
-                executablePath: executablePath,
-                headless: true
-            });
-        } else {
-            // Launch the browser and open a new blank page
-            browser = await puppeteer.launch();
-        }
+        const {
+            invoiceHeight,
+            invoiceOccupiedHeight
+        } = await page.evaluate(evaluatePage);
 
-        // Initialize a new page
-        const page = await browser.newPage();
 
-        // Set the content of the page to the filled HTML
-        await page.setContent(filledHtml, { waitUntil: 'networkidle0' });
+        await page.close();
+        page = null;
 
-        // Measure rendered table height
-        const { invoiceHeight, invoiceOccupiedHeight } = await page.evaluate(evaluatePage);
 
-        // Check if the occupied height exceeds the allowed height
         if (invoiceOccupiedHeight > invoiceHeight) {
-            // Throw an error if the occupied height exceeds the allowed height
             throw new ApiError({
                 statusCode: 422,
-                message: 'Invoice content exceeds allowed page height',
-                errors: [{
-                    maxHeight: invoiceHeight,
-                    actualHeight: invoiceOccupiedHeight
-                }]
-            })
-
-        }
-
-        // Calculate the remaining height
-        const remainingHeight = invoiceHeight - invoiceOccupiedHeight;
-
-        // Close the browser
-        await browser.close();
-
-        /* 
-            =========================================
-            Pass 2: re-render with correct blank rows
-            =========================================
-        */
-        // Update the remaining height in the sample invoice data
-        sampleInvoiceData.emptyRowHeightNeededInPx = remainingHeight;
-
-        // Fill the template again with updated data
-        const html = await ejs.renderFile(templatePath, sampleInvoiceData);
-
-        let browser2;
-        if (process.env.NODE_ENV === 'production') {
-            browser2 = await puppeteer.launch({
-                executablePath: executablePath,
-                headless: true
+                message: 'Invoice content exceeds allowed page height'
             });
-        } else {
-            // Launch the browser and open a new blank page
-            browser2 = await puppeteer.launch();
         }
 
-        // Initialize a new page
-        const page2 = await browser2.newPage();
 
-        // Set the content of the page to the filled HTML
-        await page2.setContent(html, { waitUntil: 'networkidle0' });
+        sampleInvoiceData.emptyRowHeightNeededInPx =
+            invoiceHeight - invoiceOccupiedHeight;
 
-        // Save the PDF to a file
-        const pdf = await page2.pdf({
+
+        const html = await ejs.renderFile(
+            templatePath,
+            sampleInvoiceData
+        );
+
+
+        // PASS 2
+        page = await browser.newPage();
+
+        await page.setContent(
+            html,
+            {
+                waitUntil: 'networkidle0'
+            }
+        );
+
+
+        const pdf = await page.pdf({
             format: 'A4',
             printBackground: true,
-            margin: { top: '6mm', bottom: '6mm', left: '6mm', right: '6mm' },
+            margin: {
+                top: '6mm',
+                bottom: '6mm',
+                left: '6mm',
+                right: '6mm'
+            }
         });
 
-        // Convert the PDF to a buffer
-        const pdfBuffer = Buffer.from(pdf);
 
-        // Close the browser
-        await browser2.close();
+        return Buffer.from(pdf);
 
-        return pdfBuffer;
-    } catch (error) {
-        throw error instanceof ApiError ? error : new ApiError({ statusCode: 500, message: 'Error generating PDF' })
+
+    } finally {
+
+        if (page) {
+            await page.close();
+        }
+
     }
 };
+
+process.on("SIGTERM", async () => {
+    if (browserInstance) {
+        await browserInstance.close();
+    }
+});
 
 // Evaluate page
 const evaluatePage = async () => {
