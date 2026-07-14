@@ -62,6 +62,9 @@ app.get('/test-pdf', async (req, res, next) => {
   
       // Set the headers for the response as a PDF file
       res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+      const fileName = 'test.pdf';
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
       res.send(pdfBuffer);
 })
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
