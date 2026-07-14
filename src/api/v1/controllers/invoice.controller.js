@@ -456,19 +456,14 @@ const getInvoicePdf = asyncHandler(async (req, res) => {
     // Generate the PDF
     const pdfBuffer = await generateInvoicePDF(invoicePdfJsonData, puppeteer); // generates the PDF and saves it
 
+    // Generate a filename for the PDF
+    const fileName = `Invoice_${invoiceData.invoice_no}`.replace(/[<>:"/\\|?*]/g, '_') + '.pdf';
+
     // Set the headers for the response as a PDF file
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename="invoice.pdf"');
-    // res.send(pdfBuffer);
-
-    // Stream the PDF file to the response
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-
-    // Handle errors during the streaming
-    fileStream.on('end', () => {
-        fs.unlink(filePath, () => { }); // optional: clean up after download
-    });
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
 });
 
 // Prepare invoice PDF JSON data
@@ -696,11 +691,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         const filledHtml = await ejs.renderFile(templatePath, sampleInvoiceData);
 
         // Launch the browser and open a new blank page
-        // const browser = await puppeteer.launch();
-        const browser = await puppeteer.launch({
-            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Path to Chrome
-            // headless: false,
-        });
+        const browser = await puppeteer.launch();
 
         // Initialize a new page
         const page = await browser.newPage();
@@ -743,10 +734,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         const html = await ejs.renderFile(templatePath, sampleInvoiceData);
 
         // Launch the browser and open a new blank page
-        const browser2 = await puppeteer.launch({
-            executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // Path to Chrome
-            headless: false,
-        });
+        const browser2 = await puppeteer.launch();
 
         // Initialize a new page
         const page2 = await browser2.newPage();
@@ -755,14 +743,14 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         await page2.setContent(html, { waitUntil: 'networkidle0' });
 
         // Save the PDF to a file
-        const pdfBuffer = await page2.pdf({
+        const pdf = await page2.pdf({
             format: 'A4',
-            path: 'invoice.pdf', // Save to file
             printBackground: true,
-            width: `210mm`,
-            height: `297mm`,
-            margin: { top: '3mm', bottom: '3mm', left: '3mm', right: '3mm' },
+            margin: { top: '6mm', bottom: '6mm', left: '6mm', right: '6mm' },
         });
+
+        // Convert the PDF to a buffer
+        const pdfBuffer = Buffer.from(pdf);
 
         // Close the browser
         await browser2.close();
@@ -774,7 +762,10 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 };
 
 // Evaluate page
-const evaluatePage = () => {
+const evaluatePage = async () => {
+    // Wait for fonts to be loaded before measuring heights
+    await document.fonts.ready;
+
     // Get total invoice height
     const table = document.querySelector('.table-container');
     const invoiceHeight = table.getBoundingClientRect().height;
