@@ -41,7 +41,6 @@
     /* Start: Invoice heading */
     .tax-invoice-block {
       display: flex;
-      color: #000;
       flex: 1;
       justify-content: center;
       align-items: center;
@@ -103,13 +102,13 @@
       font-size: 2.7mm;
       line-height: 120%;
     }
-    .firm-detail .name {font-size: 4mm; margin: 0; color:#000; font-weight: bold;}
-    .firm-detail .gst {color: #000; font-weight: bold; margin-top: 1mm;}
+    .firm-detail .name {font-size: 3.1mm; margin: 0;}
+    .firm-detail .gst {color: #333333; font-weight: 600;}
     .firm-detail .addrs-1 {}
     .firm-detail .addrs-2 {}
-    .firm-detail .mobile .label {color: #000;  font-weight: bold;}
+    .firm-detail .mobile .label {color: #333333;  font-weight: bold;}
     .firm-detail .mobile .number {}
-    .firm-detail .email .label {color: #000;  font-weight: bold;}
+    .firm-detail .email .label {color: #333333;  font-weight: bold;}
     .customer-detail {
       flex: 1;
       padding: 1mm;
@@ -123,7 +122,7 @@
     }
     .customer-detail .customer-detail-txt {font-size: 2.5mm; font-weight: 600;}
     .customer-detail .name {font-size: 2.9mm; font-weight: 600;}
-    .customer-detail .gst {color: #000; font-weight: 600; margin-bottom: 2mm;}
+    .customer-detail .gst {color: #333333; font-weight: 600; margin-bottom: 2mm;}
     .customer-detail .billing-address {font-size: 2.9mm; font-weight: 600;}
     /* End: Firm info block */
 
@@ -153,13 +152,14 @@
       padding: 0px;
     }
     .inv-doc p:first-child {
+      font-weight: 100;
       font-size: 2.5mm;
-      font-weight: bold;
-      color: #000;
+      font-weight: 600;
+      color: #444444;
     }
     .inv-doc p:nth-child(2) {
       line-height: 1.5;
-      font-weight: 200;
+      font-weight: bold;
       font-size: 2.7mm;
     }
     .shipping-address {
@@ -185,20 +185,17 @@
       margin: 0;
     }
     .inv-item-section th {
-      color: #000;
+      background-color: #f4f4f4;
       font-weight: bold;
       border-left: none;
       border-right: none;
     }
     .inv-item-section td {
       border: none;
-      border-left: 1px solid #000000;
+      border-left: 1px solid #cccccc;
     }
     .inv-item-section th {
-      border-left: 1px solid #000000;
-    }
-    .inv-item-section th:nth-child(1) {
-      border-left: none;
+      border-left: 1px solid #cccccc; 
     }
     .inv-item-section td:first-child,
     .inv-tax-section td:first-child,
@@ -228,7 +225,6 @@
       border: 1.2px solid;
       border-left: none;
       border-right: none;
-      color: #000
     }
 
     .inv-item-section tbody tr {
@@ -455,7 +451,7 @@
             </thead>
             <tbody>
               <% items.forEach(function(item, index) { %>
-              <tr style="background-color: <%= (index % 2 == 0) ? '#CDCDCD' : 'white' %>;">
+              <tr>
                 <td><%= index + 1 %></td>
                 <td><%= item.name %></td>
                 <td><%= item.hsnAndSacCode %></td>
@@ -479,7 +475,7 @@
                 </tr>
               <% } %>
               <% subTotal.forEach(function(item, index) { %>
-                <tr style="background-color: <%= (index % 2 == 0) ? '#CDCDCD' : 'white' %>;">
+                <tr>
                   <td></td>
                   <td class="end-of-item"><%= item.name %></td>
                   <td></td>
