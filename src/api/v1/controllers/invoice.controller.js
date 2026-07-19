@@ -10,7 +10,7 @@ const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
 const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
-const { default: Decimal } = require("decimal.js");
+const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
 const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
 const { getContext } = require("../helpers/requestContext");
@@ -359,8 +359,8 @@ const calculateInvoiceTotals = (items, invoice) => {
     let subTotal = new Decimal(0);
     let taxableTotal = new Decimal(0);
     let gstTotal = new Decimal(0);
-    // let discountTotal = new Decimal(0);
-    let discountTotal = new Decimal(invoice.discountAmount || 0);
+    let discountTotal = new Decimal(0);
+    // let discountTotal = new Decimal(invoice.discountAmount || 0);
     const otherAmount = new Decimal(invoice.other)
     const roundOff = new Decimal(invoice.roundOff)
 
@@ -368,17 +368,17 @@ const calculateInvoiceTotals = (items, invoice) => {
         const quantity = new Decimal(item.quantity);
         const rate = new Decimal(item.rate);
         const amount = quantity.times(rate);
-        const discount = new Decimal(item.discount || 0);
-        const total = amount.minus(discount);
-
-        // discountTotal = discountTotal.plus(discount);
-        // subTotal = subTotal.plus(total);
-        subTotal = subTotal.plus(amount);
-        taxableTotal = taxableTotal.plus(amount).minus(discount);
+        const discount = new Decimal(item.discount || 0).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const taxable = amount.minus(discount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        discountTotal = discountTotal.plus(discount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        subTotal = subTotal.plus(amount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        taxableTotal = taxableTotal.plus(taxable).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
         if (item.gstRate) {
-            const gstAmt = total.times(new Decimal(item.gstRate).dividedBy(100));
-            gstTotal = gstTotal.plus(gstAmt);
+            const halfRate = item.gstRate.div(2);
+            const cgst = taxable.times(halfRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+            const sgst = taxable.times(halfRate).div(100).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+            gstTotal = gstTotal.plus(cgst).plus(sgst).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
         }
     });
 
