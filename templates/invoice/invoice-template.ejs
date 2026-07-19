@@ -307,9 +307,11 @@
         <div class="invoice-detail-block">
           <div class="firm-info-block">
             <div class="firm-owner-detail">
-              <div class="firm-logo">
-                <img src="https://dummyimage.com/100x100/000/fff.png&text=U" alt="Firm Logo">
-              </div>
+              <% if (company.logo && company.logo.trim()) { %>
+                <div class="firm-logo">
+                  <img src="<%= company.logo %>" alt="Firm Logo">
+                </div>
+              <% } %>
               <div class="firm-detail">
                 <h4 class="name"><%= company.name %></h4>
                 <div class="gst">GSTIN <%= company.gstNo %></div>
