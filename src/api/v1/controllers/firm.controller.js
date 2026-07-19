@@ -2,6 +2,7 @@ const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddre
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
+const { uploadOnCloudinary } = require("../services/cloudinary");
 
 // Get all firm
 const getAllFirm = asyncHandler(async (req, res) => {
@@ -57,7 +58,6 @@ const createFirm = asyncHandler(async (req, res) => {
         trade_name: body.tradeName,
         firm_type: body.firmType,
         business_activity: body.businessActivity,
-        logo_url: body.logoUrl,
         gstin: body.gstin,
         pan_number: body.panNumber,
         cin_number: body.cinNumber,
@@ -111,9 +111,13 @@ const createFirm = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 500, message: 'Unable to create bank account for firm' })
     }
 
+    const response = {
+        id: firmId
+    }
+
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Firm created successfully.' }))
+        .json(new ApiResponse({ statusCode: 200, data: response, message: 'Firm created successfully.' }))
 });
 
 // Update firm
@@ -255,6 +259,106 @@ const getFirmType = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: firmTypes, message: 'Firm types fetched successfully.' }));
 });
 
+// Upload firm logo
+const uploadFirmLogo = asyncHandler(async (req, res) => {
+    const { id: firmId } = req.params;
+
+    // Check firm exists
+    const firm = await fetchFirmById(firmId);
+
+    if (!firm) {
+        throw new ApiError({
+            statusCode: 404,
+            message: "Firm not found. While uploading logo.",
+        });
+    }
+
+    // Get uploaded file
+    const logoLocalPath = req.files?.logo?.[0]?.path;
+
+    if (!logoLocalPath) {
+        throw new ApiError({
+            statusCode: 400,
+            message: "Logo file is required.",
+        });
+    }
+
+    // Upload to Cloudinary
+    const uploadedLogo = await uploadOnCloudinary(logoLocalPath);
+
+    if (!uploadedLogo?.url) {
+        throw new ApiError({
+            statusCode: 500,
+            message: "Failed to upload logo.",
+        });
+    }
+
+    // Delete old logo if exists
+    // if (firm.logo_url) {
+    //     try {
+    //         await deleteFromCloudinary(firm.logo_url);
+    //     } catch (err) {
+    //         console.error("Old logo deletion failed:", err.message);
+    //     }
+    // }
+
+    // Save new logo
+    const updated = await updateFirmById(firmId, {
+        logo_url: uploadedLogo.url,
+    });
+
+    if (!updated) {
+        throw new ApiError({
+            statusCode: 500,
+            message: "Failed to save logo.",
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                logoUrl: uploadedLogo.url,
+            },
+            message: "Firm logo uploaded successfully.",
+        })
+    );
+});
+
+// Delete firm logo
+const deleteFirmLogo = asyncHandler(async (req, res) => {
+    const { id: firmId } = req.params;
+
+    const firm = await fetchFirmById(firmId);
+
+    if (!firm) {
+        throw new ApiError({
+            statusCode: 404,
+            message: "Firm not found.",
+        });
+    }
+
+    if (firm.logo_url) {
+        try {
+            await deleteFromCloudinary(firm.logo_url);
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    await updateFirmById(firmId, {
+        logo_url: null,
+    });
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: [],
+            message: "Firm logo deleted successfully.",
+        })
+    );
+});
+
 module.exports = {
     getAllFirm,
     getFirmMeta,
@@ -262,5 +366,7 @@ module.exports = {
     createFirm,
     updateFirm,
     deleteFirm,
-    getFirmType
+    getFirmType,
+    uploadFirmLogo,
+    deleteFirmLogo
 }
