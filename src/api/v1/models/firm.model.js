@@ -79,6 +79,7 @@ const fetchFirmById = async (id = 0) => {
             'F.id as firm_id',
             'F.firm_name',
             'F.trade_name',
+            'F.logo_url',
             'F.gstin',
             'F.firm_type',
             'F.business_activity',

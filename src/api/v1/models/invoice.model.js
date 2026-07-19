@@ -221,6 +221,7 @@ const fetchInvoiceById = async (id) => {
                 .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
                 .where('I.is_active', true)
                 .where('I.id', id)
+                .orderBy('II.id', 'ASC')
         ]);
 
         // 2. Fetch invoice items (detail)
