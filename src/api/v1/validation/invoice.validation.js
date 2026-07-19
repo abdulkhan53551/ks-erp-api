@@ -105,14 +105,14 @@ const createInvoiceValidationSchema = {
         qty: Joi.number().precision(2).min(0).required(),
         itemUnitId: Joi.number().integer(),
         rate: Joi.number().precision(2).min(0).required(),
-        discountPercent: Joi.number().precision(2).min(0).max(100).allow(0),
+        discountPercent: Joi.number().precision(2).min(0).max(100).empty([null, ""]).default(0),
         discountAmount: Joi.number().precision(2).min(0).allow(0),
         subTotal: Joi.number().precision(2).min(0).allow(0),
         taxableAmount: Joi.number().precision(2).min(0).allow(0),
         gstSlabId: Joi.number().integer().required(),
-        cgst: Joi.number().precision(2).min(0).allow(0),
-        sgst: Joi.number().precision(2).min(0).allow(0),
-        igst: Joi.number().precision(2).min(0).allow(0),
+        cgst: Joi.number().precision(2).min(0).default(0),
+        sgst: Joi.number().precision(2).min(0).default(0),
+        igst: Joi.number().precision(2).min(0).default(0),
         total: Joi.number().precision(2).min(0).required().allow(0)
       })
         .custom(invoiceItemCustomValidation)

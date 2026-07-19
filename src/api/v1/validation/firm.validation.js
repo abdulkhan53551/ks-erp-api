@@ -16,7 +16,7 @@ const createFirmValidationSchema = {
       .valid('Proprietorship', 'Partnership', 'LLP', 'Pvt Ltd', 'Public Ltd', 'Other')
       .required(),
     businessActivity: Joi.string().max(1000).allow(null, ''),
-    logoUrl: Joi.string().uri().allow(null, ''),
+    // logoUrl: Joi.string().uri().allow(null, ''),
 
     gstin: Joi.string()
       .pattern(/^([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1})$/)
@@ -64,7 +64,7 @@ const updateFirmValidationSchema = {
     tradeName: Joi.string().max(255).allow(null, ''),
     firmType: Joi.string().valid('Proprietorship', 'Partnership', 'LLP', 'Pvt Ltd', 'Public Ltd', 'Other'),
     businessActivity: Joi.string().max(255).allow(null, ''),
-    logoUrl: Joi.string().uri().allow(null, ''),
+    // logoUrl: Joi.string().uri().allow(null, ''),
 
     gstin: Joi.string()
       .pattern(/^([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1})$/)
