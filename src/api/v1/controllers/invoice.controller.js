@@ -607,7 +607,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             qty: Number(item.qty) || '',
             unit: item.uqc || '',
             price: formatAmount(item.rate) || '',
-            totalAmount: formatAmount(item.taxable_amount) || ''
+            totalAmount: formatAmount(item.sub_total) || ''
         })) ?? [],
         subTotal: invoiceSubtotal,
         total: invoiceTotalRow,
@@ -972,7 +972,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         const pdf = await page.pdf({
             format: 'A4',
-            // printBackground: true,
+            printBackground: true,
             margin: {
                 top: '6mm',
                 bottom: '6mm',
