@@ -9,6 +9,7 @@ const invoiceRoutes = require('./invoice.routes')
 const mastersRoutes = require('./masters.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
+const partyRoutes = require('./party.routes')
 const { productRoutes } = require('./product');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
@@ -39,6 +40,8 @@ router.use('/invoice-challan', invoiceChallanRoutes)
 router.use('/purchase-order', purchaseOrderRoutes)
 router.use('/ewaybill', ewaybillRoutes)
 router.use('/invoice', invoiceRoutes)
+router.use('/invoice', invoiceRoutes)
+router.use('/parties', partyRoutes)
 
 module.exports = router;
 // exports.products = productRoutes;
