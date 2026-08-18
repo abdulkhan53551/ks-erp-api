@@ -140,29 +140,37 @@ const deletePartyRoleMaster = async (partyRoleId, isPermanentDelete = false) => 
 const fetchAllParties = async (firmId, query) => {
     try {
         const { page = 1, pageSize = 10 } = query;
-        const baseQuery = db('parties')
+        const baseQuery = db('parties as p')
             .select(
-                'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
-                'mobile',
-                'email',
-                'gst_registered',
-                'gstin',
-                'cin_number',
-                'tan_number',
-                'pan_number',
-                'website',
-                'remarks',
-                'status'
+                'p.id',
+                'p.firm_id',
+                'p.party_code',
+                'p.legal_name',
+                'p.display_name',
+                'p.mobile',
+                'p.email',
+                'p.gst_registered',
+                'p.gstin',
+                'p.cin_number',
+                'p.tan_number',
+                'p.pan_number',
+                'p.website',
+                'p.remarks',
+                'p.status',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
+                'p.created_at',
+                'p.updated_at'
             )
-            .where({ firm_id: firmId, is_active: true })
-            .orderBy('legal_name', 'asc');
-        const parties = await fetchPageData({ baseQuery, page, pageSize });
-        return parties;
+            .leftJoin('users as u', 'p.created_by', 'u.id')
+            .where({
+                'p.firm_id': firmId,
+                'p.is_active': true
+            })
+            .orderBy('p.legal_name', 'asc');
 
+        const parties = await fetchPageData({ baseQuery, page, pageSize });
+
+        return parties;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
