@@ -14,7 +14,6 @@ exports.up = function (knex) {
         // Contact role reference
         table.integer("contact_role_id").unsigned().notNullable().references("id").inTable("contact_roles").onDelete("RESTRICT");
         table.string("contact_name", 100).notNullable();
-        table.string("designation", 100);
         table.string("mobile", 15);
         table.string("email", 150);
         table.boolean("is_primary").notNullable().defaultTo(false);

@@ -338,7 +338,7 @@ const fetchAllPartyAddresses = async (partyId) => {
     try {
         const partyAddresses = await db('party_addresses AS PA')
             .leftJoin('address_types AS AT', 'PA.address_type_id', 'AT.id')
-            .leftJoin('parties as P', 'P.id', 'PA.address_type_id')
+            .leftJoin('parties as P', 'P.id', 'PA.party_id')
             .select(
                 'PA.id',
                 'PA.party_id',
@@ -513,9 +513,8 @@ const getAllPartyContactsModel = async (partyId = null) => {
                 'pc.party_id',
                 'p.display_name as party_name',
                 'pc.contact_role_id',
-                'cr.name as contact_role_name',
+                'cr.name as designation',
                 'pc.contact_name',
-                'pc.designation',
                 'pc.mobile',
                 'pc.email',
                 'pc.is_primary'
@@ -548,9 +547,8 @@ const getPartyContactByIdModel = async (id, partyId) => {
                 'pc.party_id',
                 'pc.contact_role_id',
                 'cr.code as contact_role_code',
-                'cr.name as contact_role_name',
+                'cr.name as designation',
                 'pc.contact_name',
-                'pc.designation',
                 'pc.mobile',
                 'pc.email',
                 'pc.is_primary'
@@ -930,9 +928,14 @@ const insertPartyRoleMappings = async (partyId, partyRoleIds) => {
             removed: rolesToRemove,
         };
     } catch (error) {
-        console.log('error => ', error);
-
         await trx.rollback();
+
+        if (error.code === '23503') {
+            throw new ApiError({
+                statusCode: 409,
+                message: 'Party role cannot be created or updated.'
+            });
+        }
 
         if (error instanceof ApiError) {
             throw error;

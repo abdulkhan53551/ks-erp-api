@@ -53,7 +53,6 @@ const getPartySchema = {
 // Validation schema for creating a new party
 const createPartySchema = {
     body: Joi.object({
-        firmId: Joi.number().integer().required(),
         partyCode: Joi.string().max(50).required().uppercase(),
         legalName: Joi.string().max(200).required(),
         displayName: Joi.string().max(200).allow('', null),
@@ -93,7 +92,7 @@ const updatePartySchema = {
         id: Joi.number().integer().required().label('Party ID'),
     }),
     body: createPartySchema.body.fork(
-        ["firmId", "partyCode", "legalName"],
+        ["partyCode", "legalName"],
         field => field.optional()
     )
 };
@@ -194,7 +193,6 @@ const createPartyContactSchema = {
     body: Joi.object({
         contactRoleId: Joi.number().integer().required(),
         contactName: Joi.string().max(100).required(),
-        designation: Joi.string().max(100).allow("", null),
         mobile: Joi.string().pattern(/^\d{10}$/).allow("", null)
             .messages({
                 'string.pattern.base': 'Please enter a valid mobile number.'

@@ -94,14 +94,8 @@ const updatePartyRole = asyncHandler(async (req, res) => {
         description: description || null
     };
 
-    console.log('======= id => ', id);
-
-
     // Update party role
     const affectedRows = await updatePartyRoleMaster(id, partyRoleData);
-
-    console.log('====== affectedRows => ', affectedRows);
-
 
     // Check if the update was successful
     if (!affectedRows) {
@@ -193,8 +187,8 @@ const getPartyById = asyncHandler(async (req, res) => {
 
 // Create a new party
 const createParty = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const {
-        firmId,
         partyCode,
         legalName,
         displayName,
@@ -249,10 +243,10 @@ const createParty = asyncHandler(async (req, res) => {
 
 // Update an existing party
 const updateParty = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
     const { id } = req.params;
 
     const {
-        firmId,
         partyCode,
         legalName,
         displayName,
@@ -513,7 +507,6 @@ const createPartyContact = asyncHandler(async (req, res) => {
     const {
         contactRoleId,
         contactName,
-        designation,
         mobile,
         email,
         isPrimary
@@ -523,7 +516,6 @@ const createPartyContact = asyncHandler(async (req, res) => {
         party_id: partyId,
         contact_role_id: contactRoleId,
         contact_name: contactName,
-        designation: designation || null,
         mobile: mobile || null,
         email: email || null,
         is_primary: isPrimary ?? false
@@ -555,7 +547,6 @@ const updatePartyContact = asyncHandler(async (req, res) => {
     const {
         contactRoleId,
         contactName,
-        designation,
         mobile,
         email,
         isPrimary
@@ -565,7 +556,6 @@ const updatePartyContact = asyncHandler(async (req, res) => {
         party_id: partyId,
         contact_role_id: contactRoleId,
         contact_name: contactName,
-        designation: designation || null,
         mobile: mobile || null,
         email: email || null,
         is_primary: isPrimary ?? false
@@ -794,8 +784,6 @@ const getPartyRoleMapping = asyncHandler(async (req, res) => {
 const createPartyRoleMapping = asyncHandler(async (req, res) => {
     const { partyId } = req.params;
     const { partyRoleIds = [] } = req.body;
-
-    console.log('partyRoleIds => ', partyRoleIds);
 
     // Save mappings via model function
     const result = await insertPartyRoleMappings(partyId, partyRoleIds);
