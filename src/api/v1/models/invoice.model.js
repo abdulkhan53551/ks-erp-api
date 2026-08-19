@@ -215,7 +215,7 @@ const fetchInvoiceById = async (id) => {
                 .first(),
 
             db('invoice_items AS II')
-                .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
+                .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.sub_total', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.total')
                 .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
                 .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
                 .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
@@ -588,6 +588,57 @@ const fetchChallanPOEwayBillsForInvoice = async (invoiceId) => {
     }
 };
 
+// Fetch last invoice number
+const fetchLastInvoiceNumber = async () => {
+    try {
+        const { firmId = 0 } = getContext();
+        const invoice = await db('invoices')
+            .select('invoice_no')
+            .where({ firm_id: firmId })
+            .orderBy('id', 'desc')
+            .first();
+
+        return invoice?.invoice_no || null;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching last invoice number.',
+        });
+    }
+};
+
+// Fetch firm invoice settings
+const fetchInvoiceSettings = async () => {
+    try {
+        const { firmId = 0 } = getContext();
+        const firm = await db('firms')
+            .select('invoice_prefix', 'invoice_start_number')
+            .where({ id: firmId, is_active: true })
+            .first();
+
+        if (!firm) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Firm invoice settings not found.',
+            });
+        }
+
+        return {
+            invoicePrefix: firm.invoice_prefix,
+            invoiceStartNumber: firm.invoice_start_number
+        };
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching invoice settings.',
+        });
+    }
+};
+
 module.exports = {
     fetchAllInvoice,
     fetchInvoiceMeta,
@@ -598,5 +649,7 @@ module.exports = {
     // fetchChallansForInvoice,
     // fetchPurchaseOrdersForInvoice,
     // fetchEwayBillsForInvoice,
-    fetchChallanPOEwayBillsForInvoice
+    fetchChallanPOEwayBillsForInvoice,
+    fetchLastInvoiceNumber,
+    fetchInvoiceSettings
 };

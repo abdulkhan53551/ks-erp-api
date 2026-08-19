@@ -70,7 +70,7 @@ function addDefaultColumns(table, knex) {
   table.timestamp('updated_at').defaultTo(knex.fn.now()).notNullable();
   table.integer('created_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
   table.integer('updated_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
-  table.boolean('isactive').defaultTo(true);
+  table.boolean('is_active').notNullable().defaultTo(true);
 }
 
-module.exports = { patchKnex };
+module.exports = { patchKnex, addDefaultColumns };

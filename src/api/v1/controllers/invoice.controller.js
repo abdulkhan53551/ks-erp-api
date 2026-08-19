@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -428,6 +428,61 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+// Generate next invoice number
+const getNextInvoiceNumber = asyncHandler(async (req, res) => {
+    let invoiceNo;
+
+    // Get last invoice number
+    const lastInvoiceNo = await fetchLastInvoiceNumber();
+
+    if (lastInvoiceNo) {
+        invoiceNo = calculateNextInvoiceNumber(lastInvoiceNo);
+    } else {
+        // Get invoice settings
+        const settings = await fetchInvoiceSettings();
+
+        if (!settings) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Invoice settings not found. Unable to generate invoice number.',
+            });
+        }
+
+        invoiceNo = `${settings.invoicePrefix}${settings.invoiceStartNumber}`;
+    }
+
+    if (!invoiceNo) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Unable to generate the next invoice number.',
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { invoiceNo },
+            message: 'Next invoice number generated successfully.',
+        })
+    );
+});
+
+// Generate next invoice number from existing invoice
+const calculateNextInvoiceNumber = (invoiceNo) => {
+    const numberMatch = invoiceNo.match(/\d+$/);
+
+    if (!numberMatch) {
+        return invoiceNo;
+    }
+
+    const number = numberMatch[0];
+    const prefix = invoiceNo.substring(0, invoiceNo.length - number.length);
+    const nextNumber = String(Number(number) + 1)
+        .padStart(number.length, "0");
+
+    return `${prefix}${nextNumber}`;
+};
+
 // Generate and get invoice PDF
 const getInvoicePdf = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
@@ -552,7 +607,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             qty: Number(item.qty) || '',
             unit: item.uqc || '',
             price: formatAmount(item.rate) || '',
-            totalAmount: formatAmount(item.taxable_amount) || ''
+            totalAmount: formatAmount(item.sub_total) || ''
         })) ?? [],
         subTotal: invoiceSubtotal,
         total: invoiceTotalRow,
@@ -975,6 +1030,7 @@ module.exports = {
     createInvoice,
     updateInvoice,
     deleteInvoice,
+    getNextInvoiceNumber,
     generateInvoicePDF,
     prepareInvoicePdfJsonData,
     getInvoicePdf
