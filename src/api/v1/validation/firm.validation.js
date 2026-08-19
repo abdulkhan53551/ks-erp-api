@@ -26,7 +26,12 @@ const createFirmValidationSchema = {
     tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/).allow(null, ''),
 
     invoicePrefix: Joi.string().max(10).default('INV'),
-    invoiceStartNumber: Joi.number().integer().min(1).default(1),
+    invoiceStartNumber: Joi.string().pattern(/^\d+$/).min(1).max(6).required().default("1")
+      .messages({
+        "string.empty": "Invoice start number is required.",
+        "string.pattern.base": "Invoice start number must contain only digits.",
+        "string.min": "Invoice start number cannot be empty.",
+      }),
     notesFooter: Joi.string().allow(null, ''),
 
     // Address details
@@ -74,7 +79,12 @@ const updateFirmValidationSchema = {
     tanNumber: Joi.string().pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/).allow(null, ''),
 
     invoicePrefix: Joi.string().max(10),
-    invoiceStartNumber: Joi.number().integer().min(1),
+    invoiceStartNumber: Joi.string().pattern(/^\d+$/).min(1).max(6).required().default("1")
+      .messages({
+        "string.empty": "Invoice start number is required.",
+        "string.pattern.base": "Invoice start number must contain only digits.",
+        "string.min": "Invoice start number cannot be empty.",
+      }),
     notesFooter: Joi.string().allow(null, ''),
 
     // Address details
