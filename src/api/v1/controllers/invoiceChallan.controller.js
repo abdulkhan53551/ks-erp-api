@@ -62,52 +62,50 @@ const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
     );
 });
 
-// Create firm
+// Create a new invoice challan
 const createInvoiceChallan = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
     const body = req.body;
 
-    // Create firm
     const challanData = {
-        invoice_id: body.invoiceId,
+        invoice_id: body.invoiceId || null,
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName,
-        firm_id: firmId,
-        is_invoiced: body.isInvoiced
-    }
+        firm_id: firmId
+    };
+
     const challanId = await insertInvoiceChallan(challanData);
 
     // If challanId is not returned, throw an error
     if (!challanId) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice challan' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice challan' });
     }
 
     // Response
     const response = {
         id: challanId
-    }
+    };
 
     return res.status(200).json(
         new ApiResponse({ statusCode: 200, data: response, message: 'Invoice challan created successfully.' })
-    )
+    );
 });
 
 // Update invoice challan
 const updateInvoiceChallan = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
-
     const challanId = req.params.id;
     const body = req.body;
 
     const updatedData = {
-        invoice_id: body.invoiceId,
+        invoice_id: body.invoiceId !== undefined ? body.invoiceId : undefined,
         challan_no: body.challanNo,
         challan_date: body.challanDate,
-        customer_name: body.customerName,
-        firm_id: firmId,
-        is_invoiced: body.isInvoiced,
+        customer_name: body.customerName
     };
+
+    // Remove undefined values
+    Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
 
     const affectedRows = await updateInvoiceChallanById(challanId, updatedData);
 

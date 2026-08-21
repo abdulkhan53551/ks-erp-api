@@ -69,52 +69,48 @@ const createEwayBill = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
     const body = req.body;
 
-    // Create eway bill
     const data = {
-        invoice_id: body.invoiceId,
+        invoice_id: body.invoiceId || null,
         eway_bill_no: body.ewayBillNo,
         eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
-        firm_id: firmId,
-        is_invoiced: body.isInvoiced
-    }
-    const ewayBillid = await insertEwayBill(data);
+        firm_id: firmId
+    };
 
-    // If challanId is not returned, throw an error
-    if (!ewayBillid) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating eway bill' })
+    const ewayBillId = await insertEwayBill(data);
+
+    if (!ewayBillId) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating eway bill' });
     }
 
-    // Response
     const response = {
-        id: ewayBillid
-    }
+        id: ewayBillId
+    };
 
     return res.status(200).json(
         new ApiResponse({ statusCode: 200, data: response, message: 'Eway bill created successfully.' })
-    )
+    );
 });
 
+// Update eway bill
 const updateEwayBill = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
     const ewayId = req.params.id;
     const body = req.body;
 
     const updatedData = {
-        invoice_id: body.invoiceId,
+        invoice_id: body.invoiceId !== undefined ? body.invoiceId : undefined,
         eway_bill_no: body.ewayBillNo,
         eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
-        customer_name: body.customerName,
-        firm_id: firmId,
-        is_invoiced: body.isInvoiced
-    }
+        customer_name: body.customerName
+    };
 
-    // Update eway bill
+    // Remove undefined values
+    Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
+
     const affectedRows = await updateEwayBillById(ewayId, updatedData);
 
-    // If no rows were affected, it means the eway bill was not found or update failed
     if (!affectedRows) {
         throw new ApiError({ statusCode: 404, message: 'Eway bill not found or update failed' });
     }

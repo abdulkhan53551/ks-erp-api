@@ -20,15 +20,10 @@ const getPurchaseOrdersByInvoiceIdValidationSchema = {
 // Validation schema for creating a new purchase order
 const createPurchaseOrderValidationSchema = {
     body: Joi.object({
-        invoiceId: Joi.number().integer().positive().allow(null).optional(),
         poNo: Joi.string().max(50).required(),
         poDate: Joi.date().required(),
         customerName: Joi.string().max(255).required(),
-        isInvoiced: Joi.boolean().when('invoiceId', {
-            is: Joi.number().integer().positive(),
-            then: Joi.boolean().default(false),
-            otherwise: Joi.valid(false).default(false)
-        })
+        status: Joi.string().valid('OPEN', 'COMPLETED', 'CANCELLED').default('OPEN')
     }),
 };
 
@@ -38,15 +33,10 @@ const updatePurchaseOrderValidationSchema = {
         id: Joi.number().integer().required().label('Purchase Order ID'),
     }),
     body: Joi.object({
-        invoiceId: Joi.number().integer().positive().allow(null).optional(),
-        poNo: Joi.string().max(50).required(),
-        poDate: Joi.date().required(),
-        customerName: Joi.string().max(255).required(),
-        isInvoiced: Joi.boolean().when('invoiceId', {
-            is: Joi.number().integer().positive(),
-            then: Joi.boolean().default(false),
-            otherwise: Joi.valid(false).default(false)
-        })
+        poNo: Joi.string().max(50).optional(),
+        poDate: Joi.date().optional(),
+        customerName: Joi.string().max(255).optional(),
+        status: Joi.string().valid('OPEN', 'COMPLETED', 'CANCELLED').optional()
     }).min(1), // Ensure at least one field is provided
 };
 

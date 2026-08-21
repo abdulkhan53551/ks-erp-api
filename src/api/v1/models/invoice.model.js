@@ -28,16 +28,17 @@ const fetchAllInvoice = async (query) => {
                 'I.total',
                 'PS.code AS payment_status_code',
                 'PM.code AS payment_mode_code',
-                'PO.po_no',
+                db.raw(`(
+                    SELECT STRING_AGG(DISTINCT po.po_no::text, ', ' ORDER BY po.po_no::text)
+                    FROM purchase_order_invoices poi
+                    JOIN purchase_orders po ON poi.purchase_order_id = po.id AND po.is_active = true
+                    WHERE poi.invoice_id = "I"."id" AND poi.is_active = true
+                ) AS po_no`),
                 'EB.eway_bill_no',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'I.created_at',
                 'I.updated_at',
             )
-            .leftJoin('purchase_orders AS PO', function () {
-                this.on('I.id', '=', 'PO.invoice_id')
-                    .andOn('PO.is_active', '=', db.raw('true'));
-            })
             .leftJoin('eway_bills AS EB', function () {
                 this.on('I.id', '=', 'EB.invoice_id')
                     .andOn('EB.is_active', '=', db.raw('true'));
@@ -52,7 +53,16 @@ const fetchAllInvoice = async (query) => {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
                     .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
-                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`]);
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`])
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('purchase_order_invoices AS poi')
+                            .join('purchase_orders AS po', 'poi.purchase_order_id', 'po.id')
+                            .whereRaw('"poi"."invoice_id" = "I"."id"')
+                            .andWhere('poi.is_active', true)
+                            .andWhere('po.is_active', true)
+                            .andWhere('po.po_no', 'ILIKE', `%${search}%`);
+                    });
             });
         }
 
@@ -76,12 +86,7 @@ const fetchInvoiceMeta = async (query) => {
         const { page = 1, pageSize = 10, search = '' } = query;
         const { firmId = 0 } = getContext();
 
-
         const baseQuery = db('invoices AS I')
-            .leftJoin('purchase_orders AS PO', function () {
-                this.on('I.id', '=', 'PO.invoice_id')
-                    .andOn('PO.is_active', '=', db.raw('true'));
-            })
             .leftJoin('eway_bills AS EB', function () {
                 this.on('I.id', '=', 'EB.invoice_id')
                     .andOn('EB.is_active', '=', db.raw('true'));
@@ -96,7 +101,16 @@ const fetchInvoiceMeta = async (query) => {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
                     .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
-                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`]);
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`])
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('purchase_order_invoices AS poi')
+                            .join('purchase_orders AS po', 'poi.purchase_order_id', 'po.id')
+                            .whereRaw('"poi"."invoice_id" = "I"."id"')
+                            .andWhere('poi.is_active', true)
+                            .andWhere('po.is_active', true)
+                            .andWhere('po.po_no', 'ILIKE', `%${search}%`);
+                    });
             });
         }
 
@@ -199,19 +213,19 @@ const fetchInvoiceById = async (id) => {
             db('invoice_challans AS IC')
                 .select(db.raw(`array_remove(ARRAY_AGG("IC"."id"), NULL) AS ids`))
                 .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
-                .where({ 'IC.invoice_id': id, 'IC.is_invoiced': true, 'IC.is_active': true, 'I.is_active': true })
+                .where({ 'IC.invoice_id': id, 'IC.is_active': true, 'I.is_active': true })
                 .first(),
 
-            db('purchase_orders AS PO')
-                .select(db.raw(`array_remove(ARRAY_AGG("PO"."id"), NULL) AS ids`))
-                .leftJoin('invoices AS I', 'PO.invoice_id', 'I.id')
-                .where({ 'PO.invoice_id': id, 'PO.is_invoiced': true, 'PO.is_active': true, 'I.is_active': true })
+            db('purchase_order_invoices AS POI')
+                .select(db.raw(`array_remove(ARRAY_AGG("POI"."purchase_order_id"), NULL) AS ids`))
+                .join('purchase_orders AS PO', 'POI.purchase_order_id', 'PO.id')
+                .where({ 'POI.invoice_id': id, 'POI.is_active': true, 'PO.is_active': true })
                 .first(),
 
             db('eway_bills AS EWB')
                 .select(db.raw(`array_remove(ARRAY_AGG("EWB"."id"), NULL) AS ids`))
                 .leftJoin('invoices AS I', 'EWB.invoice_id', 'I.id')
-                .where({ 'EWB.invoice_id': id, 'EWB.is_invoiced': true, 'EWB.is_active': true, 'I.is_active': true })
+                .where({ 'EWB.invoice_id': id, 'EWB.is_active': true, 'I.is_active': true })
                 .first(),
 
             db('invoice_items AS II')
@@ -253,7 +267,7 @@ const fetchInvoiceById = async (id) => {
 
 // Insert a new invoice
 const insertInvoice = async (data) => {
-    const { masterData, items, billing, shipping } = data;
+    const { masterData, items, billing, shipping, document = {} } = data;
     return await db.transaction(async trx => {
         // 1. Insert master data
         const invoiceId = await insertInvoiceMaster(trx, masterData);
@@ -264,9 +278,9 @@ const insertInvoice = async (data) => {
         const [itemsResult, addressResult] = await Promise.all([
             insertInvoiceItems(trx, invoiceId, items),
             insertInvoiceAddresses(trx, invoiceId, address),
-            updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || []),
-            updateInvoicePurchaseOrderMapping(trx, invoiceId, masterData.purchaseOrderIds || []),
-            updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || [])
+            updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || document.challanIds || []),
+            updateInvoicePurchaseOrderMapping(trx, invoiceId, masterData.purchaseOrderIds || document.purchaseOrderIds || []),
+            updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
         // Update billing & shipping address id into invoice
@@ -370,19 +384,20 @@ const updateAddressIdInInvoice = async (trx, invoiceId, address) => {
 
 // Update invoice by ID
 const updateInvoiceById = async (data) => {
-    const { invoiceId, masterData, items, billing, shipping } = data;
+    const { invoiceId, masterData, items, billing, shipping, document = {} } = data;
     return await db.transaction(async trx => {
         // 1. Update master
         await updateInvoiceMaster(trx, invoiceId, masterData);
 
         const address = [billing, shipping]
+
         // 2 & 3. Run in parallel
         await Promise.all([
             updateInvoiceItems(trx, invoiceId, items),
             insertInvoiceAddresses(trx, invoiceId, address),
-            // updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || []),
-            // updateInvoicePurchaseOrderMapping(trx, invoiceId, masterData.purchaseOrderIds || []),
-            // updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || [])
+            updateInvoiceChallanMapping(trx, invoiceId, masterData.challanIds || document.challanIds || []),
+            updateInvoicePurchaseOrderMapping(trx, invoiceId, document.purchaseOrderIds || masterData.purchaseOrderIds || []),
+            updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
         return invoiceId;
@@ -463,9 +478,12 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                 result = invoice; // number of affected invoice rows
             } else {
                 // SOFT DELETE - run in parallel
-                const [contacts, items, invoice] = await Promise.all([
+                const [contacts, items, mappings, challans, ewayBills, invoice] = await Promise.all([
                     trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: false }),
                     trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                    trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                    trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
+                    trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
                     trx('invoices').where({ id: invoiceId }).update({ is_active: false })
                 ]);
 
@@ -490,12 +508,17 @@ const fetchChallansForInvoice = async (invoiceId) => {
 
         const { firmId = 0 } = getContext();
         const challans = await db('invoice_challans')
-            .select('id', 'challan_no', 'challan_date', 'customer_name', 'is_invoiced', 'invoice_id')
+            .select(
+                'id',
+                'challan_no',
+                'challan_date',
+                'customer_name',
+                db.raw('(invoice_id IS NOT NULL) AS is_invoiced'),
+                'invoice_id'
+            )
             .where({ is_active: true, firm_id: firmId })
-            // .where('is_active', true)
-            // .andWhere('firm_id', firmId)
             .andWhere(function () {
-                this.where('is_invoiced', false).orWhere('invoice_id', invoiceId);
+                this.whereNull('invoice_id').orWhere('invoice_id', invoiceId);
             })
             .orderBy('challan_date', 'desc');
 
@@ -539,11 +562,19 @@ const fetchEwayBillsForInvoice = async (invoiceId) => {
         if (!invoiceId) return [];
 
         const { firmId = 0 } = getContext();
-        const ewayBill = await db('invoice_challans')
-            .select('id', 'eway_bill_no', 'eway_bill_date', 'valid_upto', 'customer_name', 'is_invoiced', 'invoice_id')
+        const ewayBill = await db('eway_bills')
+            .select(
+                'id',
+                'eway_bill_no',
+                'eway_bill_date',
+                'valid_upto',
+                'customer_name',
+                db.raw('(invoice_id IS NOT NULL) AS is_invoiced'),
+                'invoice_id'
+            )
             .where({ is_active: true, firm_id: firmId })
             .andWhere(function () {
-                this.where('is_invoiced', false).orWhere('invoice_id', invoiceId);
+                this.whereNull('invoice_id').orWhere('invoice_id', invoiceId);
             })
             .orderBy('id', 'desc');
 
@@ -561,22 +592,27 @@ const fetchChallanPOEwayBillsForInvoice = async (invoiceId) => {
     try {
         if (!invoiceId) return;
 
-        const result = await db('invoice_challans as ic')
+        const result = await db('invoices as i')
             .select(
                 'i.id as invoice_id',
-                db.raw('STRING_AGG(ic.challan_no::text, \',\') as challan'),
-                db.raw('MAX(po.po_no) as po'),
-                db.raw('MAX(eb.eway_bill_no) as ewaybill'),
-                db.raw('MAX(pm.code) as payment_code'),
-                db.raw('MAX(pm.label) as payment_label')
+                'pm.code as payment_code',
+                'pm.label as payment_label',
+                db.raw("STRING_AGG(DISTINCT ic.challan_no::text, ',' ORDER BY ic.challan_no::text) as challan"),
+                db.raw("STRING_AGG(DISTINCT po.po_no::text, ',' ORDER BY po.po_no::text) as po"),
+                db.raw("STRING_AGG(DISTINCT eb.eway_bill_no::text, ',' ORDER BY eb.eway_bill_no::text) as ewaybill")
             )
-            .leftJoin('invoices as i', 'i.id', 'ic.invoice_id')
-            .leftJoin('purchase_orders as po', 'i.id', 'po.invoice_id')
+            .leftJoin('invoice_challans as ic', 'i.id', 'ic.invoice_id')
+            .leftJoin('purchase_order_invoices as poi', function () {
+                this.on('i.id', '=', 'poi.invoice_id').andOn('poi.is_active', '=', db.raw('true'));
+            })
+            .leftJoin('purchase_orders as po', function () {
+                this.on('poi.purchase_order_id', '=', 'po.id').andOn('po.is_active', '=', db.raw('true'));
+            })
             .leftJoin('eway_bills as eb', 'i.id', 'eb.invoice_id')
             .leftJoin('payment_modes as pm', 'i.payment_mode_id', 'pm.id')
             .where('i.id', invoiceId)
             .andWhere('i.is_active', true)
-            .groupBy('i.id')
+            .groupBy('i.id', 'pm.code', 'pm.label')
             .first();
 
         return result || {};
