@@ -245,6 +245,21 @@ const fetchPartyById = async (partyId, firmId) => {
             })
             .first();
 
+        if (!party) return null;
+
+        // Fetch mapped roles for this party
+        const roles = await db('party_role_mapping as prm')
+            .join('party_roles as pr', 'prm.party_role_id', 'pr.id')
+            .select(
+                'pr.id as roleId',
+                'pr.code as roleCode',
+                'pr.name as roleName'
+            )
+            .where({ 'prm.party_id': partyId, 'prm.is_active': true, 'pr.is_active': true });
+
+        party.roles = roles;
+        party.partyRoleIds = roles.map(r => r.roleId);
+
         return party;
 
     } catch (error) {
@@ -256,20 +271,34 @@ const fetchPartyById = async (partyId, firmId) => {
 };
 
 // Insert party
-const insertParty = async (data) => {
+const insertParty = async (data, partyRoleIds = []) => {
+    const trx = await db.transaction();
     try {
-        const [partyId] = await db('parties')
+        const [createdParty] = await trx('parties')
             .insert(data)
             .returning('id');
 
-        return partyId?.id || partyId;
+        const partyId = createdParty?.id || createdParty;
+
+        if (partyRoleIds && partyRoleIds.length > 0) {
+            await insertPartyRoleMappings(partyId, partyRoleIds, trx);
+        }
+
+        await trx.commit();
+        return partyId;
 
     } catch (error) {
+        await trx.rollback();
+
         if (error.code === '23505') {
             throw new ApiError({
                 statusCode: 409,
                 message: 'This party code already exists.'
             });
+        }
+
+        if (error instanceof ApiError) {
+            throw error;
         }
 
         throw new ApiError({
@@ -280,20 +309,42 @@ const insertParty = async (data) => {
 };
 
 // Update party
-const updatePartyMaster = async (partyId, data) => {
+const updatePartyMaster = async (partyId, data, partyRoleIds) => {
+    const trx = await db.transaction();
     try {
-        const affectedRows = await db('parties')
-            .update(data)
-            .where({ id: partyId, is_active: true });
+        let affectedRows = 0;
 
+        if (data && Object.keys(data).length > 0) {
+            affectedRows = await trx('parties')
+                .update(data)
+                .where({ id: partyId, is_active: true });
+
+            if (!affectedRows) {
+                await trx.rollback();
+                return 0;
+            }
+        }
+
+        if (partyRoleIds !== undefined) {
+            await insertPartyRoleMappings(partyId, partyRoleIds, trx);
+            affectedRows = 1;
+        }
+
+        await trx.commit();
         return affectedRows;
 
     } catch (error) {
+        await trx.rollback();
+
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
                 statusCode: 409,
                 message: 'This party code already exists.'
             });
+        }
+
+        if (error instanceof ApiError) {
+            throw error;
         }
 
         throw new ApiError({
@@ -867,10 +918,8 @@ const fetchPartyRolesByPartyId = async (partyId) => {
 /**
  * Syncs party role mappings for a specific party while preserving existing record IDs.
 */
-const insertPartyRoleMappings = async (partyId, partyRoleIds) => {
-    const trx = await db.transaction();
-
-    try {
+const insertPartyRoleMappings = async (partyId, partyRoleIds, externalTrx = null) => {
+    const execute = async (trx) => {
         const { firmId = 0, userId = 0 } = getContext();
 
         // 1. Check if party exists
@@ -894,11 +943,11 @@ const insertPartyRoleMappings = async (partyId, partyRoleIds) => {
         const existingRoleIds = existingRecords.map((r) => r.party_role_id);
 
         // 3. Determine which roles to add and which roles to remove
-        const rolesToAdd = partyRoleIds.filter(
+        const rolesToAdd = (partyRoleIds || []).filter(
             (roleId) => !existingRoleIds.includes(roleId)
         );
         const rolesToRemove = existingRoleIds.filter(
-            (roleId) => !partyRoleIds.includes(roleId)
+            (roleId) => !(partyRoleIds || []).includes(roleId)
         );
 
         // 4. Delete only the roles that were unchecked/removed
@@ -919,21 +968,25 @@ const insertPartyRoleMappings = async (partyId, partyRoleIds) => {
             await trx('party_role_mapping').insert(newRecords);
         }
 
-        await trx.commit();
-
         return {
             partyId,
             assignedRoles: partyRoleIds,
             added: rolesToAdd,
             removed: rolesToRemove,
         };
-    } catch (error) {
-        await trx.rollback();
+    };
 
+    try {
+        if (externalTrx) {
+            return await execute(externalTrx);
+        } else {
+            return await db.transaction(execute);
+        }
+    } catch (error) {
         if (error.code === '23503') {
             throw new ApiError({
                 statusCode: 409,
-                message: 'Party role cannot be created or updated.'
+                message: 'Invalid party role selected.'
             });
         }
 
@@ -1035,10 +1088,22 @@ const fetchPartyDetails = async (partyId) => {
             (address) => address.address_type_code === 'SHIPPING'
         ) || null;
 
+        // Fetch mapped roles for this party
+        const roles = await db('party_role_mapping as prm')
+            .join('party_roles as pr', 'prm.party_role_id', 'pr.id')
+            .select(
+                'pr.id as roleId',
+                'pr.code as roleCode',
+                'pr.name as roleName'
+            )
+            .where({ 'prm.party_id': partyId, 'prm.is_active': true, 'pr.is_active': true });
+
         return {
             ...party,
             billingAddress,
-            shippingAddress
+            shippingAddress,
+            roles,
+            partyRoleIds: roles.map(r => r.roleId)
         };
 
     } catch (error) {

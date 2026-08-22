@@ -189,6 +189,7 @@ const getPartyById = asyncHandler(async (req, res) => {
 const createParty = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
     const {
+        partyRoleIds = [],
         partyCode,
         legalName,
         displayName,
@@ -221,7 +222,7 @@ const createParty = asyncHandler(async (req, res) => {
         status: status || 'ACTIVE'
     };
 
-    const partyId = await insertParty(partyData);
+    const partyId = await insertParty(partyData, partyRoleIds);
 
     if (!partyId) {
         throw new ApiError({
@@ -247,6 +248,7 @@ const updateParty = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
     const {
+        partyRoleIds,
         partyCode,
         legalName,
         displayName,
@@ -262,27 +264,22 @@ const updateParty = asyncHandler(async (req, res) => {
         status
     } = req.body;
 
-    const partyData = {
-        firm_id: firmId,
-        party_code: partyCode,
-        legal_name: legalName,
-        display_name: displayName || null,
-        mobile: mobile || null,
-        email: email || null,
-        gst_registered: gstRegistered ?? false,
-        gstin: gstin || null,
-        cin_number: cinNumber || null,
-        tan_number: tanNumber || null,
-        pan_number: panNumber || null,
-        website: website || null,
-        remarks: remarks || null,
-        status: status || 'ACTIVE'
-    };
+    const partyData = {};
+    if (partyCode !== undefined) partyData.party_code = partyCode;
+    if (legalName !== undefined) partyData.legal_name = legalName;
+    if (displayName !== undefined) partyData.display_name = displayName;
+    if (mobile !== undefined) partyData.mobile = mobile;
+    if (email !== undefined) partyData.email = email || null;
+    if (gstRegistered !== undefined) partyData.gst_registered = gstRegistered;
+    if (gstin !== undefined) partyData.gstin = gstin || null;
+    if (cinNumber !== undefined) partyData.cin_number = cinNumber || null;
+    if (tanNumber !== undefined) partyData.tan_number = tanNumber || null;
+    if (panNumber !== undefined) partyData.pan_number = panNumber || null;
+    if (website !== undefined) partyData.website = website || null;
+    if (remarks !== undefined) partyData.remarks = remarks || null;
+    if (status !== undefined) partyData.status = status;
 
-    const affectedRows = await updatePartyMaster(
-        id,
-        partyData
-    );
+    const affectedRows = await updatePartyMaster(id, partyData, partyRoleIds);
 
     if (!affectedRows) {
         throw new ApiError({
@@ -661,7 +658,7 @@ const createPartyBankAccount = asyncHandler(async (req, res) => {
         ifsc_code: ifscCode || null,
         branch_name: branchName || null,
         account_holder_name: accountHolderName,
-        upi_id: upiId,
+        upi_id: upiId || null,
         is_primary: isPrimary ?? false
     };
 
@@ -707,7 +704,7 @@ const updatePartyBankAccount = asyncHandler(async (req, res) => {
         ifsc_code: ifscCode || null,
         branch_name: branchName || null,
         account_holder_name: accountHolderName,
-        upi_id: upiId,
+        upi_id: upiId || null,
         is_primary: isPrimary ?? false
     };
 
@@ -750,56 +747,6 @@ const deletePartyBankAccount = asyncHandler(async (req, res) => {
                 id: deletedPartyBankAccountId
             },
             message: 'Party bank account deleted successfully.'
-        })
-    );
-});
-
-/**
- * Controller to fetch mapped roles for a specific party
- */
-const getPartyRoleMapping = asyncHandler(async (req, res) => {
-    const { partyId } = req.params;
-
-    if (!partyId) {
-        throw new ApiError({
-            statusCode: 400,
-            message: 'Party ID is required.',
-        });
-    }
-
-    const partyRoles = await fetchPartyRolesByPartyId(partyId);
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: partyRoles,
-            message: 'Party roles retrieved successfully.',
-        })
-    );
-});
-
-/**
- * Controller to handle creation/assignment of party role mappings
- */
-const createPartyRoleMapping = asyncHandler(async (req, res) => {
-    const { partyId } = req.params;
-    const { partyRoleIds = [] } = req.body;
-
-    // Save mappings via model function
-    const result = await insertPartyRoleMappings(partyId, partyRoleIds);
-
-    if (!result) {
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Failed to map party roles.',
-        });
-    }
-
-    return res.status(201).json(
-        new ApiResponse({
-            statusCode: 201,
-            data: result,
-            message: 'Party roles mapped successfully.',
         })
     );
 });
@@ -869,8 +816,6 @@ module.exports = {
     createPartyBankAccount,
     updatePartyBankAccount,
     deletePartyBankAccount,
-    getPartyRoleMapping,
-    createPartyRoleMapping,
     searchParties,
     getPartyDetails
 };

@@ -53,36 +53,91 @@ const getPartySchema = {
 // Validation schema for creating a new party
 const createPartySchema = {
     body: Joi.object({
-        partyCode: Joi.string().max(50).required().uppercase(),
-        legalName: Joi.string().max(200).required(),
-        displayName: Joi.string().max(200).allow('', null),
-        mobile: Joi.string().max(15).allow('', null),
-        email: Joi.string().email().max(150).allow('', null),
+        firmId: Joi.number().integer().allow(null, '').optional(),
+        partyCode: Joi.string().max(50).required().uppercase().messages({
+            "string.empty": "Party code is required.",
+            "any.required": "Party code is required."
+        }),
+        legalName: Joi.string().max(255).required().messages({
+            "string.empty": "Legal name is required.",
+            "any.required": "Legal name is required."
+        }),
+        displayName: Joi.string().max(255).required().messages({
+            "string.empty": "Display name is required.",
+            "any.required": "Display name is required."
+        }),
+        mobile: Joi.string()
+            .pattern(/^[6-9]\d{9}$/)
+            .required()
+            .messages({
+                "string.empty": "Mobile number is required.",
+                "string.pattern.base": "Please enter a valid 10-digit mobile number starting with 6-9."
+            }),
+        email: Joi.string()
+            .email({ tlds: { allow: false } })
+            .allow(null, "")
+            .messages({
+                "string.email": "Please enter a valid email address."
+            }),
         gstRegistered: Joi.boolean().default(false),
-        gstin: Joi.when('gstRegistered', {
+        gstin: Joi.when("gstRegistered", {
             is: true,
             then: Joi.string()
                 .trim()
-                .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[A-Z0-9]{1}Z[A-Z0-9]{1}$/)
+                .uppercase()
+                .pattern(/^([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}[Z]{1}[0-9A-Z]{1})$/)
                 .required()
                 .messages({
-                    'any.required': 'GSTIN is required when GST is registered.',
-                    'string.empty': 'GSTIN is required when GST is registered.',
-                    'string.pattern.base': 'Please enter a valid GSTIN.'
+                    "string.empty": "GSTIN is required when GST is enabled.",
+                    "string.pattern.base": "Please enter a valid 15-character GSTIN (e.g. 24ABCDE1234F1Z5)."
                 }),
-            otherwise: Joi.string()
-                .trim()
-                .allow('', null)
-                .optional()
+            otherwise: Joi.string().trim().allow("", null).optional()
         }),
-        cinNumber: Joi.string().max(20).allow('', null),
-        tanNumber: Joi.string().max(20).allow('', null),
-        panNumber: Joi.string().max(20).allow('', null),
-        website: Joi.string().max(200).allow('', null),
-        remarks: Joi.string().allow('', null),
+        panNumber: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^[A-Z]{5}[0-9]{4}[A-Z]$/)
+            .allow(null, "")
+            .messages({
+                "string.pattern.base": "Please enter a valid 10-character PAN (e.g. ABCDE1234F)."
+            }),
+        cinNumber: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^([A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6})$/)
+            .allow(null, "")
+            .messages({
+                "string.pattern.base": "Please enter a valid 21-digit CIN number."
+            }),
+        tanNumber: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^[A-Z]{4}[0-9]{5}[A-Z]{1}$/)
+            .allow(null, "")
+            .messages({
+                "string.pattern.base": "Please enter a valid 10-digit TAN number."
+            }),
+        website: Joi.string()
+            .uri({ scheme: [/https?/] })
+            .allow(null, "")
+            .messages({
+                "string.uri": "Please enter a valid website URL (e.g. https://abc.com)."
+            }),
+        remarks: Joi.string().max(1000).allow(null, ""),
         status: Joi.string()
             .valid('ACTIVE', 'INACTIVE')
-            .default('ACTIVE')
+            .default('ACTIVE'),
+        partyRoleIds: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                "number.base": "Invalid party role selected."
+            }))
+            .unique()
+            .optional()
+            .default([])
+            .messages({
+                "array.base": "Please select valid party roles.",
+                "array.unique": "Please select each party role only once."
+            })
     })
 };
 
@@ -92,9 +147,9 @@ const updatePartySchema = {
         id: Joi.number().integer().required().label('Party ID'),
     }),
     body: createPartySchema.body.fork(
-        ["partyCode", "legalName"],
+        ["partyCode", "legalName", "displayName", "mobile", "partyRoleIds"],
         field => field.optional()
-    )
+    ).min(1)
 };
 
 // Validation schema for deleting a party
@@ -146,12 +201,30 @@ const getPartyAddressSchema = {
 // Validation schema for creating a new party address
 const createPartyAddressSchema = {
     body: Joi.object({
-        addressTypeId: Joi.number().integer().required(),
-        address: Joi.string().max(200).required(),
-        cityId: Joi.number().integer().required(),
-        stateId: Joi.number().integer().required(),
-        country: Joi.string().max(100).required(),
-        pincode: Joi.string().min(6).max(10).required()
+        addressTypeId: Joi.number().integer().required().messages({
+            "number.base": "Please select an address type.",
+            "any.required": "Address type is required."
+        }),
+        address: Joi.string().max(500).required().messages({
+            "string.empty": "Address line is required.",
+            "any.required": "Address line is required."
+        }),
+        stateId: Joi.number().integer().required().messages({
+            "number.base": "Please select a state.",
+            "any.required": "State is required."
+        }),
+        cityId: Joi.number().integer().required().messages({
+            "number.base": "Please select a city.",
+            "any.required": "City is required."
+        }),
+        country: Joi.string().default("India"),
+        pincode: Joi.string()
+            .pattern(/^[1-9][0-9]{5}$/)
+            .required()
+            .messages({
+                "string.empty": "Pincode is required.",
+                "string.pattern.base": "Please enter a valid 6-digit Indian pincode."
+            })
     })
 };
 
@@ -161,7 +234,10 @@ const updatePartyAddressSchema = {
         partyId: Joi.number().integer().required(),
         id: Joi.number().integer().required().label('Party Address ID'),
     }),
-    body: createPartyAddressSchema.body
+    body: createPartyAddressSchema.body.fork(
+        ["addressTypeId", "address", "stateId", "cityId", "pincode"],
+        field => field.optional()
+    )
 };
 
 // Validation schema for deleting a party address
@@ -191,13 +267,28 @@ const getPartyContactSchema = {
 // Validation schema for creating a new party contact
 const createPartyContactSchema = {
     body: Joi.object({
-        contactRoleId: Joi.number().integer().required(),
-        contactName: Joi.string().max(100).required(),
-        mobile: Joi.string().pattern(/^\d{10}$/).allow("", null)
+        contactRoleId: Joi.number().integer().required().messages({
+            "number.base": "Please select a contact role.",
+            "any.required": "Contact role is required."
+        }),
+        contactName: Joi.string().max(255).required().messages({
+            "string.empty": "Contact name is required.",
+            "any.required": "Contact name is required."
+        }),
+        designation: Joi.string().max(255).allow(null, "").optional(),
+        mobile: Joi.string()
+            .pattern(/^[6-9]\d{9}$/)
+            .required()
             .messages({
-                'string.pattern.base': 'Please enter a valid mobile number.'
+                "string.empty": "Mobile number is required.",
+                "string.pattern.base": "Please enter a valid 10-digit mobile number."
             }),
-        email: Joi.string().email().max(150).allow("", null),
+        email: Joi.string()
+            .email({ tlds: { allow: false } })
+            .allow(null, "")
+            .messages({
+                "string.email": "Please enter a valid email address."
+            }),
         isPrimary: Joi.boolean().default(false)
     })
 };
@@ -208,7 +299,10 @@ const updatePartyContactSchema = {
         partyId: Joi.number().integer().required(),
         id: Joi.number().integer().required().label('Party Contact ID'),
     }),
-    body: createPartyContactSchema.body
+    body: createPartyContactSchema.body.fork(
+        ["contactRoleId", "contactName", "mobile"],
+        field => field.optional()
+    )
 };
 
 // Validation schema for deleting a party contact
@@ -238,12 +332,42 @@ const getPartyBankAccountSchema = {
 // Validation schema for creating a new party bank account
 const createPartyBankAccountSchema = {
     body: Joi.object({
-        bankName: Joi.string().max(100).required(),
-        accountNumber: Joi.string().max(50).required(),
-        ifscCode: Joi.string().max(20).uppercase().allow('', null),
-        branchName: Joi.string().max(100).allow('', null),
-        accountHolderName: Joi.string().max(200).required(),
-        upiId: Joi.string().max(100).required(),
+        bankName: Joi.string().max(255).required().messages({
+            "string.empty": "Bank name is required.",
+            "any.required": "Bank name is required."
+        }),
+        accountNumber: Joi.string()
+            .pattern(/^\d{9,18}$/)
+            .required()
+            .messages({
+                "string.empty": "Account number is required.",
+                "string.pattern.base": "Account number must be 9 to 18 digits."
+            }),
+        ifscCode: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+            .required()
+            .messages({
+                "string.empty": "IFSC code is required.",
+                "string.pattern.base": "Please enter a valid IFSC code (e.g. SBIN0007890)."
+            }),
+        branchName: Joi.string().max(255).required().messages({
+            "string.empty": "Branch name is required.",
+            "any.required": "Branch name is required."
+        }),
+        accountHolderName: Joi.string().max(255).required().messages({
+            "string.empty": "Account holder name is required.",
+            "any.required": "Account holder name is required."
+        }),
+        upiId: Joi.string()
+            .trim()
+            .pattern(/^[\w.\-]{2,256}@[a-zA-Z]{2,64}$/)
+            .allow(null, "")
+            .optional()
+            .messages({
+                "string.pattern.base": "Please enter a valid UPI ID (e.g. name@bank)."
+            }),
         isPrimary: Joi.boolean().default(false)
     })
 };
@@ -254,7 +378,10 @@ const updatePartyBankAccountSchema = {
         partyId: Joi.number().integer().required(),
         id: Joi.number().integer().required().label('Party Bank Account ID'),
     }),
-    body: createPartyBankAccountSchema.body
+    body: createPartyBankAccountSchema.body.fork(
+        ["bankName", "accountNumber", "ifscCode", "branchName", "accountHolderName"],
+        field => field.optional()
+    )
 };
 
 // Validation schema for deleting a party bank account
@@ -269,28 +396,6 @@ const deletePartyBankAccountSchema = {
             .label('Is Permanent Delete')
             .messages({
                 'boolean.base': `"isPermanentDelete" must be a boolean value.`,
-            })
-    })
-};
-
-// Get all roles against that party
-const getPartyRolesMappingSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required()
-    })
-};
-
-// Map the parties with party roles
-const insertPartyRoleMappingsSchema = {
-    body: Joi.object({
-        partyRoleIds: Joi.array()
-            .items(Joi.number().integer().positive())
-            .unique()
-            .required()
-            .messages({
-                'array.base': 'Party role IDs must be an array.',
-                'array.unique': 'Duplicate party role IDs are not allowed.',
-                'any.required': 'Party role IDs are required.'
             })
     })
 };
@@ -317,7 +422,5 @@ module.exports = {
     getPartyBankAccountSchema,
     createPartyBankAccountSchema,
     updatePartyBankAccountSchema,
-    deletePartyBankAccountSchema,
-    getPartyRolesMappingSchema,
-    insertPartyRoleMappingsSchema
+    deletePartyBankAccountSchema
 };

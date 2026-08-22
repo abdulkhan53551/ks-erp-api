@@ -2,8 +2,8 @@ const { Router } = require('express')
 const validate = require('../middlewares/validate')
 const { getStates, getCityByState, getPyamentModes, getPyamentStatuses, getGstSlabs, getProductUnits } = require('../controllers/masters.controller')
 const { getCityByStateIdValidationSchema } = require('../validation/masters.validation')
-const { createPartyTypeSchema, getPartyTypeSchema, updatePartyTypeSchema, deletePartyTypeSchema, createPartySchema, updatePartySchema, getPartySchema, deletePartySchema, createPartyAddressSchema, getPartyAddressSchema, updatePartyAddressSchema, deletePartyAddressSchema, createPartyContactSchema, getPartyContactSchema, updatePartyContactSchema, deletePartyContactSchema, createPartyBankAccountSchema, getPartyBankAccountSchema, updatePartyBankAccountSchema, deletePartyBankAccountSchema, createPartyRolesSchema, getPartyRolesSchema, updatePartyRolesSchema, deletePartyRolesSchema, insertPartyRoleMappingsSchema, getPartyRolesMappingSchema, searchPartiesSchema, getPartyDetailsSchema } = require('../validation/parties.validation')
-const { getAllPartyRoles, createPartyRole, getPartyRoleById, updatePartyRole, deletePartyRole, getAllParties, createParty, getPartyById, updateParty, deleteParty, getPartyMeta, getAllPartyAddresses, createPartyAddress, getPartyAddressById, updatePartyAddress, deletePartyAddress, getAllPartyContacts, getPartyContactById, createPartyContact, updatePartyContact, deletePartyContact, getAllPartyBankAccounts, createPartyBankAccount, getPartyBankAccountById, updatePartyBankAccount, deletePartyBankAccount, createPartyRoleMapping, getPartyRoles, getPartyRoleMapping, searchParties, getPartyDetails } = require('../controllers/parties.controller')
+const { createPartyTypeSchema, getPartyTypeSchema, updatePartyTypeSchema, deletePartyTypeSchema, createPartySchema, updatePartySchema, getPartySchema, deletePartySchema, createPartyAddressSchema, getPartyAddressSchema, updatePartyAddressSchema, deletePartyAddressSchema, createPartyContactSchema, getPartyContactSchema, updatePartyContactSchema, deletePartyContactSchema, createPartyBankAccountSchema, getPartyBankAccountSchema, updatePartyBankAccountSchema, deletePartyBankAccountSchema, createPartyRolesSchema, getPartyRolesSchema, updatePartyRolesSchema, deletePartyRolesSchema, searchPartiesSchema, getPartyDetailsSchema } = require('../validation/parties.validation')
+const { getAllPartyRoles, createPartyRole, getPartyRoleById, updatePartyRole, deletePartyRole, getAllParties, createParty, getPartyById, updateParty, deleteParty, getPartyMeta, getAllPartyAddresses, createPartyAddress, getPartyAddressById, updatePartyAddress, deletePartyAddress, getAllPartyContacts, getPartyContactById, createPartyContact, updatePartyContact, deletePartyContact, getAllPartyBankAccounts, createPartyBankAccount, getPartyBankAccountById, updatePartyBankAccount, deletePartyBankAccount, searchParties, getPartyDetails } = require('../controllers/parties.controller')
 const router = Router()
 
 // Party Roles
@@ -43,10 +43,5 @@ router.post('/:partyId/bank-accounts', validate(createPartyBankAccountSchema), c
 router.get('/:partyId/bank-accounts/:id', validate(getPartyBankAccountSchema), getPartyBankAccountById);
 router.patch('/:partyId/bank-accounts/:id', validate(updatePartyBankAccountSchema), updatePartyBankAccount);
 router.delete('/:partyId/bank-accounts/:id', validate(deletePartyBankAccountSchema), deletePartyBankAccount);
-
-// Party Role Mapping
-router.get('/:partyId/roles', validate(getPartyRolesMappingSchema), getPartyRoleMapping);
-router.patch('/:partyId/roles', validate(insertPartyRoleMappingsSchema), createPartyRoleMapping);
-
 
 module.exports = router
