@@ -6,9 +6,9 @@ const { asyncHandler } = require("../services/asyncHandler");
 
 // Fetch all purchase orders with pagination and search
 const getAllPurchaseOrder = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '' } = req.query;
+    const { page = 1, pageSize = 10, search = '', status } = req.query;
 
-    const purchaseOrder = await fetchAllPurchaseOrder({ page, pageSize, search });
+    const purchaseOrder = await fetchAllPurchaseOrder({ page, pageSize, search, status });
 
     return res.status(200).json(
         new ApiResponse({
@@ -71,43 +71,43 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 
     // Create purchase order
     const poData = {
-        invoice_id: body.invoiceId,
         po_no: body.poNo,
         po_date: body.poDate,
         customer_name: body.customerName,
         firm_id: firmId,
-        is_invoiced: body.isInvoiced
-    }
-    const challanId = await insertPurchaseOrder(poData);
+        status: body.status || 'OPEN'
+    };
 
-    // If challanId is not returned, throw an error
-    if (!challanId) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating purchase order' })
+    const poId = await insertPurchaseOrder(poData);
+
+    // If poId is not returned, throw an error
+    if (!poId) {
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating purchase order' });
     }
 
     // Response
     const response = {
-        id: challanId
-    }
+        id: poId
+    };
 
     return res.status(200).json(
         new ApiResponse({ statusCode: 200, data: response, message: 'Purchase order created successfully.' })
-    )
+    );
 });
 
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
     const poId = req.params.id;
     const body = req.body;
 
     const updatedData = {
-        invoice_id: body.invoiceId,
         po_no: body.poNo,
         po_date: body.poDate,
         customer_name: body.customerName,
-        firm_id: firmId,
-        is_invoiced: body.isInvoiced
-    }
+        status: body.status
+    };
+
+    // Remove undefined values
+    Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
 
     // Update purchase order
     const affectedRows = await updatePurchaseOrderById(poId, updatedData);
