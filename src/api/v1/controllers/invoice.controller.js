@@ -148,12 +148,20 @@ const createInvoice = asyncHandler(async (req, res) => {
         pincode: shippingAddress.pincode,
     };
 
+    // Invoice Document
+    const invoiceDocument = {
+        challanIds: invoice.challanIds,
+        purchaseOrderIds: invoice.poIds,
+        ewayBillIds: invoice.ewayBillIds
+    };
+
     // Insert invoice
     const invoiceId = await insertInvoice({
         masterData: invoiceMaster,
         items: invoiceItems,
         billing,
-        shipping
+        shipping,
+        document: invoiceDocument
     });
 
     // If invoiceId is not returned, throw an error
@@ -261,6 +269,12 @@ const updateInvoice = asyncHandler(async (req, res) => {
         pincode: shippingAddress.pincode,
     };
 
+    // Invoice Document
+    const invoiceDocument = {
+        challanIds: invoice.challanIds,
+        purchaseOrderIds: invoice.poIds,
+        ewayBillIds: invoice.ewayBillIds
+    };
 
     // Update invoice
     const affectedRows = await updateInvoiceById({
@@ -268,7 +282,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
         masterData: invoiceMaster,
         items: invoiceItems,
         billing,
-        shipping
+        shipping,
+        document: invoiceDocument
     });
 
     // If no rows were affected, it means the invoice was not found or update failed
@@ -384,12 +399,6 @@ const calculateInvoiceTotals = (items, invoice) => {
 
     // taxableTotal = subTotal.plus(discountTotal);
     const grandTotal = taxableTotal.plus(gstTotal).plus(otherAmount).plus(roundOff);
-
-    // console.log('subTotal => ', subTotal);
-    // console.log('taxableTotal => ', taxableTotal);
-    // console.log('gstTotal => ', gstTotal);
-    // console.log('grandTotal => ', grandTotal);
-
 
     return {
         discountTotal: discountTotal.toDecimalPlaces(2).toNumber(),
