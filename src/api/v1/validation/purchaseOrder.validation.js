@@ -55,10 +55,64 @@ const deletePurchaseOrderValidationSchema = {
     }),
 };
 
+// Validation schema for restoring a purchase order
+const restorePurchaseOrderValidationSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().required().label('Purchase Order ID'),
+    })
+};
+
+// Validation schema for bulk deleting purchase orders
+const bulkDeletePurchaseOrdersValidationSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid purchase order ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Purchase Order IDs must be an array.',
+                'array.min': 'Please select at least one purchase order.',
+                'array.unique': 'Duplicate purchase order IDs are not allowed.',
+                'any.required': 'Purchase Order IDs are required.'
+            }),
+        isPermanentDelete: Joi.boolean()
+            .default(false)
+            .label('Is Permanent Delete')
+            .messages({
+                'boolean.base': `"isPermanentDelete" must be a boolean value.`
+            })
+    })
+};
+
+// Validation schema for bulk restoring purchase orders
+const bulkRestorePurchaseOrdersValidationSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid purchase order ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Purchase Order IDs must be an array.',
+                'array.min': 'Please select at least one purchase order to restore.',
+                'array.unique': 'Duplicate purchase order IDs are not allowed.',
+                'any.required': 'Purchase Order IDs are required.'
+            })
+    })
+};
+
 module.exports = {
     getPurchaseOrderByIdValidationSchema,
     getPurchaseOrdersByInvoiceIdValidationSchema,
     createPurchaseOrderValidationSchema,
     updatePurchaseOrderValidationSchema,
-    deletePurchaseOrderValidationSchema
+    deletePurchaseOrderValidationSchema,
+    restorePurchaseOrderValidationSchema,
+    bulkDeletePurchaseOrdersValidationSchema,
+    bulkRestorePurchaseOrdersValidationSchema
 };

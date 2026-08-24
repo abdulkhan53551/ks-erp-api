@@ -55,10 +55,64 @@ const deleteInvoiceChallanValidationSchema = {
     }),
 };
 
+// Schema: Restore an invoice challan
+const restoreInvoiceChallanValidationSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().required().label('Challan ID'),
+    })
+};
+
+// Schema: Bulk delete invoice challans
+const bulkDeleteInvoiceChallansValidationSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid challan ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Challan IDs must be an array.',
+                'array.min': 'Please select at least one challan.',
+                'array.unique': 'Duplicate challan IDs are not allowed.',
+                'any.required': 'Challan IDs are required.'
+            }),
+        isPermanentDelete: Joi.boolean()
+            .default(false)
+            .label('Is Permanent Delete')
+            .messages({
+                'boolean.base': `"isPermanentDelete" must be a boolean value.`
+            })
+    })
+};
+
+// Schema: Bulk restore invoice challans
+const bulkRestoreInvoiceChallansValidationSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid challan ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Challan IDs must be an array.',
+                'array.min': 'Please select at least one challan to restore.',
+                'array.unique': 'Duplicate challan IDs are not allowed.',
+                'any.required': 'Challan IDs are required.'
+            })
+    })
+};
+
 module.exports = {
     getInvoiceChallanByIdValidationSchema,
     getInvoiceChallansByInvoiceIdValidationSchema,
     createInvoiceChallanValidationSchema,
     updateInvoiceChallanValidationSchema,
-    deleteInvoiceChallanValidationSchema
+    deleteInvoiceChallanValidationSchema,
+    restoreInvoiceChallanValidationSchema,
+    bulkDeleteInvoiceChallansValidationSchema,
+    bulkRestoreInvoiceChallansValidationSchema
 };

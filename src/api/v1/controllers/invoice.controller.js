@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -18,9 +18,9 @@ const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '' } = req.query;
+    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
 
-    const result = await fetchAllInvoice({ page, pageSize, search });
+    const result = await fetchAllInvoice({ page, pageSize, search, trash });
 
     return res.status(200).json(
         new ApiResponse({
@@ -423,9 +423,10 @@ const calculateDiscount = (total, discountAmount, discountPercent) => {
 const deleteInvoice = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
     const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Delete invoice by ID
-    const deleted = await deleteInvoiceById(invoiceId, isPermanentDelete);
+    const deleted = await deleteInvoiceById(invoiceId, permanent);
 
     // If no rows were affected, it means the invoice was not found or already deleted
     if (!deleted) {
@@ -433,7 +434,65 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice deleted successfully.' })
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(invoiceId) },
+            message: permanent
+                ? 'Invoice permanently deleted successfully.'
+                : 'Invoice moved to Trash successfully. Linked Challans and E-Way Bills have been unlinked.'
+        })
+    );
+});
+
+// Restore invoice by ID
+const restoreInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    const restored = await restoreInvoiceById(invoiceId);
+
+    if (!restored) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found in Trash or already active.' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(invoiceId) },
+            message: 'Invoice restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete invoices
+const bulkDeleteInvoices = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteInvoicesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} invoices permanently deleted successfully.`
+                : `${affectedRows} invoices moved to Trash successfully. Linked Challans and E-Way Bills have been unlinked.`
+        })
+    );
+});
+
+// Bulk restore invoices
+const bulkRestoreInvoices = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreInvoicesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} invoices restored from Trash successfully.`
+        })
     );
 });
 
@@ -1033,6 +1092,9 @@ module.exports = {
     createInvoice,
     updateInvoice,
     deleteInvoice,
+    restoreInvoice,
+    bulkDeleteInvoices,
+    bulkRestoreInvoices,
     getNextInvoiceNumber,
     generateInvoicePDF,
     prepareInvoicePdfJsonData,

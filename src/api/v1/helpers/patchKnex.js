@@ -57,6 +57,18 @@ function patchKnex(knex) {
           updated_at: now,
           updated_by: userId,
         };
+
+        // If soft-deleting (moving to trash)
+        if (data.is_active === false && data.deleted_at === undefined) {
+          data.deleted_at = now;
+          data.deleted_by = userId;
+        }
+
+        // If restoring from trash
+        if (data.is_active === true && data.deleted_at === undefined) {
+          data.deleted_at = null;
+          data.deleted_by = null;
+        }
       }
     }
 
@@ -68,8 +80,10 @@ function patchKnex(knex) {
 function addDefaultColumns(table, knex) {
   table.timestamp('created_at').defaultTo(knex.fn.now()).notNullable();
   table.timestamp('updated_at').defaultTo(knex.fn.now()).notNullable();
+  table.timestamp('deleted_at').nullable();
   table.integer('created_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
   table.integer('updated_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
+  table.integer('deleted_by').unsigned().references('id').inTable('users').onDelete('SET NULL');
   table.boolean('is_active').notNullable().defaultTo(true);
 }
 

@@ -6,7 +6,8 @@ const { ApiError } = require("../services/ApiError");
 // Fetch all purchase orders
 const fetchAllPurchaseOrder = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', status } = query;
+        const { page = 1, pageSize = 10, search = '', status, trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('purchase_orders AS PO')
@@ -23,10 +24,14 @@ const fetchAllPurchaseOrder = async (query) => {
                     WHERE POI.purchase_order_id = "PO"."id" AND POI.is_active = true
                 ) AS invoice_no`),
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
-                'PO.updated_at'
+                'PO.created_at',
+                'PO.updated_at',
+                'PO.deleted_at',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
             .leftJoin('users AS u', 'PO.created_by', 'u.id')
-            .where('PO.is_active', true)
+            .leftJoin('users AS du', 'PO.deleted_by', 'du.id')
+            .where('PO.is_active', !isTrash)
             .andWhere('PO.firm_id', firmId);
 
         if (status) {
@@ -40,7 +45,11 @@ const fetchAllPurchaseOrder = async (query) => {
             });
         }
 
-        baseQuery.orderBy('PO.id', 'desc');
+        if (isTrash) {
+            baseQuery.orderBy('PO.deleted_at', 'desc');
+        } else {
+            baseQuery.orderBy('PO.id', 'desc');
+        }
 
         // Fetch paginated data
         const purchaseOrders = await fetchPageData({ baseQuery, page, pageSize });
@@ -57,27 +66,28 @@ const fetchAllPurchaseOrder = async (query) => {
 // Fetch purchase order meta data for pagination
 const fetchPurchaseOrderMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', status } = query;
+        const { page = 1, pageSize = 10, search = '', status, trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
-        const baseQuery = db('purchase_orders')
-            .where('is_active', true)
-            .andWhere('firm_id', firmId);
+        const baseQuery = db('purchase_orders AS PO')
+            .where('PO.firm_id', firmId)
+            .andWhere('PO.is_active', !isTrash);
 
         if (status) {
-            baseQuery.where('status', status);
+            baseQuery.where('PO.status', status);
         }
 
         if (search) {
             baseQuery.where(function () {
-                this.where('po_no', 'ilike', `%${search}%`)
-                    .orWhere('customer_name', 'ilike', `%${search}%`);
+                this.where('PO.po_no', 'ilike', `%${search}%`)
+                    .orWhere('PO.customer_name', 'ilike', `%${search}%`);
             });
         }
 
-        const result = await buildPagination({ baseQuery, page, pageSize });
+        const meta = await buildPagination({ baseQuery, page, pageSize });
 
-        return result;
+        return meta;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
@@ -178,16 +188,38 @@ const fetchPurchaseOrderByInvoiceId = async (invoiceId, includeUnmappedPurchaseO
 
 // Insert a new purchase order
 const insertPurchaseOrder = async (data) => {
+    // 1. Check if po_no already exists in active or trashed state
+    const existingPO = await db('purchase_orders')
+        .select('id', 'is_active', 'po_no')
+        .where({ firm_id: data.firm_id, po_no: data.po_no })
+        .first();
+
+    if (existingPO) {
+        if (existingPO.is_active) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Purchase Order '${data.po_no}' already exists.`
+            });
+        } else {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Purchase Order '${data.po_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different PO number.`
+            });
+        }
+    }
+
     try {
         const [result] = await db('purchase_orders').insert(data).returning('id');
         return result?.id || null;
     } catch (err) {
-        switch (err.constraint) {
-            case 'purchase_orders_firm_id_po_no_unique':
-                throw new ApiError({
-                    statusCode: 409,
-                    message: 'This PO is already created.',
-                });
+        if (err.constraint === 'purchase_orders_firm_id_po_no_unique') {
+            throw new ApiError({
+                statusCode: 409,
+                message: 'This PO is already created.',
+            });
+        }
+        if (err instanceof ApiError) {
+            throw err;
         }
         throw new ApiError({
             statusCode: 500,
@@ -219,22 +251,147 @@ const updatePurchaseOrderById = async (id, data) => {
 // Delete purchase order by ID
 const deletePurchaseOrderById = async (id, isPermanentDelete) => {
     try {
+        const { firmId = 0 } = getContext();
+
+        // 1. Check if linked to an active invoice
+        const activeInvoice = await db('purchase_order_invoices as poi')
+            .join('invoices as i', 'poi.invoice_id', 'i.id')
+            .select('i.invoice_no')
+            .where('poi.purchase_order_id', id)
+            .andWhere('poi.is_active', true)
+            .andWhere('i.is_active', true)
+            .first();
+
+        if (activeInvoice) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Cannot delete Purchase Order because it is linked to active Invoice '${activeInvoice.invoice_no}'. Please unlink it from the invoice first.`
+            });
+        }
+
         // Hard delete
         if (isPermanentDelete) {
-            const result = await db('purchase_orders').where({ id: id }).del();
+            await db('purchase_order_invoices').where({ purchase_order_id: id }).del();
+            const result = await db('purchase_orders').where({ id, firm_id: firmId }).del();
             return result > 0;
         }
 
-        // Soft delete
-        const updated = await db('purchase_orders').update({ is_active: false }).where({ id });
+        // Soft delete (move to trash)
+        const updated = await db('purchase_orders').where({ id, firm_id: firmId }).update({ is_active: false });
         if (updated) {
-            await db('purchase_order_invoices').update({ is_active: false }).where({ purchase_order_id: id });
+            await db('purchase_order_invoices').where({ purchase_order_id: id }).update({ is_active: false });
         }
-        return updated;
+        return updated > 0;
     } catch (err) {
+        if (err instanceof ApiError) {
+            throw err;
+        }
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while deleting purchase order data.',
+        });
+    }
+};
+
+// Bulk delete purchase orders
+const bulkDeletePurchaseOrders = async (poIds = [], isPermanentDelete = false) => {
+    if (!poIds.length) return 0;
+    try {
+        const { firmId = 0 } = getContext();
+
+        // Check if any of the POs are linked to an active invoice
+        const activeInvoices = await db('purchase_order_invoices as poi')
+            .join('invoices as i', 'poi.invoice_id', 'i.id')
+            .join('purchase_orders as po', 'poi.purchase_order_id', 'po.id')
+            .select('po.po_no', 'i.invoice_no')
+            .whereIn('poi.purchase_order_id', poIds)
+            .andWhere('poi.is_active', true)
+            .andWhere('i.is_active', true);
+
+        if (activeInvoices.length > 0) {
+            const conflictList = activeInvoices.map(c => `PO '${c.po_no}' linked to Invoice '${c.invoice_no}'`).join(', ');
+            throw new ApiError({
+                statusCode: 409,
+                message: `Cannot delete Purchase Orders: ${conflictList}. Please unlink them from invoices first.`
+            });
+        }
+
+        if (isPermanentDelete) {
+            await db('purchase_order_invoices').whereIn('purchase_order_id', poIds).del();
+            return await db('purchase_orders').whereIn('id', poIds).andWhere({ firm_id: firmId }).del();
+        }
+
+        // Soft delete (bulk move to trash)
+        const affectedRows = await db('purchase_orders')
+            .whereIn('id', poIds)
+            .andWhere({ firm_id: firmId })
+            .update({ is_active: false });
+
+        await db('purchase_order_invoices').whereIn('purchase_order_id', poIds).update({ is_active: false });
+
+        return affectedRows;
+    } catch (err) {
+        if (err instanceof ApiError) {
+            throw err;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while deleting purchase orders.',
+        });
+    }
+};
+
+// Restore purchase order by ID
+const restorePurchaseOrderById = async (id) => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        const po = await db('purchase_orders')
+            .where({ id, firm_id: firmId, is_active: false })
+            .first();
+
+        if (!po) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Purchase Order not found in Trash or already active.'
+            });
+        }
+
+        const affectedRows = await db('purchase_orders')
+            .where({ id, firm_id: firmId })
+            .update({ is_active: true });
+
+        return affectedRows > 0;
+    } catch (err) {
+        if (err instanceof ApiError) {
+            throw err;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring purchase order.',
+        });
+    }
+};
+
+// Bulk restore purchase orders
+const bulkRestorePurchaseOrders = async (poIds = []) => {
+    if (!poIds.length) return 0;
+    try {
+        const { firmId = 0 } = getContext();
+
+        const affectedRows = await db('purchase_orders')
+            .whereIn('id', poIds)
+            .andWhere({ firm_id: firmId, is_active: false })
+            .update({ is_active: true });
+
+        return affectedRows;
+    } catch (err) {
+        if (err instanceof ApiError) {
+            throw err;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring purchase orders.',
         });
     }
 };
@@ -330,5 +487,8 @@ module.exports = {
     insertPurchaseOrder,
     updatePurchaseOrderById,
     deletePurchaseOrderById,
+    bulkDeletePurchaseOrders,
+    restorePurchaseOrderById,
+    bulkRestorePurchaseOrders,
     updateInvoicePurchaseOrderMapping
 };

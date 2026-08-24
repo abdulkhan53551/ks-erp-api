@@ -7,10 +7,11 @@ const { updateInvoiceEwayBillMapping } = require("./ewayBill.model");
 const { updateInvoiceChallanMapping } = require("./invoiceChallan.model");
 const { updateInvoicePurchaseOrderMapping } = require("./purchaseOrder.model");
 
-// Fetch all invoice
+// Fetch all invoices
 const fetchAllInvoice = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '' } = query;
+        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('invoices AS I')
@@ -38,6 +39,8 @@ const fetchAllInvoice = async (query) => {
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'I.created_at',
                 'I.updated_at',
+                'I.deleted_at',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
             .leftJoin('eway_bills AS EB', function () {
                 this.on('I.id', '=', 'EB.invoice_id')
@@ -46,7 +49,8 @@ const fetchAllInvoice = async (query) => {
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
             .leftJoin('users AS u', 'I.created_by', 'u.id')
-            .where('I.is_active', true)
+            .leftJoin('users AS du', 'I.deleted_by', 'du.id')
+            .where('I.is_active', !isTrash)
             .andWhere('I.firm_id', firmId);
 
         if (search) {
@@ -66,7 +70,11 @@ const fetchAllInvoice = async (query) => {
             });
         }
 
-        baseQuery.orderBy('I.id', 'desc');
+        if (isTrash) {
+            baseQuery.orderBy('I.deleted_at', 'desc');
+        } else {
+            baseQuery.orderBy('I.id', 'desc');
+        }
 
         // Fetch paginated data
         const result = await fetchPageData({ baseQuery, page, pageSize });
@@ -83,7 +91,8 @@ const fetchAllInvoice = async (query) => {
 // Fetch invoice meta data for pagination
 const fetchInvoiceMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '' } = query;
+        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('invoices AS I')
@@ -93,8 +102,8 @@ const fetchInvoiceMeta = async (query) => {
             })
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
-            .leftJoin('users AS U', 'I.created_by', 'U.id')
-            .where('I.is_active', true)
+            .leftJoin('users AS u', 'I.created_by', 'u.id')
+            .where('I.is_active', !isTrash)
             .andWhere('I.firm_id', firmId);
 
         if (search) {
@@ -118,12 +127,14 @@ const fetchInvoiceMeta = async (query) => {
 
         return result;
     } catch (error) {
+        console.log('error => ', error);
+
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while fetching invoice meta data.',
         });
     }
-}
+};
 
 // Fetch invoice by ID
 const fetchInvoiceById = async (id) => {
@@ -291,6 +302,26 @@ const insertInvoice = async (data) => {
 
 // Insert invoice master data
 const insertInvoiceMaster = async (trx, data) => {
+    // 1. Check if invoice_no already exists in active or trashed state
+    const existingInvoice = await trx('invoices')
+        .select('id', 'is_active', 'invoice_no')
+        .where({ firm_id: data.firm_id, invoice_no: data.invoice_no })
+        .first();
+
+    if (existingInvoice) {
+        if (existingInvoice.is_active) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Invoice number '${data.invoice_no}' already exists.`
+            });
+        } else {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
+            });
+        }
+    }
+
     try {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
         return id;
@@ -306,7 +337,7 @@ const insertInvoiceMaster = async (trx, data) => {
             message: 'Something went wrong while inserting invoice data.',
         });
     }
-}
+};
 
 // Insert invoice items
 const insertInvoiceItems = async (trx, invoiceId, items) => {
@@ -464,7 +495,6 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
         const { firmId = 0 } = getContext();
 
         return db.transaction(async trx => {
-
             let result;
 
             if (isPermanentDelete) {
@@ -484,7 +514,7 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                     trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
                     trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
                     trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
-                    trx('invoices').where({ id: invoiceId }).update({ is_active: false })
+                    trx('invoices').where({ id: invoiceId, firm_id: firmId }).update({ is_active: false })
                 ]);
 
                 result = invoice;
@@ -493,12 +523,116 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
             return result > 0;
         });
     } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while deleting invoice.',
         });
     }
-}
+};
+
+// Bulk delete invoices
+const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) => {
+    if (!invoiceIds || !invoiceIds.length) return 0;
+    try {
+        const { firmId = 0 } = getContext();
+
+        return db.transaction(async trx => {
+            if (isPermanentDelete) {
+                await Promise.all([
+                    trx('invoice_contacts').whereIn('invoice_id', invoiceIds).del(),
+                    trx('invoice_items').whereIn('invoice_id', invoiceIds).del(),
+                    trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId }).del()
+                ]);
+                return invoiceIds.length;
+            }
+
+            // Soft delete (bulk move to trash)
+            await Promise.all([
+                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
+                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
+                trx('purchase_order_invoices').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
+                trx('invoice_challans').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
+                trx('eway_bills').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
+                trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId }).update({ is_active: false })
+            ]);
+
+            return invoiceIds.length;
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while deleting invoices.',
+        });
+    }
+};
+
+// Restore invoice by ID
+const restoreInvoiceById = async (invoiceId) => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return db.transaction(async trx => {
+            const invoice = await trx('invoices')
+                .where({ id: invoiceId, firm_id: firmId, is_active: false })
+                .first();
+
+            if (!invoice) {
+                throw new ApiError({
+                    statusCode: 404,
+                    message: 'Invoice not found in Trash or already active.'
+                });
+            }
+
+            await Promise.all([
+                trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: true }),
+                trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: true }),
+                trx('invoices').where({ id: invoiceId, firm_id: firmId }).update({ is_active: true })
+            ]);
+
+            return 1;
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring invoice.',
+        });
+    }
+};
+
+// Bulk restore invoices
+const bulkRestoreInvoices = async (invoiceIds = []) => {
+    if (!invoiceIds || !invoiceIds.length) return 0;
+    try {
+        const { firmId = 0 } = getContext();
+
+        return db.transaction(async trx => {
+            await Promise.all([
+                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
+                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
+                trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId, is_active: false }).update({ is_active: true })
+            ]);
+
+            return invoiceIds.length;
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring invoices.',
+        });
+    }
+};
 
 // Fetch challans for invoice
 const fetchChallansForInvoice = async (invoiceId) => {
@@ -682,6 +816,9 @@ module.exports = {
     insertInvoice,
     updateInvoiceById,
     deleteInvoiceById,
+    bulkDeleteInvoices,
+    restoreInvoiceById,
+    bulkRestoreInvoices,
     // fetchChallansForInvoice,
     // fetchPurchaseOrdersForInvoice,
     // fetchEwayBillsForInvoice,

@@ -43,6 +43,57 @@ const deletePartyRolesSchema = {
     })
 };
 
+// Validation schema for restoring a party role
+const restorePartyRolesSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().required().label('Party Role ID'),
+    })
+};
+
+// Validation schema for bulk deleting party roles
+const bulkDeletePartyRolesSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid party role ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Party role IDs must be an array.',
+                'array.min': 'Please select at least one party role.',
+                'array.unique': 'Duplicate party role IDs are not allowed.',
+                'any.required': 'Party role IDs are required.'
+            }),
+        isPermanentDelete: Joi.boolean()
+            .default(false)
+            .label('Is Permanent Delete')
+            .messages({
+                'boolean.base': `"isPermanentDelete" must be a boolean value.`
+            })
+    })
+};
+
+// Validation schema for bulk restoring party roles
+const bulkRestorePartyRolesSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid party role ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Party role IDs must be an array.',
+                'array.min': 'Please select at least one party role to restore.',
+                'array.unique': 'Duplicate party role IDs are not allowed.',
+                'any.required': 'Party role IDs are required.'
+            })
+    })
+};
+
 // Validation schema for getting a party by ID
 const getPartySchema = {
     params: Joi.object({
@@ -163,6 +214,57 @@ const deletePartySchema = {
             .label('Is Permanent Delete')
             .messages({
                 'boolean.base': `"isPermanentDelete" must be a boolean value.`,
+            })
+    })
+};
+
+// Validation schema for restoring a party
+const restorePartySchema = {
+    params: Joi.object({
+        id: Joi.number().integer().required().label('Party ID'),
+    })
+};
+
+// Validation schema for bulk deleting parties
+const bulkDeletePartiesSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid party ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Party IDs must be an array.',
+                'array.min': 'Please select at least one party.',
+                'array.unique': 'Duplicate party IDs are not allowed.',
+                'any.required': 'Party IDs are required.'
+            }),
+        isPermanentDelete: Joi.boolean()
+            .default(false)
+            .label('Is Permanent Delete')
+            .messages({
+                'boolean.base': `"isPermanentDelete" must be a boolean value.`
+            })
+    })
+};
+
+// Validation schema for bulk restoring parties
+const bulkRestorePartiesSchema = {
+    body: Joi.object({
+        ids: Joi.array()
+            .items(Joi.number().integer().positive().messages({
+                'number.base': 'Invalid party ID.'
+            }))
+            .min(1)
+            .unique()
+            .required()
+            .messages({
+                'array.base': 'Party IDs must be an array.',
+                'array.min': 'Please select at least one party to restore.',
+                'array.unique': 'Duplicate party IDs are not allowed.',
+                'any.required': 'Party IDs are required.'
             })
     })
 };
@@ -405,10 +507,16 @@ module.exports = {
     createPartyRolesSchema,
     updatePartyRolesSchema,
     deletePartyRolesSchema,
+    restorePartyRolesSchema,
+    bulkDeletePartyRolesSchema,
+    bulkRestorePartyRolesSchema,
     getPartySchema,
     createPartySchema,
     updatePartySchema,
     deletePartySchema,
+    restorePartySchema,
+    bulkDeletePartiesSchema,
+    bulkRestorePartiesSchema,
     searchPartiesSchema,
     getPartyDetailsSchema,
     getPartyAddressSchema,
