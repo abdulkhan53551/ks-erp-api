@@ -2,6 +2,7 @@ const { fetchPageData, buildPagination } = require("../../../utils/pagination");
 const { db } = require("../database");
 const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
+const { deleteFromCloudinary } = require("../services/cloudinary");
 
 // Fetch all party role
 const fetchAllPartyRoles = async (query = {}) => {
@@ -324,6 +325,8 @@ const fetchAllParties = async (firmId, query) => {
                 'p.tan_number',
                 'p.pan_number',
                 'p.website',
+                'p.logo_url as logoUrl',
+                'p.logo_public_id as logoPublicId',
                 'p.remarks',
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
@@ -413,6 +416,8 @@ const fetchPartyById = async (partyId, firmId) => {
                 'tan_number',
                 'pan_number',
                 'website',
+                'logo_url as logoUrl',
+                'logo_public_id as logoPublicId',
                 'remarks',
                 'status'
             )
@@ -568,16 +573,37 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
         }
 
         if (isPermanentDelete) {
+            // Fetch associated attachments before deleting
+            const attachments = await trx('attachments')
+                .select('public_id', 'resource_type')
+                .where({ entity_type: 'PARTY', entity_id: partyId });
+
+            await trx('attachments').where({ entity_type: 'PARTY', entity_id: partyId }).del();
             await trx('party_role_mapping').where({ party_id: partyId }).del();
             await trx('party_bank_accounts').where({ party_id: partyId }).del();
             await trx('party_contacts').where({ party_id: partyId }).del();
             await trx('party_addresses').where({ party_id: partyId }).del();
             const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).del();
+
             await trx.commit();
+
+            // Destroy logo from Cloudinary if exists
+            if (party.logo_public_id) {
+                await deleteFromCloudinary(party.logo_public_id, 'image');
+            }
+
+            // Destroy attachments from Cloudinary
+            for (const att of attachments) {
+                if (att.public_id) {
+                    await deleteFromCloudinary(att.public_id, att.resource_type || 'image');
+                }
+            }
+
             return affectedRows;
         }
 
         // Soft delete (move to trash)
+        await trx('attachments').where({ entity_type: 'PARTY', entity_id: partyId }).update({ is_active: false });
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: false });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: false });
         await trx('party_addresses').where({ party_id: partyId }).update({ is_active: false });
@@ -615,6 +641,18 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
         const { firmId = 0 } = getContext();
 
         if (isPermanentDelete) {
+            // Fetch party logos and attachments before deleting
+            const parties = await trx('parties')
+                .select('id', 'logo_public_id')
+                .whereIn('id', partyIds)
+                .andWhere({ firm_id: firmId });
+
+            const attachments = await trx('attachments')
+                .select('public_id', 'resource_type')
+                .where('entity_type', 'PARTY')
+                .whereIn('entity_id', partyIds);
+
+            await trx('attachments').where('entity_type', 'PARTY').whereIn('entity_id', partyIds).del();
             await trx('party_role_mapping').whereIn('party_id', partyIds).del();
             await trx('party_bank_accounts').whereIn('party_id', partyIds).del();
             await trx('party_contacts').whereIn('party_id', partyIds).del();
@@ -625,10 +663,26 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
                 .del();
 
             await trx.commit();
+
+            // Destroy logos from Cloudinary
+            for (const p of parties) {
+                if (p.logo_public_id) {
+                    await deleteFromCloudinary(p.logo_public_id, 'image');
+                }
+            }
+
+            // Destroy attachments from Cloudinary
+            for (const att of attachments) {
+                if (att.public_id) {
+                    await deleteFromCloudinary(att.public_id, att.resource_type || 'image');
+                }
+            }
+
             return affectedRows;
         }
 
         // Bulk soft-delete (move to trash)
+        await trx('attachments').where('entity_type', 'PARTY').whereIn('entity_id', partyIds).update({ is_active: false });
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: false });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: false });
         await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: false });
@@ -680,6 +734,7 @@ const restorePartyMaster = async (partyId) => {
         }
 
         // Restore party and associated child records
+        await trx('attachments').where({ entity_type: 'PARTY', entity_id: partyId }).update({ is_active: true });
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: true });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: true });
         await trx('party_addresses').where({ party_id: partyId }).update({ is_active: true });
@@ -709,6 +764,7 @@ const bulkRestoreParties = async (partyIds = []) => {
     try {
         const { firmId = 0 } = getContext();
 
+        await trx('attachments').where('entity_type', 'PARTY').whereIn('entity_id', partyIds).update({ is_active: true });
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: true });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: true });
         await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: true });

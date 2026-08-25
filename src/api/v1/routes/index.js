@@ -9,7 +9,9 @@ const invoiceRoutes = require('./invoice.routes')
 const mastersRoutes = require('./masters.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
-const partyRoutes = require('./party.routes')
+const partyRoutes = require('./party.routes');
+const uploadRoutes = require('./upload.routes');
+const attachmentRoutes = require('./attachment.routes');
 const { productRoutes } = require('./product');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
@@ -31,17 +33,18 @@ router.get('/test', async (req, res) => {
 // 🔐 Protected routes (require valid access token)
 router.use(verifyAccessToken);
 
-router.use('/users', userRoutes)
-router.use('/demo', demoRoutes)
-router.use('/products', productRoutes)
-router.use('/firm', firmRoutes)
-router.use('/masters', mastersRoutes)
-router.use('/invoice-challan', invoiceChallanRoutes)
-router.use('/purchase-order', purchaseOrderRoutes)
-router.use('/ewaybill', ewaybillRoutes)
-router.use('/invoice', invoiceRoutes)
-router.use('/invoice', invoiceRoutes)
-router.use('/parties', partyRoutes)
+router.use('/users', userRoutes);
+router.use('/demo', demoRoutes);
+router.use('/products', productRoutes);
+router.use('/firm', firmRoutes);
+router.use('/masters', mastersRoutes);
+router.use('/invoice-challan', invoiceChallanRoutes);
+router.use('/purchase-order', purchaseOrderRoutes);
+router.use('/ewaybill', ewaybillRoutes);
+router.use('/invoice', invoiceRoutes);
+router.use('/parties', partyRoutes);
+router.use('/uploads', uploadRoutes);
+router.use('/attachments', attachmentRoutes);
 
 module.exports = router;
 // exports.products = productRoutes;

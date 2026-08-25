@@ -174,6 +174,17 @@ const createPartySchema = {
             .messages({
                 "string.uri": "Please enter a valid website URL (e.g. https://abc.com)."
             }),
+        logoUrl: Joi.string()
+            .uri({ scheme: [/https?/] })
+            .allow(null, "")
+            .optional()
+            .messages({
+                "string.uri": "Please enter a valid logo URL."
+            }),
+        logoPublicId: Joi.string()
+            .max(255)
+            .allow(null, "")
+            .optional(),
         remarks: Joi.string().max(1000).allow(null, ""),
         status: Joi.string()
             .valid('ACTIVE', 'INACTIVE')
