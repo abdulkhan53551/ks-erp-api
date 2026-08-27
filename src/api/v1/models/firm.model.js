@@ -10,7 +10,10 @@ const fetchAllFirm = async (query) => {
     const baseQuery = db('firms AS F')
         .select(
             'F.id as firm_id',
+            'F.logo_url as logoUrl',
+            'F.logo_public_id as logoPublicId',
             'F.logo_url',
+            'F.logo_public_id',
             'F.firm_name',
             'F.trade_name',
             'F.gstin',
@@ -79,7 +82,10 @@ const fetchFirmById = async (id = 0) => {
             'F.id as firm_id',
             'F.firm_name',
             'F.trade_name',
+            'F.logo_url as logoUrl',
+            'F.logo_public_id as logoPublicId',
             'F.logo_url',
+            'F.logo_public_id',
             'F.gstin',
             'F.firm_type',
             'F.business_activity',

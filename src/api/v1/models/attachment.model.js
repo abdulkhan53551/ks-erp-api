@@ -31,7 +31,7 @@ const fetchAttachmentsByEntity = async ({ entityType, entityId, docType, firmId 
             query.andWhere('a.doc_type', docType.toUpperCase());
         }
 
-        if (firmId) {
+        if (firmId && entityType.toUpperCase() !== 'FIRM') {
             query.andWhere(function () {
                 this.where('a.firm_id', firmId).orWhereNull('a.firm_id');
             });

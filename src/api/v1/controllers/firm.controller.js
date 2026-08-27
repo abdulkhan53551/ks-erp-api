@@ -2,7 +2,8 @@ const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddre
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
-const { uploadOnCloudinary } = require("../services/cloudinary");
+const { uploadOnCloudinary, deleteFromCloudinary } = require("../services/cloudinary");
+const { db } = require("../database");
 
 // Get all firm
 const getAllFirm = asyncHandler(async (req, res) => {
@@ -58,6 +59,8 @@ const createFirm = asyncHandler(async (req, res) => {
         trade_name: body.tradeName,
         firm_type: body.firmType,
         business_activity: body.businessActivity,
+        logo_url: body.logoUrl || null,
+        logo_public_id: body.logoPublicId || null,
         gstin: body.gstin,
         pan_number: body.panNumber,
         cin_number: body.cinNumber,
@@ -65,7 +68,7 @@ const createFirm = asyncHandler(async (req, res) => {
         invoice_prefix: body.invoicePrefix,
         invoice_start_number: body.invoiceStartNumber,
         notes_footer: body.notesFooter,
-    }
+    };
     const firmId = await insertFirm(firmData);
 
     // When firm is not created
@@ -151,7 +154,6 @@ const updateFirm = asyncHandler(async (req, res) => {
         trade_name: body.tradeName,
         firm_type: body.firmType,
         business_activity: body.businessActivity,
-        logo_url: body.logoUrl,
         gstin: body.gstin,
         pan_number: body.panNumber,
         cin_number: body.cinNumber,
@@ -160,6 +162,23 @@ const updateFirm = asyncHandler(async (req, res) => {
         invoice_start_number: body.invoiceStartNumber,
         notes_footer: body.notesFooter,
     };
+
+    if (body.logoUrl !== undefined) firmData.logo_url = body.logoUrl || null;
+    if (body.logoPublicId !== undefined) firmData.logo_public_id = body.logoPublicId || null;
+
+    // Check if logo is being replaced or removed and clean up previous Cloudinary asset
+    const existingLogoPublicId = firmExist.logoPublicId || firmExist.logo_public_id;
+    if (existingLogoPublicId) {
+        const isLogoReplaced = body.logoPublicId !== undefined && body.logoPublicId !== existingLogoPublicId;
+        const isLogoCleared = (body.logoUrl === '' || body.logoUrl === null) && !body.logoPublicId;
+        if (isLogoReplaced || isLogoCleared) {
+            try {
+                await deleteFromCloudinary(existingLogoPublicId, 'image');
+            } catch (err) {
+                console.warn('Failed to delete old firm logo from Cloudinary:', err);
+            }
+        }
+    }
 
     // Update firm by ID
     const updated = await updateFirmById(firmId, firmData);
@@ -211,6 +230,7 @@ const updateFirm = asyncHandler(async (req, res) => {
 const deleteFirm = asyncHandler(async (req, res) => {
     const { id: firmId } = req.params;
     const { isPermanentDelete } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Check if firm exists
     const firmExist = await fetchFirmById(firmId);
@@ -219,20 +239,49 @@ const deleteFirm = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Firm with this ID does not exist.' });
     }
 
+    // When permanently deleting, clean up attachments and logo from Cloudinary and DB
+    if (permanent) {
+        const logoPublicId = firmExist.logoPublicId || firmExist.logo_public_id;
+        if (logoPublicId) {
+            try {
+                await deleteFromCloudinary(logoPublicId, 'image');
+            } catch (err) {
+                console.warn('Failed to delete firm logo from Cloudinary:', err);
+            }
+        }
+
+        // Fetch attachments associated with this firm
+        const attachments = await db('attachments')
+            .select('public_id', 'resource_type')
+            .where({ entity_type: 'FIRM', entity_id: firmId });
+
+        await db('attachments').where({ entity_type: 'FIRM', entity_id: firmId }).del();
+
+        for (const att of attachments) {
+            if (att.public_id) {
+                try {
+                    await deleteFromCloudinary(att.public_id, att.resource_type || 'image');
+                } catch (err) {
+                    console.warn(`Failed to destroy attachment ${att.public_id}:`, err);
+                }
+            }
+        }
+    }
+
     // Delete bank account associated with the firm
-    const deleteBankAccount = await deleteBankAccountByFirmId(firmId, isPermanentDelete);
+    const deleteBankAccount = await deleteBankAccountByFirmId(firmId, permanent);
     if (!deleteBankAccount) {
         throw new ApiError({ statusCode: 500, message: 'Failed to delete firm bank account.' });
     }
 
     // Delete address associated with the firm
-    const deleteAddress = await deleteAddressByFirmId(firmId, isPermanentDelete);
+    const deleteAddress = await deleteAddressByFirmId(firmId, permanent);
     if (!deleteAddress) {
         throw new ApiError({ statusCode: 500, message: 'Failed to delete firm address.' });
     }
 
     // Delete firm by ID
-    const deleted = await deleteFirmtById(firmId, isPermanentDelete);
+    const deleted = await deleteFirmtById(firmId, permanent);
     if (!deleted) {
         throw new ApiError({ statusCode: 500, message: 'Failed to delete firm.' });
     }

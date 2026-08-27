@@ -51,8 +51,11 @@ const createAttachment = asyncHandler(async (req, res) => {
         resourceType
     } = req.body;
 
+    const isFirmEntity = entityType.toUpperCase() === 'FIRM';
+    const effectiveFirmId = isFirmEntity ? Number(entityId) : (firmId || null);
+
     const attachmentData = {
-        firmId,
+        firmId: effectiveFirmId,
         entityType,
         entityId: Number(entityId),
         docType,

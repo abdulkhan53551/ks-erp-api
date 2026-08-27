@@ -4,7 +4,7 @@ const Joi = require('joi');
 const getAttachmentsSchema = {
     query: Joi.object({
         entityType: Joi.string()
-            .valid('PARTY', 'INVOICE', 'PURCHASE_ORDER', 'CHALLAN', 'EWAY_BILL')
+            .valid('FIRM', 'PARTY', 'INVOICE', 'PURCHASE_ORDER', 'CHALLAN', 'EWAY_BILL')
             .insensitive()
             .required()
             .messages({
@@ -30,7 +30,7 @@ const getAttachmentsSchema = {
 const createAttachmentSchema = {
     body: Joi.object({
         entityType: Joi.string()
-            .valid('PARTY', 'INVOICE', 'PURCHASE_ORDER', 'CHALLAN', 'EWAY_BILL')
+            .valid('FIRM', 'PARTY', 'INVOICE', 'PURCHASE_ORDER', 'CHALLAN', 'EWAY_BILL')
             .insensitive()
             .required()
             .messages({
