@@ -261,10 +261,9 @@
     .inv-tax-section :nth-child(7) {width: 20%;}
     .inv-tax-section th:last-child,
     .inv-tax-section td:last-child {border-right: none;}
-    .inv-tax-section th,
-    .inv-tax-section td {padding: 0.2mm 1mm; font-size: 2.5mm;}
     .inv-tax-section th.central-tax,
-    .inv-tax-section th.state-tax {text-align: center;}
+    .inv-tax-section th.state-tax,
+    .inv-tax-section th.integrated-tax {text-align: center;}
     /* End: Invoice Tax Table */
 
     /* Start: Amount paid check */
@@ -507,6 +506,33 @@
         </div>
         <table class="table inv-tax-section">
           <tbody>
+            <% if (taxDetail.isInterState) { %>
+            <tr>
+              <th rowspan="2" style="width: 35%;">HSN/SAC</th>
+              <th rowspan="2" style="width: 20%;">Taxable Value</th>
+              <th class="integrated-tax" colspan="2" style="text-align: center; width: 25%;">Integrated Tax</th>
+              <th rowspan="2" style="width: 20%;">Total Tax Amount</th>
+            </tr>
+            <tr>
+              <th class="rate" style="width: 8%;">Rate</th>
+              <th class="amount" style="width: 17%;">Amount</th>
+            </tr>
+            <% taxDetail.items.forEach(function(item, index) { %>
+            <tr>
+              <td></td>
+              <td><%= item.taxableValue %></td>
+              <td><%= item.integratedTaxPercentage %></td>
+              <td><%= item.integratedTaxAmount %></td>
+              <td><%= item.totalTaxAmount %></td>
+            </tr>
+            <% }); %>
+            <tr class="total-row">
+              <td>TOTAL</td>
+              <td><%= taxDetail.total.taxableValue %></td>
+              <td colspan="2"><%= taxDetail.total.integratedTaxAmount %></td>
+              <td><%= taxDetail.total.totalTaxAmount %></td>
+            </tr>
+            <% } else { %>
             <tr>
               <th rowspan="2">HSN/SAC</th>
               <th rowspan="2">Taxable Value</th>
@@ -538,6 +564,7 @@
               <td colspan="2"><%= taxDetail.total.stateTaxAmount %></td>
               <td><%= taxDetail.total.totalTaxAmount %></td>
             </tr>
+            <% } %>
           </tbody>
         </table>
         <div class="inv-bank-detail-and-sign-section">
