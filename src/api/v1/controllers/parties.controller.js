@@ -1,8 +1,9 @@
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, insertPartyAddress, updatePartyAddressMaster, fetchAllPartyAddresses, fetchPartyAddressById, deletePartyAddressMaster, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails } = require("../models/parties.model");
+const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, bulkDeletePartyRoles: bulkDeletePartyRolesModel, restorePartyRoleById, bulkRestorePartyRoles: bulkRestorePartyRolesModel, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, bulkDeleteParties: bulkDeletePartiesModel, restorePartyMaster, bulkRestoreParties: bulkRestorePartiesModel, insertPartyAddress, updatePartyAddressMaster, fetchAllPartyAddresses, fetchPartyAddressById, deletePartyAddressMaster, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, fetchPartyRolesMeta, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails } = require("../models/parties.model");
 const { getContext } = require("../helpers/requestContext");
+const { deleteFromCloudinary } = require("../services/cloudinary");
 
 // Fetch all party roles
 const getAllPartyRoles = asyncHandler(async (req, res) => {
@@ -13,6 +14,19 @@ const getAllPartyRoles = asyncHandler(async (req, res) => {
             statusCode: 200,
             data: partyRoles,
             message: 'Party roles fetched successfully.'
+        })
+    );
+});
+
+// Fetch party roles pagination meta
+const getPartyRolesMeta = asyncHandler(async (req, res) => {
+    const result = await fetchPartyRolesMeta(req.query);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Party roles pagination fetched successfully.'
         })
     );
 });
@@ -43,16 +57,6 @@ const getPartyRoleById = asyncHandler(async (req, res) => {
 const createPartyRole = asyncHandler(async (req, res) => {
     const { roleCode, roleName, description } = req.body;
 
-    // Check if party role code already exists
-    const existingPartyRole = await checkPartyRoleCodeExists(roleCode);
-
-    if (existingPartyRole) {
-        throw new ApiError({
-            statusCode: 409,
-            message: 'Party role code already exists.'
-        });
-    }
-
     // Prepare party role data
     const partyRole = {
         code: roleCode.toUpperCase(),
@@ -60,7 +64,7 @@ const createPartyRole = asyncHandler(async (req, res) => {
         description: description || null
     };
 
-    // Insert party role
+    // Insert party role (handles duplicate active vs trash checks)
     const partyRoleId = await insertPartyRole(partyRole);
 
     if (!partyRoleId) {
@@ -114,9 +118,10 @@ const updatePartyRole = asyncHandler(async (req, res) => {
 // Delete a party role
 const deletePartyRole = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { isPermanentDelete } = req.query;
+    const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    const affectedRows = await deletePartyRoleMaster(id, isPermanentDelete);
+    const affectedRows = await deletePartyRoleMaster(id, permanent);
 
     if (!affectedRows) {
         throw new ApiError({
@@ -129,7 +134,62 @@ const deletePartyRole = asyncHandler(async (req, res) => {
         new ApiResponse({
             statusCode: 200,
             data: { id: Number(id) },
-            message: 'Party role deleted successfully.'
+            message: permanent ? 'Party role permanently deleted successfully.' : 'Party role moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore a party role
+const restorePartyRole = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const restored = await restorePartyRoleById(id);
+
+    if (!restored) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Party role not found in Trash or restore failed'
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(id) },
+            message: 'Party role restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete party roles
+const bulkDeletePartyRoles = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeletePartyRolesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} party roles permanently deleted successfully.`
+                : `${affectedRows} party roles moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore party roles
+const bulkRestorePartyRoles = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestorePartyRolesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} party roles restored from Trash successfully.`
         })
     );
 });
@@ -201,6 +261,8 @@ const createParty = asyncHandler(async (req, res) => {
         tanNumber,
         panNumber,
         website,
+        logoUrl,
+        logoPublicId,
         remarks,
         status
     } = req.body;
@@ -218,6 +280,8 @@ const createParty = asyncHandler(async (req, res) => {
         tan_number: tanNumber || null,
         pan_number: panNumber || null,
         website: website || null,
+        logo_url: logoUrl || null,
+        logo_public_id: logoPublicId || null,
         remarks: remarks || null,
         status: status || 'ACTIVE'
     };
@@ -260,6 +324,8 @@ const updateParty = asyncHandler(async (req, res) => {
         tanNumber,
         panNumber,
         website,
+        logoUrl,
+        logoPublicId,
         remarks,
         status
     } = req.body;
@@ -276,8 +342,20 @@ const updateParty = asyncHandler(async (req, res) => {
     if (tanNumber !== undefined) partyData.tan_number = tanNumber || null;
     if (panNumber !== undefined) partyData.pan_number = panNumber || null;
     if (website !== undefined) partyData.website = website || null;
+    if (logoUrl !== undefined) partyData.logo_url = logoUrl || null;
+    if (logoPublicId !== undefined) partyData.logo_public_id = logoPublicId || null;
     if (remarks !== undefined) partyData.remarks = remarks || null;
     if (status !== undefined) partyData.status = status;
+
+    // Check if logo is being replaced or removed and clean up previous Cloudinary asset
+    const existingParty = await fetchPartyById(id, firmId);
+    if (existingParty && existingParty.logoPublicId) {
+        const isLogoReplaced = logoPublicId !== undefined && logoPublicId !== existingParty.logoPublicId;
+        const isLogoCleared = (logoUrl === '' || logoUrl === null) && !logoPublicId;
+        if (isLogoReplaced || isLogoCleared) {
+            await deleteFromCloudinary(existingParty.logoPublicId, 'image');
+        }
+    }
 
     const affectedRows = await updatePartyMaster(id, partyData, partyRoleIds);
 
@@ -302,9 +380,10 @@ const updateParty = asyncHandler(async (req, res) => {
 // Delete an existing party
 const deleteParty = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { isPermanentDelete } = req.query;
+    const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    const affectedRows = await deletePartyMaster(id, isPermanentDelete);
+    const affectedRows = await deletePartyMaster(id, permanent);
 
     if (!affectedRows) {
         throw new ApiError({
@@ -319,7 +398,68 @@ const deleteParty = asyncHandler(async (req, res) => {
             data: {
                 id: Number(id)
             },
-            message: 'Party deleted successfully.'
+            message: permanent ? 'Party permanently deleted successfully.' : 'Party moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore a party from trash
+const restoreParty = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const affectedRows = await restorePartyMaster(id);
+
+    if (!affectedRows) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Party not found in Trash or restore failed'
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                id: Number(id)
+            },
+            message: 'Party restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete parties
+const bulkDeleteParties = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeletePartiesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                affectedRows
+            },
+            message: permanent
+                ? `${affectedRows} parties permanently deleted successfully.`
+                : `${affectedRows} parties moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore parties from trash
+const bulkRestoreParties = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestorePartiesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                affectedRows
+            },
+            message: `${affectedRows} parties restored from Trash successfully.`
         })
     );
 });
@@ -791,16 +931,23 @@ const getPartyDetails = asyncHandler(async (req, res) => {
 
 module.exports = {
     getAllPartyRoles,
+    getPartyRolesMeta,
     getPartyRoleById,
     createPartyRole,
     updatePartyRole,
     deletePartyRole,
+    restorePartyRole,
+    bulkDeletePartyRoles,
+    bulkRestorePartyRoles,
     getAllParties,
     getPartyMeta,
     getPartyById,
     createParty,
     updateParty,
     deleteParty,
+    restoreParty,
+    bulkDeleteParties,
+    bulkRestoreParties,
     getAllPartyAddresses,
     getPartyAddressById,
     createPartyAddress,

@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -18,9 +18,9 @@ const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '' } = req.query;
+    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
 
-    const result = await fetchAllInvoice({ page, pageSize, search });
+    const result = await fetchAllInvoice({ page, pageSize, search, trash });
 
     return res.status(200).json(
         new ApiResponse({
@@ -423,9 +423,10 @@ const calculateDiscount = (total, discountAmount, discountPercent) => {
 const deleteInvoice = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
     const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Delete invoice by ID
-    const deleted = await deleteInvoiceById(invoiceId, isPermanentDelete);
+    const deleted = await deleteInvoiceById(invoiceId, permanent);
 
     // If no rows were affected, it means the invoice was not found or already deleted
     if (!deleted) {
@@ -433,7 +434,65 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice deleted successfully.' })
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(invoiceId) },
+            message: permanent
+                ? 'Invoice permanently deleted successfully.'
+                : 'Invoice moved to Trash successfully. Linked Challans and E-Way Bills have been unlinked.'
+        })
+    );
+});
+
+// Restore invoice by ID
+const restoreInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+
+    const restored = await restoreInvoiceById(invoiceId);
+
+    if (!restored) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found in Trash or already active.' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(invoiceId) },
+            message: 'Invoice restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete invoices
+const bulkDeleteInvoices = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteInvoicesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} invoices permanently deleted successfully.`
+                : `${affectedRows} invoices moved to Trash successfully. Linked Challans and E-Way Bills have been unlinked.`
+        })
+    );
+});
+
+// Bulk restore invoices
+const bulkRestoreInvoices = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreInvoicesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} invoices restored from Trash successfully.`
+        })
     );
 });
 
@@ -536,50 +595,82 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         throw new ApiError({ statusCode: 400, message: 'Invalid invoice data while generating pdf' });
     }
 
-    const { stateMap, cityMap } = await getCityAndStateMapping() || {}
-    const { taxDetailItems = [], taxDetailTotal = {} } = getUniqueTaxDetails(invoice.items) || {}
+    const isInterState = Number(invoice.igst || 0) > 0;
+    const { stateMap, cityMap } = await getCityAndStateMapping() || {};
+    const { taxDetailItems = [], taxDetailTotal = {} } = getUniqueTaxDetails(invoice.items, isInterState) || {};
     const companyAddress = `${invoice.company_address || ''} <br> ${cityMap[invoice.company_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.company_state_id]?.name) || ''}, ${invoice.company_pincode || ''}`;
     const customerBillingAddress = `${invoice.billing_address || ''} <br> ${cityMap[invoice.billing_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.billing_state_id]?.name) || ''}, ${invoice.billing_pincode || ''}`;
     const customerShippingAddress = `${invoice.shipping_address || ''} <br> ${cityMap[invoice.shipping_city_id]?.name || ''}, ${toTitleCase(stateMap[invoice.shipping_state_id]?.name) || ''}, ${invoice.shipping_pincode || ''}`;
     const placeOfSupply = stateMap[invoice.billing_state_id]?.name.toUpperCase() || '';
-    const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : ''
+    const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : '';
     const invoiceDate = invoice.invoice_date ? moment(invoice.invoice_date).format("DD MMM YYYY").toUpperCase() : '';
-    const invoiceSubtotal = []
+    const invoiceSubtotal = [];
 
     // Invoice subtotal rows
     if (invoice.discount_percent > 0 || invoice.discount_amount > 0) {
-        const discountLable = invoice.discount_percent > 0 ? `Discount ${invoice.discount_percent}%` : 'Discount'
+        const discountLable = invoice.discount_percent > 0 ? `Discount ${invoice.discount_percent}%` : 'Discount';
 
         invoiceSubtotal.push(...[
-            {  // use unshift() if you want it at the top
+            {
                 name: 'Sub Total',
                 totalAmount: formatAmount(invoice.sub_total, { showSymbol: true })
             },
-            {  // use unshift() if you want it at the top
+            {
                 name: discountLable,
                 totalAmount: formatAmount(`-${invoice.discount_amount}`, { showSymbol: true })
             }
-        ])
+        ]);
     }
 
-    // Taxable amount, CGST, SGST, Round off
-    invoiceSubtotal.push(...[
-        { name: 'Taxable Amount', totalAmount: formatAmount(invoice.taxable_amount, { showSymbol: true }) },
-        { name: 'CGST', totalAmount: formatAmount(invoice.cgst, { showSymbol: true }) },
-        { name: 'SGST', totalAmount: formatAmount(invoice.sgst, { showSymbol: true }) },
-        { name: 'Round Off', totalAmount: formatAmount(invoice.round_off, { showSymbol: true }) }
-    ])
+    // Taxable amount
+    invoiceSubtotal.push({
+        name: 'Taxable Amount',
+        totalAmount: formatAmount(invoice.taxable_amount, { showSymbol: true })
+    });
+
+    // Conditionally show IGST for Inter-State or CGST + SGST for Intra-State
+    if (isInterState) {
+        invoiceSubtotal.push({
+            name: 'IGST',
+            totalAmount: formatAmount(invoice.igst, { showSymbol: true })
+        });
+    } else {
+        invoiceSubtotal.push(...[
+            { name: 'CGST', totalAmount: formatAmount(invoice.cgst, { showSymbol: true }) },
+            { name: 'SGST', totalAmount: formatAmount(invoice.sgst, { showSymbol: true }) }
+        ]);
+    }
+
+    // Other Charges
+    if (Number(invoice.other || 0) > 0) {
+        invoiceSubtotal.push({
+            name: 'Other Charges',
+            totalAmount: formatAmount(invoice.other, { showSymbol: true })
+        });
+    }
+
+    // Round off
+    invoiceSubtotal.push({
+        name: 'Round Off',
+        totalAmount: formatAmount(invoice.round_off, { showSymbol: true })
+    });
 
     // Invoice total row
+    const totalQty = invoice.items?.reduce(
+        (acc, item) => acc.plus(new Decimal(item.quantity || item.qty || 0)),
+        new Decimal(0)
+    ) || new Decimal(0);
+
     const invoiceTotalRow = {
-        qty: formatAmount(invoice.items?.reduce((acc, item) => acc + (item.quantity || 0), 0) || 0),
+        qty: formatAmount(totalQty.toNumber()),
         totalAmount: formatAmount(invoice.total, { showSymbol: true }),
         totalAmountInWords: amountToWords(invoice.total || 0)
-    }
+    };
 
     const invoiceData = {
         id: invoice.id,
         customerName: invoice.customerName,
+        isInterState: isInterState,
         company: {
             logo: invoice.company_logo,
             name: invoice.company_name,
@@ -613,7 +704,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             name: item.description || '',
             hsnAndSacCode: item.hsn_sac_code || '',
             taxPercentage: `${Number(item.gst_rate) || 0}%`,
-            qty: Number(item.qty) || '',
+            qty: Number(item.qty || item.quantity) || '',
             unit: item.uqc || '',
             price: formatAmount(item.rate) || '',
             totalAmount: formatAmount(item.sub_total) || ''
@@ -621,18 +712,23 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         subTotal: invoiceSubtotal,
         total: invoiceTotalRow,
         taxDetail: {
+            isInterState: isInterState,
             items: taxDetailItems.map(item => ({
                 taxableValue: formatAmount(item.taxableValue),
+                taxPercentage: `${item.taxPercentage}%`,
                 centralTaxPercentage: `${item.centralTaxPercentage}%`,
                 centralTaxAmount: formatAmount(item.centralTaxAmount),
                 stateTaxPercentage: `${item.stateTaxPercentage}%`,
                 stateTaxAmount: formatAmount(item.stateTaxAmount),
+                integratedTaxPercentage: `${item.integratedTaxPercentage}%`,
+                integratedTaxAmount: formatAmount(item.integratedTaxAmount),
                 totalTaxAmount: formatAmount(item.totalTaxAmount)
             })),
             total: {
                 taxableValue: formatAmount(taxDetailTotal.taxableValue),
                 centralTaxAmount: formatAmount(taxDetailTotal.centralTaxAmount),
                 stateTaxAmount: formatAmount(taxDetailTotal.stateTaxAmount),
+                integratedTaxAmount: formatAmount(taxDetailTotal.integratedTaxAmount),
                 totalTaxAmount: formatAmount(taxDetailTotal.totalTaxAmount)
             }
         },
@@ -652,10 +748,10 @@ const prepareInvoicePdfJsonData = async (invoice) => {
     };
 
     return invoiceData;
-}
+};
 
 // Get unique tax details from invoice items
-const getUniqueTaxDetails = (invoiceItems = []) => {
+const getUniqueTaxDetails = (invoiceItems = [], isInterState = false) => {
     const taxMap = {};
 
     invoiceItems.forEach(item => {
@@ -666,9 +762,13 @@ const getUniqueTaxDetails = (invoiceItems = []) => {
         if (!taxMap[taxKey]) {
             taxMap[taxKey] = {
                 taxableValue: new Decimal(0),
-                centralTaxPercentage: taxPercent.div(2).toNumber(),
+                taxPercentage: taxPercent.toNumber(),
+                isInterState: isInterState,
+                integratedTaxPercentage: isInterState ? taxPercent.toNumber() : 0,
+                integratedTaxAmount: 0,
+                centralTaxPercentage: !isInterState ? taxPercent.div(2).toNumber() : 0,
                 centralTaxAmount: 0,
-                stateTaxPercentage: taxPercent.div(2).toNumber(),
+                stateTaxPercentage: !isInterState ? taxPercent.div(2).toNumber() : 0,
                 stateTaxAmount: 0,
                 totalTaxAmount: 0
             };
@@ -682,22 +782,32 @@ const getUniqueTaxDetails = (invoiceItems = []) => {
     let totalTaxable = new Decimal(0);
     let totalCentral = new Decimal(0);
     let totalState = new Decimal(0);
+    let totalIntegrated = new Decimal(0);
     let totalTax = new Decimal(0);
 
     // Calculate slab-wise tax amounts and accumulate totals
     Object.values(taxMap).forEach(tax => {
         const taxableValue = new Decimal(tax.taxableValue);
-        const centralPercent = new Decimal(tax.centralTaxPercentage || 0);
-        const statePercent = new Decimal(tax.stateTaxPercentage || 0);
 
-        tax.centralTaxAmount = taxableValue.mul(centralPercent).div(100).toDecimalPlaces(2).toNumber();
-        tax.stateTaxAmount = taxableValue.mul(statePercent).div(100).toDecimalPlaces(2).toNumber();
-        tax.totalTaxAmount = new Decimal(tax.centralTaxAmount).plus(tax.stateTaxAmount).toDecimalPlaces(2).toNumber();
+        if (isInterState) {
+            const igstPercent = new Decimal(tax.integratedTaxPercentage || 0);
+            tax.integratedTaxAmount = taxableValue.mul(igstPercent).div(100).toDecimalPlaces(2).toNumber();
+            tax.totalTaxAmount = tax.integratedTaxAmount;
+            totalIntegrated = totalIntegrated.plus(tax.integratedTaxAmount);
+        } else {
+            const centralPercent = new Decimal(tax.centralTaxPercentage || 0);
+            const statePercent = new Decimal(tax.stateTaxPercentage || 0);
+
+            tax.centralTaxAmount = taxableValue.mul(centralPercent).div(100).toDecimalPlaces(2).toNumber();
+            tax.stateTaxAmount = taxableValue.mul(statePercent).div(100).toDecimalPlaces(2).toNumber();
+            tax.totalTaxAmount = new Decimal(tax.centralTaxAmount).plus(tax.stateTaxAmount).toDecimalPlaces(2).toNumber();
+
+            totalCentral = totalCentral.plus(tax.centralTaxAmount);
+            totalState = totalState.plus(tax.stateTaxAmount);
+        }
 
         // accumulate totals
         totalTaxable = totalTaxable.plus(taxableValue);
-        totalCentral = totalCentral.plus(tax.centralTaxAmount);
-        totalState = totalState.plus(tax.stateTaxAmount);
         totalTax = totalTax.plus(tax.totalTaxAmount);
     });
 
@@ -708,6 +818,8 @@ const getUniqueTaxDetails = (invoiceItems = []) => {
         centralTaxAmount: totalCentral.toDecimalPlaces(2).toNumber(),
         stateTaxPercentage: null,
         stateTaxAmount: totalState.toDecimalPlaces(2).toNumber(),
+        integratedTaxPercentage: null,
+        integratedTaxAmount: totalIntegrated.toDecimalPlaces(2).toNumber(),
         totalTaxAmount: totalTax.toDecimalPlaces(2).toNumber()
     };
 
@@ -1039,6 +1151,9 @@ module.exports = {
     createInvoice,
     updateInvoice,
     deleteInvoice,
+    restoreInvoice,
+    bulkDeleteInvoices,
+    bulkRestoreInvoices,
     getNextInvoiceNumber,
     generateInvoicePDF,
     prepareInvoicePdfJsonData,
