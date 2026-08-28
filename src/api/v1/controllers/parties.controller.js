@@ -3,6 +3,7 @@ const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
 const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, bulkDeletePartyRoles: bulkDeletePartyRolesModel, restorePartyRoleById, bulkRestorePartyRoles: bulkRestorePartyRolesModel, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, bulkDeleteParties: bulkDeletePartiesModel, restorePartyMaster, bulkRestoreParties: bulkRestorePartiesModel, insertPartyAddress, updatePartyAddressMaster, fetchAllPartyAddresses, fetchPartyAddressById, deletePartyAddressMaster, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, fetchPartyRolesMeta, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails } = require("../models/parties.model");
 const { getContext } = require("../helpers/requestContext");
+const { deleteFromCloudinary } = require("../services/cloudinary");
 
 // Fetch all party roles
 const getAllPartyRoles = asyncHandler(async (req, res) => {
@@ -260,6 +261,8 @@ const createParty = asyncHandler(async (req, res) => {
         tanNumber,
         panNumber,
         website,
+        logoUrl,
+        logoPublicId,
         remarks,
         status
     } = req.body;
@@ -277,6 +280,8 @@ const createParty = asyncHandler(async (req, res) => {
         tan_number: tanNumber || null,
         pan_number: panNumber || null,
         website: website || null,
+        logo_url: logoUrl || null,
+        logo_public_id: logoPublicId || null,
         remarks: remarks || null,
         status: status || 'ACTIVE'
     };
@@ -319,6 +324,8 @@ const updateParty = asyncHandler(async (req, res) => {
         tanNumber,
         panNumber,
         website,
+        logoUrl,
+        logoPublicId,
         remarks,
         status
     } = req.body;
@@ -335,8 +342,20 @@ const updateParty = asyncHandler(async (req, res) => {
     if (tanNumber !== undefined) partyData.tan_number = tanNumber || null;
     if (panNumber !== undefined) partyData.pan_number = panNumber || null;
     if (website !== undefined) partyData.website = website || null;
+    if (logoUrl !== undefined) partyData.logo_url = logoUrl || null;
+    if (logoPublicId !== undefined) partyData.logo_public_id = logoPublicId || null;
     if (remarks !== undefined) partyData.remarks = remarks || null;
     if (status !== undefined) partyData.status = status;
+
+    // Check if logo is being replaced or removed and clean up previous Cloudinary asset
+    const existingParty = await fetchPartyById(id, firmId);
+    if (existingParty && existingParty.logoPublicId) {
+        const isLogoReplaced = logoPublicId !== undefined && logoPublicId !== existingParty.logoPublicId;
+        const isLogoCleared = (logoUrl === '' || logoUrl === null) && !logoPublicId;
+        if (isLogoReplaced || isLogoCleared) {
+            await deleteFromCloudinary(existingParty.logoPublicId, 'image');
+        }
+    }
 
     const affectedRows = await updatePartyMaster(id, partyData, partyRoleIds);
 
