@@ -973,8 +973,7 @@ const getCityAndStateMapping = async () => {
 let browserInstance = null;
 
 const getBrowser = async (puppeteer) => {
-
-    if (browserInstance) {
+    if (browserInstance && browserInstance.connected) {
         return browserInstance;
     }
 
@@ -1003,26 +1002,31 @@ const getBrowser = async (puppeteer) => {
         args: [
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage"
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--no-zygote",
+            "--single-process"
         ]
+    });
+
+    browserInstance.on('disconnected', () => {
+        browserInstance = null;
     });
 
     return browserInstance;
 };
 
 const generateInvoicePDF = async (invoiceData, puppeteer) => {
-
     const templatePath = path.join(
         `${projectPaths.ROOT_DIR}/templates/invoice/`,
         'invoice-template.ejs'
     );
 
     const browser = await getBrowser(puppeteer);
-
     let page;
 
     try {
-
         const sampleInvoiceData = {
             ...invoiceData
         };
@@ -1032,31 +1036,17 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
             sampleInvoiceData
         );
 
-
-        /* 
-            =========================================
-             Pass 1: render with estimated filler rows
-            =========================================
-        */
         page = await browser.newPage();
 
-        await page.setContent(
-            filledHtml,
-            {
-                waitUntil: 'networkidle0'
-            }
-        );
-
+        // Pass 1: Fast render to measure content height
+        await page.setContent(filledHtml, {
+            waitUntil: 'domcontentloaded'
+        });
 
         const {
             invoiceHeight,
             invoiceOccupiedHeight
         } = await page.evaluate(evaluatePage);
-
-
-        await page.close();
-        page = null;
-
 
         if (invoiceOccupiedHeight > invoiceHeight) {
             throw new ApiError({
@@ -1065,31 +1055,20 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
             });
         }
 
-
         sampleInvoiceData.emptyRowHeightNeededInPx =
             invoiceHeight - invoiceOccupiedHeight;
-
 
         const html = await ejs.renderFile(
             templatePath,
             sampleInvoiceData
         );
 
+        // Pass 2: Re-render with filler rows on the same page tab
+        await page.setContent(html, {
+            waitUntil: 'domcontentloaded'
+        });
 
-        /* 
-            =========================================
-            Pass 2: re-render with correct blank rows
-            =========================================
-        */
-        page = await browser.newPage();
-
-        await page.setContent(
-            html,
-            {
-                waitUntil: 'networkidle0'
-            }
-        );
-
+        await page.evaluate(() => document.fonts.ready);
 
         const pdf = await page.pdf({
             format: 'A4',
@@ -1104,11 +1083,14 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         return Buffer.from(pdf);
 
-
+    } catch (error) {
+        if (browserInstance && !browserInstance.connected) {
+            browserInstance = null;
+        }
+        throw error;
     } finally {
-
         if (page) {
-            await page.close();
+            await page.close().catch(() => {});
         }
     }
 };
