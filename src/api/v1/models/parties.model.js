@@ -4,18 +4,39 @@ const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 
 // Fetch all party role
-const fetchAllPartyRoles = async (query) => {
+const fetchAllPartyRoles = async (query = {}) => {
     try {
-        const { page = 1, pageSize = 10 } = query;
-        const baseQuery = db('party_roles')
+        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
+
+        const baseQuery = db('party_roles AS pr')
             .select(
-                'id',
-                'code',
-                'name',
-                'description'
+                'pr.id',
+                'pr.code',
+                'pr.name',
+                'pr.description',
+                'pr.is_active',
+                'pr.created_at',
+                'pr.updated_at',
+                'pr.deleted_at',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
-            .where({ is_active: true })
-            .orderBy('name', 'asc');
+            .leftJoin('users AS du', 'pr.deleted_by', 'du.id')
+            .where('pr.is_active', !isTrash);
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('pr.code', 'ILIKE', `%${search}%`)
+                    .orWhere('pr.name', 'ILIKE', `%${search}%`)
+                    .orWhere('pr.description', 'ILIKE', `%${search}%`);
+            });
+        }
+
+        if (isTrash) {
+            baseQuery.orderBy('pr.deleted_at', 'desc');
+        } else {
+            baseQuery.orderBy('pr.name', 'asc');
+        }
 
         const partyRoles = await fetchPageData({ baseQuery, page, pageSize });
         return partyRoles;
@@ -27,17 +48,50 @@ const fetchAllPartyRoles = async (query) => {
     }
 };
 
+// Fetch party role pagination meta
+const fetchPartyRolesMeta = async (query = {}) => {
+    try {
+        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
+
+        const baseQuery = db('party_roles AS pr')
+            .where('pr.is_active', !isTrash);
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('pr.code', 'ILIKE', `%${search}%`)
+                    .orWhere('pr.name', 'ILIKE', `%${search}%`)
+                    .orWhere('pr.description', 'ILIKE', `%${search}%`);
+            });
+        }
+
+        const result = await buildPagination({ baseQuery, page, pageSize });
+        return result;
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching party role meta data.'
+        });
+    }
+};
+
 // Fetch party role by ID
 const fetchPartyRoleById = async (partyRoleId) => {
     try {
-        const partyRole = await db('party_roles')
+        const partyRole = await db('party_roles AS pr')
             .select(
-                'id',
-                'code',
-                'name',
-                'description'
+                'pr.id',
+                'pr.code',
+                'pr.name',
+                'pr.description',
+                'pr.is_active',
+                'pr.created_at',
+                'pr.updated_at',
+                'pr.deleted_at',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
-            .where({ id: partyRoleId, is_active: true })
+            .leftJoin('users AS du', 'pr.deleted_by', 'du.id')
+            .where({ 'pr.id': partyRoleId, 'pr.is_active': true })
             .first();
 
         return partyRole;
@@ -50,9 +104,24 @@ const fetchPartyRoleById = async (partyRoleId) => {
     }
 };
 
-
 // Insert party role
 const insertPartyRole = async (partyRole) => {
+    // Check if party role code already exists (active or in trash)
+    const existing = await checkPartyRoleCodeExists(partyRole.code);
+    if (existing) {
+        if (existing.is_active) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Party role code '${partyRole.code}' already exists.`
+            });
+        } else {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Party role code '${partyRole.code}' is currently in the Trash. Please restore it from the Recycle Bin or use a different code.`
+            });
+        }
+    }
+
     try {
         const [partyRoleId] = await db('party_roles')
             .insert(partyRole)
@@ -60,6 +129,7 @@ const insertPartyRole = async (partyRole) => {
 
         return partyRoleId?.id || partyRoleId;
     } catch (error) {
+        if (error instanceof ApiError) throw error;
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while creating party role.'
@@ -71,7 +141,7 @@ const insertPartyRole = async (partyRole) => {
 const checkPartyRoleCodeExists = async (roleCode) => {
     try {
         const partyRole = await db('party_roles')
-            .select('id')
+            .select('id', 'code', 'is_active')
             .where('code', roleCode.toUpperCase())
             .first();
 
@@ -90,7 +160,7 @@ const updatePartyRoleMaster = async (partyRoleId, data) => {
             .update(data)
             .where({ id: partyRoleId, is_active: true });
 
-        return updatedRows > 0
+        return updatedRows > 0;
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -109,6 +179,20 @@ const updatePartyRoleMaster = async (partyRoleId, data) => {
 // Delete party role
 const deletePartyRoleMaster = async (partyRoleId, isPermanentDelete = false) => {
     try {
+        // Check if role is in active use by any active party
+        const activeUsage = await db('party_role_mapping as prm')
+            .join('parties as p', 'prm.party_id', 'p.id')
+            .where('prm.party_role_id', partyRoleId)
+            .andWhere('p.is_active', true)
+            .first();
+
+        if (activeUsage) {
+            throw new ApiError({
+                statusCode: 409,
+                message: 'Cannot delete Party Role because it is in use by active parties.'
+            });
+        }
+
         if (isPermanentDelete) {
             return await db('party_roles')
                 .where({ id: partyRoleId })
@@ -122,6 +206,7 @@ const deletePartyRoleMaster = async (partyRoleId, isPermanentDelete = false) => 
             });
 
     } catch (error) {
+        if (error instanceof ApiError) throw error;
         if (error.code === '23503') {
             throw new ApiError({
                 statusCode: 409,
@@ -136,10 +221,94 @@ const deletePartyRoleMaster = async (partyRoleId, isPermanentDelete = false) => 
     }
 };
 
+// Bulk delete party roles
+const bulkDeletePartyRoles = async (partyRoleIds = [], isPermanentDelete = false) => {
+    if (!partyRoleIds.length) return 0;
+    try {
+        const activeUsage = await db('party_role_mapping as prm')
+            .join('parties as p', 'prm.party_id', 'p.id')
+            .join('party_roles as pr', 'prm.party_role_id', 'pr.id')
+            .select('pr.name')
+            .whereIn('prm.party_role_id', partyRoleIds)
+            .andWhere('p.is_active', true)
+            .first();
+
+        if (activeUsage) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Cannot delete Party Role '${activeUsage.name}' because it is in use by active parties.`
+            });
+        }
+
+        if (isPermanentDelete) {
+            return await db('party_roles').whereIn('id', partyRoleIds).del();
+        }
+
+        return await db('party_roles')
+            .whereIn('id', partyRoleIds)
+            .update({ is_active: false });
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while deleting party roles.'
+        });
+    }
+};
+
+// Restore party role by ID
+const restorePartyRoleById = async (partyRoleId) => {
+    try {
+        const role = await db('party_roles')
+            .where({ id: partyRoleId, is_active: false })
+            .first();
+
+        if (!role) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Party role not found in Trash or already active.'
+            });
+        }
+
+        const affectedRows = await db('party_roles')
+            .where({ id: partyRoleId })
+            .update({ is_active: true });
+
+        return affectedRows > 0;
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring party role.'
+        });
+    }
+};
+
+// Bulk restore party roles
+const bulkRestorePartyRoles = async (partyRoleIds = []) => {
+    if (!partyRoleIds.length) return 0;
+    try {
+        const affectedRows = await db('party_roles')
+            .whereIn('id', partyRoleIds)
+            .andWhere({ is_active: false })
+            .update({ is_active: true });
+
+        return affectedRows;
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring party roles.'
+        });
+    }
+};
+
 // Fetch all parties for a given firm
 const fetchAllParties = async (firmId, query) => {
     try {
-        const { page = 1, pageSize = 10 } = query;
+        const { page = 1, pageSize = 10, trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
+
         const baseQuery = db('parties as p')
             .select(
                 'p.id',
@@ -159,14 +328,22 @@ const fetchAllParties = async (firmId, query) => {
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'p.created_at',
-                'p.updated_at'
+                'p.updated_at',
+                'p.deleted_at',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
             .leftJoin('users as u', 'p.created_by', 'u.id')
+            .leftJoin('users as du', 'p.deleted_by', 'du.id')
             .where({
                 'p.firm_id': firmId,
-                'p.is_active': true
-            })
-            .orderBy('p.legal_name', 'asc');
+                'p.is_active': !isTrash
+            });
+
+        if (isTrash) {
+            baseQuery.orderBy('p.deleted_at', 'desc');
+        } else {
+            baseQuery.orderBy('p.legal_name', 'asc');
+        }
 
         const parties = await fetchPageData({ baseQuery, page, pageSize });
 
@@ -182,13 +359,14 @@ const fetchAllParties = async (firmId, query) => {
 // Fetch party pagination
 const fetchPartyMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '' } = query;
+        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const isTrash = trash === true || trash === 'true';
 
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('parties AS P')
             .where('P.firm_id', firmId)
-            .andWhere('P.is_active', true);
+            .andWhere('P.is_active', !isTrash);
 
         if (search) {
             baseQuery.where(function () {
@@ -272,6 +450,26 @@ const fetchPartyById = async (partyId, firmId) => {
 
 // Insert party
 const insertParty = async (data, partyRoleIds = []) => {
+    // 1. Check if party code already exists in active or trashed state
+    const existingParty = await db('parties')
+        .select('id', 'is_active', 'party_code')
+        .where({ firm_id: data.firm_id, party_code: data.party_code })
+        .first();
+
+    if (existingParty) {
+        if (existingParty.is_active) {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Party code '${data.party_code}' already exists.`
+            });
+        } else {
+            throw new ApiError({
+                statusCode: 409,
+                message: `Party code '${data.party_code}' is currently in the Trash. Please restore it from the Recycle Bin or use a different code.`
+            });
+        }
+    }
+
     const trx = await db.transaction();
     try {
         const [createdParty] = await trx('parties')
@@ -354,22 +552,43 @@ const updatePartyMaster = async (partyId, data, partyRoleIds) => {
     }
 };
 
-// Delete party
+// Delete single party
 const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
+    const trx = await db.transaction();
     try {
-        if (isPermanentDelete) {
-            return await db('parties')
-                .where({ id: partyId })
-                .del();
+        const { firmId = 0 } = getContext();
+
+        const party = await trx('parties')
+            .where({ id: partyId, firm_id: firmId })
+            .first();
+
+        if (!party) {
+            await trx.rollback();
+            return 0;
         }
 
-        return await db('parties')
-            .where({ id: partyId })
-            .update({
-                is_active: false
-            });
+        if (isPermanentDelete) {
+            await trx('party_role_mapping').where({ party_id: partyId }).del();
+            await trx('party_bank_accounts').where({ party_id: partyId }).del();
+            await trx('party_contacts').where({ party_id: partyId }).del();
+            await trx('party_addresses').where({ party_id: partyId }).del();
+            const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).del();
+            await trx.commit();
+            return affectedRows;
+        }
+
+        // Soft delete (move to trash)
+        await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: false });
+        await trx('party_contacts').where({ party_id: partyId }).update({ is_active: false });
+        await trx('party_addresses').where({ party_id: partyId }).update({ is_active: false });
+        const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: false });
+
+        await trx.commit();
+        return affectedRows;
 
     } catch (error) {
+        await trx.rollback();
+
         if (error.code === '23503') {
             throw new ApiError({
                 statusCode: 409,
@@ -377,9 +596,140 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
             });
         }
 
+        if (error instanceof ApiError) {
+            throw error;
+        }
+
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while deleting party.'
+        });
+    }
+};
+
+// Bulk delete parties
+const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
+    if (!partyIds || !partyIds.length) return 0;
+    const trx = await db.transaction();
+    try {
+        const { firmId = 0 } = getContext();
+
+        if (isPermanentDelete) {
+            await trx('party_role_mapping').whereIn('party_id', partyIds).del();
+            await trx('party_bank_accounts').whereIn('party_id', partyIds).del();
+            await trx('party_contacts').whereIn('party_id', partyIds).del();
+            await trx('party_addresses').whereIn('party_id', partyIds).del();
+            const affectedRows = await trx('parties')
+                .whereIn('id', partyIds)
+                .andWhere({ firm_id: firmId })
+                .del();
+
+            await trx.commit();
+            return affectedRows;
+        }
+
+        // Bulk soft-delete (move to trash)
+        await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: false });
+        await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: false });
+        await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: false });
+        const affectedRows = await trx('parties')
+            .whereIn('id', partyIds)
+            .andWhere({ firm_id: firmId })
+            .update({ is_active: false });
+
+        await trx.commit();
+        return affectedRows;
+
+    } catch (error) {
+        await trx.rollback();
+
+        if (error.code === '23503') {
+            throw new ApiError({
+                statusCode: 409,
+                message: 'One or more parties cannot be deleted because they are in use.'
+            });
+        }
+
+        if (error instanceof ApiError) {
+            throw error;
+        }
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while deleting parties.'
+        });
+    }
+};
+
+// Restore single party from trash
+const restorePartyMaster = async (partyId) => {
+    const trx = await db.transaction();
+    try {
+        const { firmId = 0 } = getContext();
+
+        const party = await trx('parties')
+            .where({ id: partyId, firm_id: firmId, is_active: false })
+            .first();
+
+        if (!party) {
+            await trx.rollback();
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Party not found in Trash or already active.'
+            });
+        }
+
+        // Restore party and associated child records
+        await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: true });
+        await trx('party_contacts').where({ party_id: partyId }).update({ is_active: true });
+        await trx('party_addresses').where({ party_id: partyId }).update({ is_active: true });
+        const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: true });
+
+        await trx.commit();
+        return affectedRows;
+
+    } catch (error) {
+        await trx.rollback();
+
+        if (error instanceof ApiError) {
+            throw error;
+        }
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring party.'
+        });
+    }
+};
+
+// Bulk restore parties from trash
+const bulkRestoreParties = async (partyIds = []) => {
+    if (!partyIds || !partyIds.length) return 0;
+    const trx = await db.transaction();
+    try {
+        const { firmId = 0 } = getContext();
+
+        await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: true });
+        await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: true });
+        await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: true });
+        const affectedRows = await trx('parties')
+            .whereIn('id', partyIds)
+            .andWhere({ firm_id: firmId, is_active: false })
+            .update({ is_active: true });
+
+        await trx.commit();
+        return affectedRows;
+
+    } catch (error) {
+        await trx.rollback();
+
+        if (error instanceof ApiError) {
+            throw error;
+        }
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while restoring parties.'
         });
     }
 };
@@ -1116,17 +1466,24 @@ const fetchPartyDetails = async (partyId) => {
 
 module.exports = {
     fetchAllPartyRoles,
+    fetchPartyRolesMeta,
     insertPartyRole,
     fetchPartyRoleById,
     checkPartyRoleCodeExists,
     updatePartyRoleMaster,
     deletePartyRoleMaster,
+    bulkDeletePartyRoles,
+    restorePartyRoleById,
+    bulkRestorePartyRoles,
     fetchAllParties,
     fetchPartyMeta,
     fetchPartyById,
     insertParty,
     updatePartyMaster,
     deletePartyMaster,
+    bulkDeleteParties,
+    restorePartyMaster,
+    bulkRestoreParties,
     fetchAllPartyAddresses,
     fetchPartyAddressById,
     insertPartyAddress,

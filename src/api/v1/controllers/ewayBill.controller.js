@@ -1,14 +1,14 @@
 const { getContext } = require("../helpers/requestContext");
-const { fetchAllEwayBill, fetchEwayBillMeta, fetchEwayBillById, fetchEwayBillByInvoiceId, insertEwayBill, updateEwayBillById, deleteEwayBillById } = require("../models/ewayBill.model");
+const { fetchAllEwayBill, fetchEwayBillMeta, fetchEwayBillById, fetchEwayBillByInvoiceId, insertEwayBill, updateEwayBillById, deleteEwayBillById, bulkDeleteEwayBills: bulkDeleteEwayBillsModel, restoreEwayBillById, bulkRestoreEwayBills: bulkRestoreEwayBillsModel } = require("../models/ewayBill.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
 
 // Fetch all eway bill with pagination and search
 const getAllEwayBill = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '' } = req.query;
+    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
 
-    const result = await fetchAllEwayBill({ page, pageSize, search });
+    const result = await fetchAllEwayBill({ page, pageSize, search, trash });
 
     return res.status(200).json(
         new ApiResponse({
@@ -121,11 +121,12 @@ const updateEwayBill = asyncHandler(async (req, res) => {
 });
 
 const deleteEwayBill = asyncHandler(async (req, res) => {
-    const poId = req.params.id;
+    const ewayId = req.params.id;
     const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Delete eway bill by ID
-    const deleted = await deleteEwayBillById(poId, isPermanentDelete);
+    const deleted = await deleteEwayBillById(ewayId, permanent);
 
     // If no rows were affected, it means the eway bill was not found or already deleted
     if (!deleted) {
@@ -133,7 +134,63 @@ const deleteEwayBill = asyncHandler(async (req, res) => {
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Eway bill deleted successfully.' })
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(ewayId) },
+            message: permanent ? 'E-Way bill permanently deleted successfully.' : 'E-Way bill moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore eway bill by ID
+const restoreEwayBill = asyncHandler(async (req, res) => {
+    const ewayId = req.params.id;
+
+    const restored = await restoreEwayBillById(ewayId);
+
+    if (!restored) {
+        throw new ApiError({ statusCode: 404, message: 'E-Way bill not found in Trash or restore failed' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(ewayId) },
+            message: 'E-Way bill restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete eway bills
+const bulkDeleteEwayBills = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteEwayBillsModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} e-way bills permanently deleted successfully.`
+                : `${affectedRows} e-way bills moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore eway bills
+const bulkRestoreEwayBills = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreEwayBillsModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} e-way bills restored from Trash successfully.`
+        })
     );
 });
 
@@ -144,5 +201,8 @@ module.exports = {
     getEwayBillByInvoiceId,
     createEwayBill,
     updateEwayBill,
-    deleteEwayBill
-}
+    deleteEwayBill,
+    restoreEwayBill,
+    bulkDeleteEwayBills,
+    bulkRestoreEwayBills
+};

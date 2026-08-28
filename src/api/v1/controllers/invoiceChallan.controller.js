@@ -1,14 +1,14 @@
 const { getContext } = require("../helpers/requestContext");
-const { insertInvoiceChallan, deleteInvoiceChallanById, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta, fetchAllInvoiceChallans } = require("../models/invoiceChallan.model");
+const { insertInvoiceChallan, deleteInvoiceChallanById, bulkDeleteInvoiceChallans: bulkDeleteInvoiceChallansModel, restoreInvoiceChallanById, bulkRestoreInvoiceChallans: bulkRestoreInvoiceChallansModel, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta, fetchAllInvoiceChallans } = require("../models/invoiceChallan.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
 
 // Fetch all invoice challans with pagination and search
 const getAllInvoiceChallans = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '' } = req.query;
+    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
 
-    const challans = await fetchAllInvoiceChallans({ page, pageSize, search });
+    const challans = await fetchAllInvoiceChallans({ page, pageSize, search, trash });
 
     return res.status(200).json(
         new ApiResponse({
@@ -122,9 +122,10 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
 const deleteInvoiceChallan = asyncHandler(async (req, res) => {
     const challanId = req.params.id;
     const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // delete invoice challan by ID
-    const deleted = await deleteInvoiceChallanById(challanId, isPermanentDelete);
+    const deleted = await deleteInvoiceChallanById(challanId, permanent);
 
     // If no rows were affected, it means the invoice challan was not found or already deleted
     if (!deleted) {
@@ -132,7 +133,63 @@ const deleteInvoiceChallan = asyncHandler(async (req, res) => {
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice challan deleted successfully.' })
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(challanId) },
+            message: permanent ? 'Invoice challan permanently deleted successfully.' : 'Invoice challan moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore invoice challan
+const restoreInvoiceChallan = asyncHandler(async (req, res) => {
+    const challanId = req.params.id;
+
+    const restored = await restoreInvoiceChallanById(challanId);
+
+    if (!restored) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice challan not found in Trash or restore failed' });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(challanId) },
+            message: 'Invoice challan restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete invoice challans
+const bulkDeleteInvoiceChallans = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteInvoiceChallansModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} invoice challans permanently deleted successfully.`
+                : `${affectedRows} invoice challans moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore invoice challans
+const bulkRestoreInvoiceChallans = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreInvoiceChallansModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} invoice challans restored from Trash successfully.`
+        })
     );
 });
 
@@ -143,5 +200,8 @@ module.exports = {
     getInvoiceChallansByInvoiceId,
     createInvoiceChallan,
     updateInvoiceChallan,
-    deleteInvoiceChallan
-}
+    deleteInvoiceChallan,
+    restoreInvoiceChallan,
+    bulkDeleteInvoiceChallans,
+    bulkRestoreInvoiceChallans
+};

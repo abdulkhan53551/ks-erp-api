@@ -1,7 +1,7 @@
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchStates, fetchCities, fetchPaymentStatuses, fetchPaymentModes, fetchGSTSlabs, fetchProductUnits, checkAddressTypeCodeExists, insertAddressType, updateAddressTypeById, fetchAllAddressTypes, fetchAddressTypeById, deleteAddressTypeMaster, insertContactRole, updateContactRoleById, getAllContactRolesModel, getContactRoleByIdModel, fetchContactRolesMeta, deleteContactRoleMaster } = require("../models/masters.model");
+const { fetchStates, fetchCities, fetchPaymentStatuses, fetchPaymentModes, fetchGSTSlabs, fetchProductUnits, checkAddressTypeCodeExists, insertAddressType, updateAddressTypeById, fetchAllAddressTypes, fetchAddressTypesMeta, fetchAddressTypeById, deleteAddressTypeMaster, bulkDeleteAddressTypes: bulkDeleteAddressTypesModel, restoreAddressTypeById, bulkRestoreAddressTypes: bulkRestoreAddressTypesModel, insertContactRole, updateContactRoleById, getAllContactRolesModel, getContactRoleByIdModel, fetchContactRolesMeta, deleteContactRoleMaster, bulkDeleteContactRoles: bulkDeleteContactRolesModel, restoreContactRoleById, bulkRestoreContactRoles: bulkRestoreContactRolesModel } = require("../models/masters.model");
 const { ERROR_CODES } = require('../../../config/constants/statusCodeMap');
 
 // Fetch all states
@@ -122,7 +122,7 @@ const getProductUnits = asyncHandler(async (req, res) => {
 
 // Address Types
 const getAllAddressTypes = asyncHandler(async (req, res) => {
-    const addressTypes = await fetchAllAddressTypes();
+    const addressTypes = await fetchAllAddressTypes(req.query);
 
     return res.status(200).json(
         new ApiResponse({
@@ -174,17 +174,6 @@ const getAddressTypeById = asyncHandler(async (req, res) => {
 const createAddressType = asyncHandler(async (req, res) => {
     const { typeCode, typeName, description } = req.body;
 
-    // Check if address type code already exists
-    const existingAddressType = await checkAddressTypeCodeExists(typeCode);
-
-    if (existingAddressType) {
-        throw new ApiError({
-            statusCode: 409,
-            errorCode: ERROR_CODES.CONFLICT,
-            message: 'Address type code already exists.'
-        });
-    }
-
     // Prepare address type data
     const addressType = {
         code: typeCode.toUpperCase(),
@@ -192,7 +181,7 @@ const createAddressType = asyncHandler(async (req, res) => {
         description: description || null
     };
 
-    // Insert address type
+    // Insert address type (handles duplicate active vs trash check)
     const addressTypeId = await insertAddressType(addressType);
 
     if (!addressTypeId) {
@@ -249,9 +238,10 @@ const updateAddressType = asyncHandler(async (req, res) => {
 // Delete an existing address type
 const deleteAddressType = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { isPermanentDelete } = req.query;
+    const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    const affectedRows = await deleteAddressTypeMaster(id, isPermanentDelete);
+    const affectedRows = await deleteAddressTypeMaster(id, permanent);
 
     if (!affectedRows) {
         throw new ApiError({
@@ -266,14 +256,69 @@ const deleteAddressType = asyncHandler(async (req, res) => {
             data: {
                 id: Number(id)
             },
-            message: 'Address type deleted successfully.'
+            message: permanent ? 'Address type permanently deleted successfully.' : 'Address type moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore an address type
+const restoreAddressType = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const restored = await restoreAddressTypeById(id);
+
+    if (!restored) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Address type not found in Trash or restore failed'
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(id) },
+            message: 'Address type restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete address types
+const bulkDeleteAddressTypes = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteAddressTypesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} address types permanently deleted successfully.`
+                : `${affectedRows} address types moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore address types
+const bulkRestoreAddressTypes = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreAddressTypesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} address types restored from Trash successfully.`
         })
     );
 });
 
 // Get all contact roles
 const getAllContactRoles = asyncHandler(async (req, res) => {
-    const contactRoles = await getAllContactRolesModel();
+    const contactRoles = await getAllContactRolesModel(req.query);
 
     return res.status(200).json(
         new ApiResponse({
@@ -330,7 +375,7 @@ const createContactRole = asyncHandler(async (req, res) => {
     } = req.body;
 
     const contactRoleData = {
-        code: roleCode,
+        code: roleCode.toUpperCase(),
         name: roleName,
         description: description || null
     };
@@ -389,9 +434,10 @@ const updateContactRole = asyncHandler(async (req, res) => {
 // Delete an existing contact role
 const deleteContactRole = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { isPermanentDelete } = req.query;
+    const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    const affectedRows = await deleteContactRoleMaster(id, isPermanentDelete);
+    const affectedRows = await deleteContactRoleMaster(id, permanent);
 
     if (!affectedRows) {
         throw new ApiError({
@@ -406,7 +452,62 @@ const deleteContactRole = asyncHandler(async (req, res) => {
             data: {
                 id: Number(id)
             },
-            message: 'Contact role deleted successfully.'
+            message: permanent ? 'Contact role permanently deleted successfully.' : 'Contact role moved to Trash successfully.'
+        })
+    );
+});
+
+// Restore a contact role
+const restoreContactRole = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const restored = await restoreContactRoleById(id);
+
+    if (!restored) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Contact role not found in Trash or restore failed'
+        });
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { id: Number(id) },
+            message: 'Contact role restored from Trash successfully.'
+        })
+    );
+});
+
+// Bulk delete contact roles
+const bulkDeleteContactRoles = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeleteContactRolesModel(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} contact roles permanently deleted successfully.`
+                : `${affectedRows} contact roles moved to Trash successfully.`
+        })
+    );
+});
+
+// Bulk restore contact roles
+const bulkRestoreContactRoles = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+
+    const affectedRows = await bulkRestoreContactRolesModel(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} contact roles restored from Trash successfully.`
         })
     );
 });
@@ -424,10 +525,16 @@ module.exports = {
     createAddressType,
     updateAddressType,
     deleteAddressType,
+    restoreAddressType,
+    bulkDeleteAddressTypes,
+    bulkRestoreAddressTypes,
     getAllContactRoles,
     getContactRolesMeta,
     getContactRoleById,
     createContactRole,
     updateContactRole,
-    deleteContactRole
+    deleteContactRole,
+    restoreContactRole,
+    bulkDeleteContactRoles,
+    bulkRestoreContactRoles
 };

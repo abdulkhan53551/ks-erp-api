@@ -297,26 +297,56 @@ const deleteInvoiceValidationSchema = {
   })
 };
 
-// // Get challan by invoice ID validation schema
-// const getChallansForInvoiceByIdValidationSchema = {
-//   params: Joi.object({
-//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
-//   })
-// };
+// Restore invoice validation schema
+const restoreInvoiceValidationSchema = {
+  params: Joi.object({
+    id: Joi.number().integer().required().label('Invoice ID'),
+  })
+};
 
-// // Get purchase order by invoice ID validation schema
-// const getPurchaseOrderForInvoiceByIdValidationSchema = {
-//   params: Joi.object({
-//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
-//   })
-// };
+// Bulk delete invoices validation schema
+const bulkDeleteInvoicesValidationSchema = {
+  body: Joi.object({
+    ids: Joi.array()
+      .items(Joi.number().integer().positive().messages({
+        'number.base': 'Invalid invoice ID.'
+      }))
+      .min(1)
+      .unique()
+      .required()
+      .messages({
+        'array.base': 'Invoice IDs must be an array.',
+        'array.min': 'Please select at least one invoice.',
+        'array.unique': 'Duplicate invoice IDs are not allowed.',
+        'any.required': 'Invoice IDs are required.'
+      }),
+    isPermanentDelete: Joi.boolean()
+      .default(false)
+      .label('Is Permanent Delete')
+      .messages({
+        'boolean.base': `"isPermanentDelete" must be a boolean value.`
+      })
+  })
+};
 
-// // Get eway bill by invoice ID validation schema
-// const getEwaybillForInvoiceByIdValidationSchema = {
-//   params: Joi.object({
-//     invoiceId: Joi.number().integer().required().label('Invoice ID'),
-//   })
-// };
+// Bulk restore invoices validation schema
+const bulkRestoreInvoicesValidationSchema = {
+  body: Joi.object({
+    ids: Joi.array()
+      .items(Joi.number().integer().positive().messages({
+        'number.base': 'Invalid invoice ID.'
+      }))
+      .min(1)
+      .unique()
+      .required()
+      .messages({
+        'array.base': 'Invoice IDs must be an array.',
+        'array.min': 'Please select at least one invoice to restore.',
+        'array.unique': 'Duplicate invoice IDs are not allowed.',
+        'any.required': 'Invoice IDs are required.'
+      })
+  })
+};
 
 // Custom validation function for create/update
 function validateCreateOrUpdateCustom(item, helpers) {
@@ -364,7 +394,7 @@ module.exports = {
   createInvoiceValidationSchema,
   updateInvoiceValidationSchema,
   deleteInvoiceValidationSchema,
-  // getChallansForInvoiceByIdValidationSchema,
-  // getPurchaseOrderForInvoiceByIdValidationSchema,
-  // getEwaybillForInvoiceByIdValidationSchema
+  restoreInvoiceValidationSchema,
+  bulkDeleteInvoicesValidationSchema,
+  bulkRestoreInvoicesValidationSchema
 };
