@@ -1038,9 +1038,9 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         page = await browser.newPage();
 
-        // Pass 1: Fast render to measure content height
+        // Pass 1: Render with load event to ensure HTML and images are downloaded
         await page.setContent(filledHtml, {
-            waitUntil: 'domcontentloaded'
+            waitUntil: 'load'
         });
 
         const {
@@ -1065,10 +1065,8 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
 
         // Pass 2: Re-render with filler rows on the same page tab
         await page.setContent(html, {
-            waitUntil: 'domcontentloaded'
+            waitUntil: 'load'
         });
-
-        await page.evaluate(() => document.fonts.ready);
 
         const pdf = await page.pdf({
             format: 'A4',
@@ -1108,17 +1106,17 @@ const evaluatePage = async () => {
 
     // Get total invoice height
     const table = document.querySelector('.table-container');
-    const invoiceHeight = table.getBoundingClientRect().height;
+    const invoiceHeight = table ? table.getBoundingClientRect().height : 0;
 
     // Get invoice occupied height
     const invoiceOccupiedHeightDiv = document.querySelector('.table-invoice-wrapper');
-    const invoiceOccupiedHeight = invoiceOccupiedHeightDiv.getBoundingClientRect().height;
+    const invoiceOccupiedHeight = invoiceOccupiedHeightDiv ? invoiceOccupiedHeightDiv.getBoundingClientRect().height : 0;
 
     return {
         invoiceHeight,
         invoiceOccupiedHeight
-    }
-}
+    };
+};
 
 process.on("SIGTERM", async () => {
     if (browserInstance) {
