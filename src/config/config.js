@@ -34,7 +34,11 @@ const CLOUDINARY = {
     API_SECRET: process.env.CLOUDINARY_API_SECRET
 }
 
+// App Environment
+const APP_ENV = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
+
 module.exports = {
+    APP_ENV,
     DATABASE,
     REDIS,
     PORT,

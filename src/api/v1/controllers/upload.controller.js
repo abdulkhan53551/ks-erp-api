@@ -7,7 +7,7 @@ const { generateUploadSignature, deleteFromCloudinary } = require('../services/c
  * Generate pre-signed upload signature for Cloudinary direct uploads
  */
 const getUploadSignature = asyncHandler(async (req, res) => {
-    const { folder = 'ks-erp/attachments', tags } = req.query;
+    const { folder = 'attachments', tags } = req.query;
 
     const signatureData = generateUploadSignature({ folder, tags });
 
