@@ -100,7 +100,6 @@ const createInvoiceValidationSchema = {
 
     items: Joi.array().items(
       Joi.object({
-        productId: Joi.number().integer().positive().allow(null, 0).optional(),
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string().max(20).allow(null, ''),
         qty: Joi.number().precision(2).min(0).required(),
@@ -241,7 +240,6 @@ const updateInvoiceValidationSchema = {
     items: Joi.array().items(
       Joi.object({
         id: Joi.number().integer().allow(null), // For identifying existing items
-        productId: Joi.number().integer().positive().allow(null, 0).optional(),
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string()
           .allow(null, "")        // ✅ allows empty string

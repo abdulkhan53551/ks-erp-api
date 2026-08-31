@@ -12,7 +12,7 @@ const demoRoutes = require('./demo.routes')
 const partyRoutes = require('./party.routes');
 const uploadRoutes = require('./upload.routes');
 const attachmentRoutes = require('./attachment.routes');
-const productRoutes = require('./product.routes');
+const { productRoutes } = require('./product');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
 
