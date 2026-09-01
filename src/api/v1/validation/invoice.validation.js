@@ -131,7 +131,7 @@ const createInvoiceValidationSchema = {
     other: Joi.number().precision(2).default(0).allow(0),
 
     paymentStatusId: Joi.number().integer().min(1).required(),
-    paymentModeId: Joi.number().integer().min(0).required()
+    paymentModeId: Joi.number().integer().min(1).required()
   })
     .custom(validateCreateOrUpdateCustom)
     .messages({ 'any.invalid': '{{#customMessage}}' })
@@ -170,7 +170,7 @@ const updateInvoiceValidationSchema = {
     shippingAddressId: Joi.number().integer().allow(null),
 
     billingAddress: Joi.object({
-      id: Joi.number().integer().required(),
+      id: Joi.number().integer().allow(null).optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Billing phone number must be a valid phone number',
@@ -184,7 +184,7 @@ const updateInvoiceValidationSchema = {
     }),
 
     shippingAddress: Joi.object({
-      id: Joi.number().integer().required(),
+      id: Joi.number().integer().allow(null).optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Shipping phone number must be a valid phone number',
@@ -276,7 +276,7 @@ const updateInvoiceValidationSchema = {
     other: Joi.number().precision(2).default(0).allow(0),
 
     paymentStatusId: Joi.number().integer().min(1),
-    paymentModeId: Joi.number().integer().min(0)
+    paymentModeId: Joi.number().integer().min(1)
   })
     .custom(validateCreateOrUpdateCustom)
     .messages({ 'any.invalid': '{{#customMessage}}' })
