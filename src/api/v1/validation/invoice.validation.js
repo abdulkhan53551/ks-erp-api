@@ -391,6 +391,16 @@ function invoiceItemCustomValidation(item, helpers) {
   return item;
 }
 
+// Query / list invoices schema
+const queryInvoicesSchema = {
+  query: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    pageSize: Joi.number().integer().min(1).max(100).default(10),
+    search: Joi.string().trim().allow('', null).optional(),
+    trash: Joi.boolean().default(false)
+  })
+};
+
 module.exports = {
   getInvoiceByIdValidationSchema,
   createInvoiceValidationSchema,
@@ -398,5 +408,6 @@ module.exports = {
   deleteInvoiceValidationSchema,
   restoreInvoiceValidationSchema,
   bulkDeleteInvoicesValidationSchema,
-  bulkRestoreInvoicesValidationSchema
+  bulkRestoreInvoicesValidationSchema,
+  queryInvoicesSchema
 };
