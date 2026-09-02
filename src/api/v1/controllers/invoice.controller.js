@@ -378,8 +378,8 @@ const calculateInvoiceTotals = (items, invoice) => {
     let gstTotal = new Decimal(0);
     let discountTotal = new Decimal(0);
     // let discountTotal = new Decimal(invoice.discountAmount || 0);
-    const otherAmount = new Decimal(invoice.other)
-    const roundOff = new Decimal(invoice.roundOff)
+    const otherAmount = new Decimal(invoice.other || 0)
+    const roundOff = new Decimal(invoice.roundOff || 0)
 
     items.forEach(item => {
         const quantity = new Decimal(item.quantity);
@@ -1090,7 +1090,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         throw error;
     } finally {
         if (page) {
-            await page.close().catch(() => {});
+            await page.close().catch(() => { });
         }
     }
 };

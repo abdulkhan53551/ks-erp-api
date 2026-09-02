@@ -37,7 +37,7 @@ const createFirmValidationSchema = {
 
     // Address details
     email: Joi.string().email().allow(null, ''),
-    phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+    phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, ''),
     website: Joi.string().uri().allow(null, ''),
 
     addressLine1: Joi.string().max(500).allow(null, ''),
@@ -92,7 +92,7 @@ const updateFirmValidationSchema = {
     // Address details
     addressId: Joi.number().integer().required(),
     email: Joi.string().email().allow(null, ''),
-    phoneNumber: Joi.string().pattern(/^[6-9]\d{9}$/).allow(null, ''),
+    phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, ''),
     website: Joi.string().uri().allow(null, ''),
 
     addressLine1: Joi.string().max(255).allow(null, ''),
