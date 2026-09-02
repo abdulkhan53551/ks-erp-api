@@ -1,13 +1,13 @@
 const { Router } = require('express')
 const validate = require('../middlewares/validate')
 const { getInvoiceMeta, getAllInvoice, getInvoiceById, createInvoice, updateInvoice, deleteInvoice, restoreInvoice, bulkDeleteInvoices, bulkRestoreInvoices, getInvoicePdf, getNextInvoiceNumber } = require('../controllers/invoice.controller')
-const { getInvoiceByIdValidationSchema, createInvoiceValidationSchema, updateInvoiceValidationSchema, deleteInvoiceValidationSchema, restoreInvoiceValidationSchema, bulkDeleteInvoicesValidationSchema, bulkRestoreInvoicesValidationSchema } = require('../validation/invoice.validation')
+const { getInvoiceByIdValidationSchema, createInvoiceValidationSchema, updateInvoiceValidationSchema, deleteInvoiceValidationSchema, restoreInvoiceValidationSchema, bulkDeleteInvoicesValidationSchema, bulkRestoreInvoicesValidationSchema, queryInvoicesSchema } = require('../validation/invoice.validation')
 const router = Router()
 
 // Invoice
 router.get('/next-invoice-number', getNextInvoiceNumber);
-router.get('/pagination', getInvoiceMeta);
-router.get('/', getAllInvoice);
+router.get('/pagination', validate(queryInvoicesSchema), getInvoiceMeta);
+router.get('/', validate(queryInvoicesSchema), getAllInvoice);
 router.post('/', validate(createInvoiceValidationSchema), createInvoice);
 router.post('/bulk-delete', validate(bulkDeleteInvoicesValidationSchema), bulkDeleteInvoices);
 router.patch('/bulk-restore', validate(bulkRestoreInvoicesValidationSchema), bulkRestoreInvoices);

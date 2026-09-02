@@ -108,6 +108,7 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // Prepare invoice items
     const invoiceItems = items.map(item => ({
+        product_id: item.productId ? Number(item.productId) : null,
         description: item.description,
         hsn_sac_code: item.hsnSacCode,
         qty: item.qty,
@@ -227,6 +228,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
     const invoiceItems = items.map(item => ({
         id: item.id,
+        product_id: item.productId ? Number(item.productId) : null,
         description: item.description,
         hsn_sac_code: item.hsnSacCode,
         qty: item.qty,
@@ -1088,7 +1090,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         throw error;
     } finally {
         if (page) {
-            await page.close().catch(() => {});
+            await page.close().catch(() => { });
         }
     }
 };
