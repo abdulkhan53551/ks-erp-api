@@ -35,6 +35,8 @@ const fetchAllProducts = async (firmId, query = {}) => {
                 'iu.description as unitDescription',
                 'p.selling_price as sellingPrice',
                 'p.purchase_price as purchasePrice',
+                'p.image_url as imageUrl',
+                'p.image_public_id as imagePublicId',
                 'p.drawing_number as drawingNumber',
                 'p.material_grade as materialGrade',
                 'p.dimensions',
@@ -193,7 +195,8 @@ const searchProducts = async (firmId, query = {}) => {
                 'p.drawing_number as drawingNumber',
                 'p.material_grade as materialGrade',
                 'p.dimensions',
-                'p.unit_weight_kg as unitWeightKg'
+                'p.unit_weight_kg as unitWeightKg',
+                'p.image_url as imageUrl'
             )
             .leftJoin('gst_slabs as gs', 'p.gst_slab_id', 'gs.id')
             .leftJoin('item_units as iu', 'p.item_unit_id', 'iu.id')
@@ -255,6 +258,8 @@ const fetchProductById = async (id, firmId) => {
                 'iu.description as unitDescription',
                 'p.selling_price as sellingPrice',
                 'p.purchase_price as purchasePrice',
+                'p.image_url as imageUrl',
+                'p.image_public_id as imagePublicId',
                 'p.drawing_number as drawingNumber',
                 'p.material_grade as materialGrade',
                 'p.dimensions',
@@ -336,6 +341,8 @@ const insertProduct = async (firmId, userId, data) => {
             item_unit_id: data.itemUnitId || null,
             selling_price: data.sellingPrice !== undefined && data.sellingPrice !== null ? data.sellingPrice : 0,
             purchase_price: data.purchasePrice !== undefined && data.purchasePrice !== null ? data.purchasePrice : 0,
+            image_url: data.imageUrl || null,
+            image_public_id: data.imagePublicId || null,
             drawing_number: data.drawingNumber ? data.drawingNumber.trim() : null,
             material_grade: data.materialGrade ? data.materialGrade.trim() : null,
             dimensions: data.dimensions ? data.dimensions.trim() : null,
@@ -384,6 +391,8 @@ const updateProductById = async (id, firmId, userId, data) => {
         if (data.itemUnitId !== undefined) payload.item_unit_id = data.itemUnitId || null;
         if (data.sellingPrice !== undefined) payload.selling_price = data.sellingPrice;
         if (data.purchasePrice !== undefined) payload.purchase_price = data.purchasePrice;
+        if (data.imageUrl !== undefined) payload.image_url = data.imageUrl || null;
+        if (data.imagePublicId !== undefined) payload.image_public_id = data.imagePublicId || null;
         if (data.drawingNumber !== undefined) payload.drawing_number = data.drawingNumber ? data.drawingNumber.trim() : null;
         if (data.materialGrade !== undefined) payload.material_grade = data.materialGrade ? data.materialGrade.trim() : null;
         if (data.dimensions !== undefined) payload.dimensions = data.dimensions ? data.dimensions.trim() : null;
