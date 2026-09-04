@@ -308,13 +308,14 @@ const updateAddressTypeById = async (id, addressType) => {
 // Delete address type
 const deleteAddressTypeMaster = async (addressTypeId, isPermanentDelete = false) => {
     try {
-        // Check active usage in party_addresses for active parties
-        const activeUsage = await db('party_addresses as pa')
+        // Check active usage if party_addresses exists
+        const hasTable = await db.schema.hasTable('party_addresses');
+        const activeUsage = hasTable ? await db('party_addresses as pa')
             .join('parties as p', 'pa.party_id', 'p.id')
             .where('pa.address_type_id', addressTypeId)
             .andWhere('pa.is_active', true)
             .andWhere('p.is_active', true)
-            .first();
+            .first() : null;
 
         if (activeUsage) {
             throw new ApiError({
@@ -355,14 +356,15 @@ const deleteAddressTypeMaster = async (addressTypeId, isPermanentDelete = false)
 const bulkDeleteAddressTypes = async (addressTypeIds = [], isPermanentDelete = false) => {
     if (!addressTypeIds.length) return 0;
     try {
-        const activeUsage = await db('party_addresses as pa')
+        const hasTable = await db.schema.hasTable('party_addresses');
+        const activeUsage = hasTable ? await db('party_addresses as pa')
             .join('parties as p', 'pa.party_id', 'p.id')
             .join('address_types as at', 'pa.address_type_id', 'at.id')
             .select('at.name')
             .whereIn('pa.address_type_id', addressTypeIds)
             .andWhere('pa.is_active', true)
             .andWhere('p.is_active', true)
-            .first();
+            .first() : null;
 
         if (activeUsage) {
             throw new ApiError({
