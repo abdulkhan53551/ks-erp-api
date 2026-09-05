@@ -15,7 +15,7 @@ const knexConfig = {
         // user: process.env.DB_USER,
         // password: process.env.DB_PASSWORD,
         // database: process.env.DB_NAME,
-        connectionString: process.env.DB_URL,
+        connectionString: process.env.UAT_DB_URL,
         ssl: {
             rejectUnauthorized: false,
         },
