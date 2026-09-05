@@ -303,71 +303,6 @@ const getPartyDetailsSchema = {
     })
 };
 
-// Validation schema for getting a party address by ID
-const getPartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required(),
-    })
-};
-
-// Validation schema for creating a new party address
-const createPartyAddressSchema = {
-    body: Joi.object({
-        addressTypeId: Joi.number().integer().required().messages({
-            "number.base": "Please select an address type.",
-            "any.required": "Address type is required."
-        }),
-        address: Joi.string().max(500).required().messages({
-            "string.empty": "Address line is required.",
-            "any.required": "Address line is required."
-        }),
-        stateId: Joi.number().integer().required().messages({
-            "number.base": "Please select a state.",
-            "any.required": "State is required."
-        }),
-        cityId: Joi.number().integer().required().messages({
-            "number.base": "Please select a city.",
-            "any.required": "City is required."
-        }),
-        country: Joi.string().default("India"),
-        pincode: Joi.string()
-            .pattern(/^[1-9][0-9]{5}$/)
-            .required()
-            .messages({
-                "string.empty": "Pincode is required.",
-                "string.pattern.base": "Please enter a valid 6-digit Indian pincode."
-            })
-    })
-};
-
-// Validation schema for updating an existing party address
-const updatePartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required().label('Party Address ID'),
-    }),
-    body: createPartyAddressSchema.body.fork(
-        ["addressTypeId", "address", "stateId", "cityId", "pincode"],
-        field => field.optional()
-    )
-};
-
-// Validation schema for deleting a party address
-const deletePartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required(),
-    }),
-    query: Joi.object({
-        isPermanentDelete: Joi.boolean()
-            .default(false)
-            .label('Is Permanent Delete')
-            .messages({
-                'boolean.base': `"isPermanentDelete" must be a boolean value.`,
-            })
-    })
-};
 
 // Validation schema for getting a party contact by ID
 const getPartyContactSchema = {
@@ -380,6 +315,7 @@ const getPartyContactSchema = {
 // Validation schema for creating a new party contact
 const createPartyContactSchema = {
     body: Joi.object({
+        branchId: Joi.number().integer().positive().allow(null).optional(),
         contactRoleId: Joi.number().integer().required().messages({
             "number.base": "Please select a contact role.",
             "any.required": "Contact role is required."
@@ -513,6 +449,104 @@ const deletePartyBankAccountSchema = {
     })
 };
 
+// Validation schemas for Party Branches
+const createPartyBranchSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required(),
+    }),
+    body: Joi.object({
+        branchName: Joi.string().trim().max(100).required().messages({
+            'string.empty': 'Branch name is required.',
+            'any.required': 'Branch name is required.'
+        }),
+        branchCode: Joi.string().trim().max(50).allow('', null).optional(),
+        gstin: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+            .allow('', null)
+            .optional()
+            .messages({
+                'string.pattern.base': 'Please enter a valid 15-character GSTIN (e.g. 27ABCDE1234F1Z5).'
+            }),
+        stateId: Joi.number().integer().positive().required().messages({
+            'number.base': 'Please select a state.',
+            'any.required': 'State is required.'
+        }),
+        address: Joi.string().trim().max(500).allow('', null).optional(),
+        cityId: Joi.number().integer().positive().allow(null).optional(),
+        pincode: Joi.string().pattern(/^[1-9][0-9]{5}$/).allow('', null).optional().messages({
+            'string.pattern.base': 'Please enter a valid 6-digit Indian pincode.'
+        }),
+        country: Joi.string().trim().max(50).allow('', null).optional(),
+        isHeadOffice: Joi.boolean().default(false).optional(),
+        isDefault: Joi.boolean().default(false).optional(),
+        email: Joi.string().trim().email({ tlds: { allow: false } }).allow('', null).optional().messages({
+            'string.email': 'Please enter a valid email address.'
+        }),
+        mobile: Joi.string().trim().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow('', null).optional().messages({
+            'string.pattern.base': 'Please enter a valid mobile number.'
+        }),
+        remarks: Joi.string().max(500).allow('', null).optional()
+    })
+};
+
+const updatePartyBranchSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required(),
+        id: Joi.number().integer().positive().required(),
+    }),
+    body: Joi.object({
+        branchName: Joi.string().trim().max(100).optional(),
+        branchCode: Joi.string().trim().max(50).allow('', null).optional(),
+        gstin: Joi.string()
+            .trim()
+            .uppercase()
+            .pattern(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/)
+            .allow('', null)
+            .optional()
+            .messages({
+                'string.pattern.base': 'Please enter a valid 15-character GSTIN.'
+            }),
+        stateId: Joi.number().integer().positive().optional(),
+        address: Joi.string().trim().max(500).allow('', null).optional(),
+        cityId: Joi.number().integer().positive().allow(null).optional(),
+        pincode: Joi.string().pattern(/^[1-9][0-9]{5}$/).allow('', null).optional().messages({
+            'string.pattern.base': 'Please enter a valid 6-digit Indian pincode.'
+        }),
+        country: Joi.string().trim().max(50).allow('', null).optional(),
+        isHeadOffice: Joi.boolean().optional(),
+        isDefault: Joi.boolean().optional(),
+        email: Joi.string().trim().email({ tlds: { allow: false } }).allow('', null).optional(),
+        mobile: Joi.string().trim().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow('', null).optional(),
+        remarks: Joi.string().max(500).allow('', null).optional()
+    }).min(1)
+};
+
+const getPartyBranchSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required(),
+        id: Joi.number().integer().positive().required(),
+    })
+};
+
+const deletePartyBranchSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required(),
+        id: Joi.number().integer().positive().required(),
+    }),
+    query: Joi.object({
+        isPermanentDelete: Joi.boolean().default(false).optional()
+    })
+};
+
+const setDefaultPartyBranchSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required(),
+        id: Joi.number().integer().positive().required(),
+    })
+};
+
 module.exports = {
     getPartyRolesSchema,
     createPartyRolesSchema,
@@ -530,10 +564,11 @@ module.exports = {
     bulkRestorePartiesSchema,
     searchPartiesSchema,
     getPartyDetailsSchema,
-    getPartyAddressSchema,
-    createPartyAddressSchema,
-    updatePartyAddressSchema,
-    deletePartyAddressSchema,
+    getPartyBranchSchema,
+    createPartyBranchSchema,
+    updatePartyBranchSchema,
+    deletePartyBranchSchema,
+    setDefaultPartyBranchSchema,
     getPartyContactSchema,
     createPartyContactSchema,
     updatePartyContactSchema,
