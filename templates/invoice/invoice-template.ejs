@@ -332,6 +332,9 @@
                 <p class="gst">GSTIN <%= customer.gstNo %></p>
               <% } %>
               <p class="billing-address">Billing address:</p>
+              <% if (customer.branchName && customer.branchName !== 'Head Office') { %>
+                <p class="branch" style="margin-top: 1mm; font-size: 2.5mm; font-weight: bold; color: #333;"><%= customer.branchName %></p>
+              <% } %>
               <p><%- customer.billingAddress %></p>
               <% if (customer.mobile) { %>
                 <p>Ph: <%= customer.mobile %></p>
@@ -420,6 +423,9 @@
             </div>
             <div class="shipping-address">
               <h5>Shipping address:</h5>
+              <% if (customer.shippingBranchName && customer.shippingBranchName !== 'Head Office') { %>
+                <p class="branch" style="margin-top: 1mm; font-size: 2.5mm; font-weight: bold; color: #333;"><%= customer.shippingBranchName %></p>
+              <% } %>
               <p><%- customer.shippingAddress %></p>
               <% if (customer.mobile) { %>
                 <p>Ph: <%= customer.mobile %></p>

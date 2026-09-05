@@ -167,10 +167,14 @@ const fetchInvoiceById = async (id) => {
                 'UC.city_id AS company_city_id',
                 'UC.state_id AS company_state_id',
                 'UC.pincode AS company_pincode',
+                'I.party_id',
+                'I.branch_id',
                 'I.customer_name',
                 'I.has_gst',
                 'I.gst_number',
                 'ICB.id AS billing_id',
+                'ICB.branch_name AS billing_branch_name',
+                'ICB.gstin AS billing_gstin',
                 'ICB.email AS billing_email',
                 'ICB.phone_number AS billing_phone_number',
                 'ICB.website AS billing_website',
@@ -179,6 +183,8 @@ const fetchInvoiceById = async (id) => {
                 'ICB.state_id AS billing_state_id',
                 'ICB.pincode AS billing_pincode',
                 'ICS.id AS shipping_id',
+                'ICS.branch_name AS shipping_branch_name',
+                'ICS.gstin AS shipping_gstin',
                 'ICS.email AS shipping_email',
                 'ICS.phone_number AS shipping_phone_number',
                 'ICS.address_line1 AS shipping_address',
@@ -241,7 +247,7 @@ const fetchInvoiceById = async (id) => {
                 .first(),
 
             db('invoice_items AS II')
-                .select('II.id', 'I.id AS invoice_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.sub_total', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.igst', 'II.total')
+                .select('II.id', 'I.id AS invoice_id', 'II.product_id', 'II.description', 'II.hsn_sac_code', 'II.item_unit_id', 'IU.uqc', 'II.qty', 'II.rate', 'II.gst_slab_id', 'GS.gst_rate', 'II.sub_total', 'II.taxable_amount', 'II.cgst', 'II.sgst', 'II.igst', 'II.total')
                 .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
                 .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
                 .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
@@ -734,6 +740,7 @@ const fetchChallanPOEwayBillsForInvoice = async (invoiceId) => {
                 'pm.label as payment_label',
                 db.raw("STRING_AGG(DISTINCT ic.challan_no::text, ',' ORDER BY ic.challan_no::text) as challan"),
                 db.raw("STRING_AGG(DISTINCT po.po_no::text, ',' ORDER BY po.po_no::text) as po"),
+                db.raw("STRING_AGG(DISTINCT po.po_date::text, ',' ORDER BY po.po_date::text) as po_date"),
                 db.raw("STRING_AGG(DISTINCT eb.eway_bill_no::text, ',' ORDER BY eb.eway_bill_no::text) as ewaybill")
             )
             .leftJoin('invoice_challans as ic', 'i.id', 'ic.invoice_id')

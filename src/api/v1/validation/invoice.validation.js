@@ -18,6 +18,8 @@ const createInvoiceValidationSchema = {
     dueDate: Joi.date().required(),
 
     customerName: Joi.string().max(255).required(),
+    partyId: Joi.number().integer().positive().allow(null).optional(),
+    branchId: Joi.number().integer().positive().allow(null).optional(),
     hasGst: Joi.boolean().default(false),
     gstNumber: Joi.string()
       .allow(null, '')
@@ -34,6 +36,8 @@ const createInvoiceValidationSchema = {
       }),
 
     billingAddress: Joi.object({
+      branchName: Joi.string().max(100).allow(null, '').optional(),
+      gstin: Joi.string().max(20).allow(null, '').optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Billing phone number must be a valid phone number',
@@ -47,6 +51,8 @@ const createInvoiceValidationSchema = {
     }),
 
     shippingAddress: Joi.object({
+      branchName: Joi.string().max(100).allow(null, '').optional(),
+      gstin: Joi.string().max(20).allow(null, '').optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Shipping phone number must be a valid phone number',
@@ -100,6 +106,7 @@ const createInvoiceValidationSchema = {
 
     items: Joi.array().items(
       Joi.object({
+        productId: Joi.number().integer().positive().allow(null, 0).optional(),
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string().max(20).allow(null, ''),
         qty: Joi.number().precision(2).min(0).required(),
@@ -150,6 +157,8 @@ const updateInvoiceValidationSchema = {
     dueDate: Joi.date().required(),
 
     customerName: Joi.string().max(255).required(),
+    partyId: Joi.number().integer().positive().allow(null).optional(),
+    branchId: Joi.number().integer().positive().allow(null).optional(),
     hasGst: Joi.boolean().default(false),
 
     gstNumber: Joi.string()
@@ -171,6 +180,8 @@ const updateInvoiceValidationSchema = {
 
     billingAddress: Joi.object({
       id: Joi.number().integer().allow(null).optional(),
+      branchName: Joi.string().max(100).allow(null, '').optional(),
+      gstin: Joi.string().max(20).allow(null, '').optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Billing phone number must be a valid phone number',
@@ -185,6 +196,8 @@ const updateInvoiceValidationSchema = {
 
     shippingAddress: Joi.object({
       id: Joi.number().integer().allow(null).optional(),
+      branchName: Joi.string().max(100).allow(null, '').optional(),
+      gstin: Joi.string().max(20).allow(null, '').optional(),
       email: Joi.string().email().allow(null, ''),
       phoneNumber: Joi.string().pattern(/^(?:(?:\+91|0)?[6-9]\d{9}|1800\d{6,7}|1860\d{6,7}|0\d{8,10}|\d{8,12})$/).allow(null, '').messages({
         'string.pattern.base': 'Shipping phone number must be a valid phone number',
@@ -240,6 +253,7 @@ const updateInvoiceValidationSchema = {
     items: Joi.array().items(
       Joi.object({
         id: Joi.number().integer().allow(null), // For identifying existing items
+        productId: Joi.number().integer().positive().allow(null, 0).optional(),
         description: Joi.string().max(255).required(),
         hsnSacCode: Joi.string()
           .allow(null, "")        // ✅ allows empty string
@@ -389,6 +403,16 @@ function invoiceItemCustomValidation(item, helpers) {
   return item;
 }
 
+// Query / list invoices schema
+const queryInvoicesSchema = {
+  query: Joi.object({
+    page: Joi.number().integer().min(1).default(1),
+    pageSize: Joi.number().integer().min(1).max(100).default(10),
+    search: Joi.string().trim().allow('', null).optional(),
+    trash: Joi.boolean().default(false)
+  })
+};
+
 module.exports = {
   getInvoiceByIdValidationSchema,
   createInvoiceValidationSchema,
@@ -396,5 +420,6 @@ module.exports = {
   deleteInvoiceValidationSchema,
   restoreInvoiceValidationSchema,
   bulkDeleteInvoicesValidationSchema,
-  bulkRestoreInvoicesValidationSchema
+  bulkRestoreInvoicesValidationSchema,
+  queryInvoicesSchema
 };

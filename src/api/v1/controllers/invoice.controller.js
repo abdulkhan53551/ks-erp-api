@@ -85,6 +85,8 @@ const createInvoice = asyncHandler(async (req, res) => {
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
         customer_name: invoice.customerName,
+        party_id: invoice.partyId ? Number(invoice.partyId) : null,
+        branch_id: invoice.branchId ? Number(invoice.branchId) : null,
         has_gst: invoice.hasGst,
         gst_number: invoice.gstNumber,
         has_challan: invoice.hasChallan,
@@ -108,6 +110,7 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // Prepare invoice items
     const invoiceItems = items.map(item => ({
+        product_id: item.productId ? Number(item.productId) : null,
         description: item.description,
         hsn_sac_code: item.hsnSacCode,
         qty: item.qty,
@@ -127,6 +130,8 @@ const createInvoice = asyncHandler(async (req, res) => {
     // Prepare billing address
     const billing = {
         contact_type: 'BILLING',
+        branch_name: billingAddress.branchName || null,
+        gstin: billingAddress.gstin || null,
         email: billingAddress.email,
         phone_number: billingAddress.phoneNumber,
         website: billingAddress.website,
@@ -139,6 +144,8 @@ const createInvoice = asyncHandler(async (req, res) => {
     // Prepare shipping address
     const shipping = {
         contact_type: 'SHIPPING',
+        branch_name: shippingAddress.branchName || null,
+        gstin: shippingAddress.gstin || null,
         email: shippingAddress.email,
         phone_number: shippingAddress.phoneNumber,
         website: shippingAddress.website,
@@ -204,6 +211,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
         customer_name: invoice.customerName,
+        party_id: invoice.partyId !== undefined ? (invoice.partyId ? Number(invoice.partyId) : null) : undefined,
+        branch_id: invoice.branchId !== undefined ? (invoice.branchId ? Number(invoice.branchId) : null) : undefined,
         has_gst: invoice.hasGst,
         gst_number: invoice.gstNumber,
         has_challan: invoice.hasChallan,
@@ -227,6 +236,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
     const invoiceItems = items.map(item => ({
         id: item.id,
+        product_id: item.productId ? Number(item.productId) : null,
         description: item.description,
         hsn_sac_code: item.hsnSacCode,
         qty: item.qty,
@@ -247,6 +257,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
     const billing = {
         id: billingAddress.id,
         contact_type: 'BILLING',
+        branch_name: billingAddress.branchName !== undefined ? billingAddress.branchName : undefined,
+        gstin: billingAddress.gstin !== undefined ? billingAddress.gstin : undefined,
         email: billingAddress.email,
         phone_number: billingAddress.phoneNumber,
         website: billingAddress.website,
@@ -260,6 +272,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
     const shipping = {
         id: shippingAddress.id,
         contact_type: 'SHIPPING',
+        branch_name: shippingAddress.branchName !== undefined ? shippingAddress.branchName : undefined,
+        gstin: shippingAddress.gstin !== undefined ? shippingAddress.gstin : undefined,
         email: shippingAddress.email,
         phone_number: shippingAddress.phoneNumber,
         website: shippingAddress.website,
@@ -604,6 +618,13 @@ const prepareInvoicePdfJsonData = async (invoice) => {
     const placeOfSupply = stateMap[invoice.billing_state_id]?.name.toUpperCase() || '';
     const dueDate = invoice.due_date ? moment(invoice.due_date).format("DD MMM YYYY").toUpperCase() : '';
     const invoiceDate = invoice.invoice_date ? moment(invoice.invoice_date).format("DD MMM YYYY").toUpperCase() : '';
+    const poDate = invoice.po_date
+        ? invoice.po_date
+            .split(',')
+            .filter(Boolean)
+            .map(d => moment(d.trim()).isValid() ? moment(d.trim()).format("DD MMM YYYY").toUpperCase() : d.trim())
+            .join(', ')
+        : 'NA';
     const invoiceSubtotal = [];
 
     // Invoice subtotal rows
@@ -681,9 +702,12 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         },
         customer: {
             name: invoice.customer_name,
-            gstNo: invoice.gst_number,
+            gstNo: invoice.billing_gstin || invoice.gst_number,
+            branchName: invoice.billing_branch_name || null,
             billingAddress: customerBillingAddress,
             shippingAddress: customerShippingAddress,
+            shippingBranchName: invoice.shipping_branch_name || null,
+            shippingGstin: invoice.shipping_gstin || null,
             mobile: invoice.billing_phone_number,
             email: invoice.billing_email,
         },
@@ -695,7 +719,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             challanNo: invoice.challan || 'NA',
             challanDate: 'NA',
             poNumber: invoice.po || 'NA',
-            poDate: 'NA',
+            poDate: poDate,
             ewayBillNo: invoice.ewaybill || 'NA',
             modeOfPayment: invoice.payment_label || ''
         },
@@ -1088,7 +1112,7 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         throw error;
     } finally {
         if (page) {
-            await page.close().catch(() => {});
+            await page.close().catch(() => { });
         }
     }
 };
