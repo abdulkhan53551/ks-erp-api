@@ -303,72 +303,6 @@ const getPartyDetailsSchema = {
     })
 };
 
-// Validation schema for getting a party address by ID
-const getPartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required(),
-    })
-};
-
-// Validation schema for creating a new party address
-const createPartyAddressSchema = {
-    body: Joi.object({
-        branchId: Joi.number().integer().positive().allow(null).optional(),
-        addressTypeId: Joi.number().integer().required().messages({
-            "number.base": "Please select an address type.",
-            "any.required": "Address type is required."
-        }),
-        address: Joi.string().max(500).required().messages({
-            "string.empty": "Address line is required.",
-            "any.required": "Address line is required."
-        }),
-        stateId: Joi.number().integer().required().messages({
-            "number.base": "Please select a state.",
-            "any.required": "State is required."
-        }),
-        cityId: Joi.number().integer().required().messages({
-            "number.base": "Please select a city.",
-            "any.required": "City is required."
-        }),
-        country: Joi.string().default("India"),
-        pincode: Joi.string()
-            .pattern(/^[1-9][0-9]{5}$/)
-            .required()
-            .messages({
-                "string.empty": "Pincode is required.",
-                "string.pattern.base": "Please enter a valid 6-digit Indian pincode."
-            })
-    })
-};
-
-// Validation schema for updating an existing party address
-const updatePartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required().label('Party Address ID'),
-    }),
-    body: createPartyAddressSchema.body.fork(
-        ["addressTypeId", "address", "stateId", "cityId", "pincode"],
-        field => field.optional()
-    )
-};
-
-// Validation schema for deleting a party address
-const deletePartyAddressSchema = {
-    params: Joi.object({
-        partyId: Joi.number().integer().required(),
-        id: Joi.number().integer().required(),
-    }),
-    query: Joi.object({
-        isPermanentDelete: Joi.boolean()
-            .default(false)
-            .label('Is Permanent Delete')
-            .messages({
-                'boolean.base': `"isPermanentDelete" must be a boolean value.`,
-            })
-    })
-};
 
 // Validation schema for getting a party contact by ID
 const getPartyContactSchema = {
@@ -635,10 +569,6 @@ module.exports = {
     updatePartyBranchSchema,
     deletePartyBranchSchema,
     setDefaultPartyBranchSchema,
-    getPartyAddressSchema,
-    createPartyAddressSchema,
-    updatePartyAddressSchema,
-    deletePartyAddressSchema,
     getPartyContactSchema,
     createPartyContactSchema,
     updatePartyContactSchema,

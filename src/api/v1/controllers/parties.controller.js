@@ -1,7 +1,7 @@
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, bulkDeletePartyRoles: bulkDeletePartyRolesModel, restorePartyRoleById, bulkRestorePartyRoles: bulkRestorePartyRolesModel, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, bulkDeleteParties: bulkDeletePartiesModel, restorePartyMaster, bulkRestoreParties: bulkRestorePartiesModel, insertPartyAddress, updatePartyAddressMaster, fetchAllPartyAddresses, fetchPartyAddressById, deletePartyAddressMaster, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, fetchPartyRolesMeta, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails, fetchAllPartyBranches, fetchPartyBranchById, insertPartyBranch, updatePartyBranchById, deletePartyBranchById, setDefaultPartyBranch } = require("../models/parties.model");
+const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, bulkDeletePartyRoles: bulkDeletePartyRolesModel, restorePartyRoleById, bulkRestorePartyRoles: bulkRestorePartyRolesModel, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, bulkDeleteParties: bulkDeletePartiesModel, restorePartyMaster, bulkRestoreParties: bulkRestorePartiesModel, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, fetchPartyRolesMeta, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails, fetchAllPartyBranches, fetchPartyBranchById, insertPartyBranch, updatePartyBranchById, deletePartyBranchById, setDefaultPartyBranch } = require("../models/parties.model");
 const { getContext } = require("../helpers/requestContext");
 const { deleteFromCloudinary } = require("../services/cloudinary");
 
@@ -464,143 +464,6 @@ const bulkRestoreParties = asyncHandler(async (req, res) => {
     );
 });
 
-// Get all addresses for a specific party
-const getAllPartyAddresses = asyncHandler(async (req, res) => {
-    const { partyId } = req.params;
-
-    const partyAddresses = await fetchAllPartyAddresses(partyId);
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: partyAddresses,
-            message: 'Party addresses fetched successfully.'
-        })
-    );
-});
-
-// Get a specific party address by ID
-const getPartyAddressById = asyncHandler(async (req, res) => {
-    const { partyId, id } = req.params;
-
-    const partyAddress = await fetchPartyAddressById(id, partyId);
-
-    if (!partyAddress) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'Party address not found.'
-        });
-    }
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: partyAddress,
-            message: 'Party address fetched successfully.'
-        })
-    );
-});
-
-
-// Create a new party address
-const createPartyAddress = asyncHandler(async (req, res) => {
-    const { partyId } = req.params;
-    const { addressTypeId, address, cityId, stateId, country, pincode } = req.body;
-
-    const partyAddressData = {
-        party_id: partyId,
-        address_type_id: addressTypeId,
-        address,
-        city_id: cityId,
-        state_id: stateId,
-        country,
-        pincode
-    };
-
-    const partyAddressId = await insertPartyAddress(partyAddressData);
-
-    if (!partyAddressId) {
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Something went wrong while creating party address.'
-        });
-    }
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: {
-                id: partyAddressId
-            },
-            message: 'Party address created successfully.'
-        })
-    );
-});
-
-// Update an existing party address
-const updatePartyAddress = asyncHandler(async (req, res) => {
-    const { id, partyId } = req.params;
-
-    const { addressTypeId, address, cityId, stateId, country, pincode } = req.body;
-
-    const partyAddressData = {
-        party_id: partyId,
-        address_type_id: addressTypeId,
-        address,
-        city_id: cityId,
-        state_id: stateId,
-        country,
-        pincode
-    };
-
-    const affectedRows = await updatePartyAddressMaster(
-        id,
-        partyAddressData
-    );
-
-    if (!affectedRows) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'Party address not found or update failed'
-        });
-    }
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: {
-                id: Number(id)
-            },
-            message: 'Party address updated successfully.'
-        })
-    );
-});
-
-// Delete an existing party address
-const deletePartyAddress = asyncHandler(async (req, res) => {
-    const { partyId, id } = req.params;
-    const { isPermanentDelete } = req.query;
-
-    const affectedRows = await deletePartyAddressMaster(id, partyId, isPermanentDelete);
-
-    if (!affectedRows) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'Party address not found or delete failed'
-        });
-    }
-
-    return res.status(200).json(
-        new ApiResponse({
-            statusCode: 200,
-            data: {
-                id: Number(id)
-            },
-            message: 'Party address deleted successfully.'
-        })
-    );
-});
-
 // Get all party contacts for a specific party
 const getAllPartyContacts = asyncHandler(async (req, res) => {
     const { partyId } = req.params;
@@ -1052,11 +915,6 @@ module.exports = {
     updatePartyBranch,
     setDefaultPartyBranch: setDefaultPartyBranchHandler,
     deletePartyBranch,
-    getAllPartyAddresses,
-    getPartyAddressById,
-    createPartyAddress,
-    updatePartyAddress,
-    deletePartyAddress,
     getAllPartyContacts,
     getPartyContactById,
     createPartyContact,
