@@ -674,7 +674,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         company: {
             logo: invoice.company_logo,
             name: invoice.company_name,
-            gstNo: invoice.gst_number,
+            gstNo: invoice.firm_gstin,
             address: companyAddress,
             mobile: invoice.company_phone_number,
             email: invoice.company_email
