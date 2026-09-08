@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Payment Receipt <%= receipt.paymentNo %></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #1e293b;
+      background: #ffffff;
+      padding: 12mm 15mm;
+    }
+    .receipt-container {
+      width: 100%;
+      position: relative;
+    }
+    
+    /* Watermark for cancelled receipts */
+    .cancelled-watermark {
+      position: absolute;
+      top: 35%;
+      left: 20%;
+      font-size: 70px;
+      font-weight: 800;
+      color: rgba(239, 68, 68, 0.18);
+      transform: rotate(-30deg);
+      pointer-events: none;
+      text-transform: uppercase;
+      letter-spacing: 6px;
+      border: 6px dashed rgba(239, 68, 68, 0.25);
+      padding: 10px 40px;
+      border-radius: 12px;
+    }
+
+    /* Header Section */
+    .header-table {
+      width: 100%;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 12px;
+      margin-bottom: 14px;
+    }
+    .company-logo {
+      max-height: 65px;
+      max-width: 160px;
+      object-fit: contain;
+    }
+    .company-name {
+      font-size: 18px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.2px;
+      margin-bottom: 3px;
+    }
+    .company-details {
+      font-size: 10px;
+      color: #475569;
+      line-height: 1.35;
+    }
+    .company-tax-badges {
+      margin-top: 4px;
+      font-weight: 600;
+      color: #0369a1;
+    }
+    .receipt-title-box {
+      text-align: right;
+      vertical-align: top;
+    }
+    .receipt-badge {
+      display: inline-block;
+      background: #0284c7;
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 5px 14px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+    }
+    .receipt-number {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 6px;
+    }
+    .receipt-date {
+      font-size: 10.5px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Metadata / Parties Grid */
+    .parties-grid {
+      width: 100%;
+      margin-bottom: 14px;
+      border-collapse: collapse;
+    }
+    .party-card {
+      width: 50%;
+      vertical-align: top;
+      padding: 10px 12px;
+      border-radius: 6px;
+    }
+    .party-card.left {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+    }
+    .party-card.right {
+      background: #f0f9ff;
+      border: 1px solid #bae6fd;
+      padding-left: 14px;
+    }
+    .section-title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      color: #0284c7;
+    }
+    .customer-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 3px;
+    }
+    .field-row {
+      margin-bottom: 3px;
+      font-size: 10.5px;
+    }
+    .field-label {
+      color: #64748b;
+      display: inline-block;
+      width: 110px;
+    }
+    .field-value {
+      color: #0f172a;
+      font-weight: 600;
+    }
+
+    /* Settlement Invoices Table */
+    .table-section-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #334155;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .settlement-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 14px;
+    }
+    .settlement-table th {
+      background: #0f172a;
+      color: #ffffff;
+      font-size: 9.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      padding: 6px 8px;
+      text-align: left;
+      letter-spacing: 0.3px;
+    }
+    .settlement-table th.num {
+      text-align: right;
+    }
+    .settlement-table td {
+      padding: 6px 8px;
+      font-size: 10px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #1e293b;
+    }
+    .settlement-table td.num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .settlement-table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    /* Summary Box */
+    .summary-section {
+      width: 100%;
+      margin-bottom: 16px;
+      border-collapse: collapse;
+    }
+    .words-box {
+      width: 60%;
+      vertical-align: top;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .words-label {
+      font-size: 9.5px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .words-value {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #0f172a;
+      font-style: italic;
+    }
+    .totals-box {
+      width: 40%;
+      vertical-align: top;
+      padding-left: 14px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 10.5px;
+      border-bottom: 1px dashed #cbd5e1;
+    }
+    .total-row.grand {
+      border-top: 2px solid #0f172a;
+      border-bottom: 2px solid #0f172a;
+      margin-top: 4px;
+      padding: 7px 0;
+      font-size: 14px;
+      font-weight: 800;
+      color: #0284c7;
+    }
+
+    /* Signatory & Notes */
+    .footer-section {
+      width: 100%;
+      margin-top: 20px;
+      border-collapse: collapse;
+    }
+    .notes-box {
+      width: 58%;
+      vertical-align: bottom;
+      font-size: 9.5px;
+      color: #64748b;
+      padding-right: 15px;
+    }
+    .signatory-box {
+      width: 42%;
+      text-align: center;
+      vertical-align: bottom;
+    }
+    .signatory-line {
+      border-top: 1px solid #0f172a;
+      margin: 45px auto 4px auto;
+      width: 180px;
+    }
+    .signatory-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .signatory-sub {
+      font-size: 9px;
+      color: #64748b;
+    }
+
+    .disclaimer-bar {
+      margin-top: 25px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+      font-size: 8.5px;
+      color: #94a3b8;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="receipt-container">
+    <% if (receipt.status === 'CANCELLED') { %>
+      <div class="cancelled-watermark">CANCELLED</div>
+    <% } %>
+
+    <!-- Header -->
+    <table class="header-table">
+      <tr>
+        <td style="width: 65%; vertical-align: top;">
+          <% if (company.logo) { %>
+            <img class="company-logo" src="<%= company.logo %>" alt="Company Logo" />
+          <% } %>
+          <div class="company-name"><%= company.name %></div>
+          <% if (company.tradeName && company.tradeName !== company.name) { %>
+            <div style="font-size: 10px; color: #64748b; font-weight: 600;"><%= company.tradeName %></div>
+          <% } %>
+          <div class="company-details"><%- company.address %></div>
+          <div class="company-details">
+            <% if (company.mobile) { %><span>Mobile: <%= company.mobile %></span><% } %>
+            <% if (company.email) { %><span> &bull; Email: <%= company.email %></span><% } %>
+            <% if (company.website) { %><span> &bull; Web: <%= company.website %></span><% } %>
+          </div>
+          <div class="company-tax-badges">
+            <% if (company.gstin) { %><span>GSTIN: <%= company.gstin %></span><% } %>
+            <% if (company.pan) { %><span> &bull; PAN: <%= company.pan %></span><% } %>
+          </div>
+        </td>
+        <td class="receipt-title-box" style="width: 35%;">
+          <div class="receipt-badge">Payment Receipt</div>
+          <div class="receipt-number"><%= receipt.paymentNo %></div>
+          <div class="receipt-date">Date: <strong><%= receipt.formattedDate %></strong></div>
+          <div class="receipt-date">Status: <strong style="color: <%= receipt.status === 'COMPLETED' ? '#16a34a' : '#dc2626' %>;"><%= receipt.status %></strong></div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Parties & Payment Mode Grid -->
+    <table class="parties-grid">
+      <tr>
+        <td class="party-card left" style="width: 50%;">
+          <div class="section-title">Received With Thanks From:</div>
+          <div class="customer-name"><%= customer.name %></div>
+          <% if (customer.gstin) { %>
+            <div class="field-row">
+              <span class="field-label">GSTIN:</span>
+              <span class="field-value"><%= customer.gstin %></span>
+            </div>
+          <% } %>
+          <% if (customer.address) { %>
+            <div class="field-row" style="margin-top: 2px;">
+              <span class="field-label">Address:</span>
+              <span style="color: #334155;"><%- customer.address %></span>
+            </div>
+          <% } %>
+          <% if (customer.phone) { %>
+            <div class="field-row">
+              <span class="field-label">Phone:</span>
+              <span class="field-value"><%= customer.phone %></span>
+            </div>
+          <% } %>
+        </td>
+
+        <td class="party-card right" style="width: 50%;">
+          <div class="section-title">Payment Transaction Details:</div>
+          <div class="field-row">
+            <span class="field-label">Payment Mode:</span>
+            <span class="field-value" style="color: #0284c7;"><%= receipt.paymentMode %></span>
+          </div>
+          <% if (receipt.referenceNo) { %>
+            <div class="field-row">
+              <span class="field-label">Ref / UTR No:</span>
+              <span class="field-value"><%= receipt.referenceNo %></span>
+            </div>
+          <% } %>
+          <% if (receipt.bankName) { %>
+            <div class="field-row">
+              <span class="field-label">Drawn on Bank:</span>
+              <span class="field-value"><%= receipt.bankName %></span>
+            </div>
+          <% } %>
+          <% if (receipt.referenceDate) { %>
+            <div class="field-row">
+              <span class="field-label">Instrument Date:</span>
+              <span class="field-value"><%= receipt.formattedReferenceDate %></span>
+            </div>
+          <% } %>
+          <div class="field-row" style="margin-top: 6px;">
+            <span class="field-label">Received By:</span>
+            <span class="field-value"><%= receipt.createdByName || 'Authorized Representative' %></span>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Invoices Settled Breakdown Table -->
+    <% if (allocations && allocations.length > 0) { %>
+      <div class="table-section-title">Invoice Settlement Details</div>
+      <table class="settlement-table">
+        <thead>
+          <tr>
+            <th style="width: 5%;">#</th>
+            <th style="width: 20%;">Invoice No</th>
+            <th style="width: 15%;">Invoice Date</th>
+            <th class="num" style="width: 15%;">Total (₹)</th>
+            <th class="num" style="width: 15%;">Cash Settled (₹)</th>
+            <% if (hasTds) { %><th class="num" style="width: 10%;">TDS (₹)</th><% } %>
+            <% if (hasWriteOff) { %><th class="num" style="width: 10%;">Discount (₹)</th><% } %>
+            <th class="num" style="width: 15%;">Balance Due (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% allocations.forEach((item, index) => { %>
+            <tr>
+              <td><%= index + 1 %></td>
+              <td style="font-weight: 700; color: #0284c7;"><%= item.invoiceNo %></td>
+              <td><%= item.formattedDate %></td>
+              <td class="num"><%= item.invoiceTotal %></td>
+              <td class="num" style="font-weight: 600;"><%= item.allocatedAmount %></td>
+              <% if (hasTds) { %><td class="num"><%= item.tdsAmount %></td><% } %>
+              <% if (hasWriteOff) { %><td class="num"><%= item.writeOffAmount %></td><% } %>
+              <td class="num" style="font-weight: 600; color: <%= item.rawBalance <= 0 ? '#16a34a' : '#e11d48' %>;">
+                <%= item.rawBalance <= 0 ? '0.00 (PAID)' : item.currentInvoiceBalance %>
+              </td>
+            </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <!-- Amount Summary & Words -->
+    <table class="summary-section">
+      <tr>
+        <td class="words-box">
+          <div class="words-label">Amount Received In Words:</div>
+          <div class="words-value"><%= receipt.totalAmountInWords %></div>
+          <% if (receipt.notes) { %>
+            <div style="margin-top: 8px; font-size: 9.5px; color: #475569;">
+              <strong>Remarks:</strong> <%= receipt.notes %>
+            </div>
+          <% } %>
+        </td>
+        <td class="totals-box">
+          <div class="total-row">
+            <span>Settled Against Invoices:</span>
+            <strong>₹<%= receipt.allocatedAmount %></strong>
+          </div>
+          <% if (receipt.rawTds > 0) { %>
+            <div class="total-row" style="color: #0284c7;">
+              <span>TDS / Tax Deducted:</span>
+              <strong>₹<%= receipt.tdsAmount %></strong>
+            </div>
+          <% } %>
+          <% if (receipt.rawWriteOff > 0) { %>
+            <div class="total-row" style="color: #d97706;">
+              <span>Settlement Discount / Write-Off:</span>
+              <strong>₹<%= receipt.writeOffAmount %></strong>
+            </div>
+          <% } %>
+          <% if (receipt.rawUnallocated > 0) { %>
+            <div class="total-row" style="color: #16a34a;">
+              <span>Unallocated / Advance Retained:</span>
+              <strong>₹<%= receipt.unallocatedAmount %></strong>
+            </div>
+          <% } %>
+          <div class="total-row grand">
+            <span>Total Amount Received:</span>
+            <span>₹<%= receipt.totalAmount %></span>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Footer & Signatures -->
+    <table class="footer-section">
+      <tr>
+        <td class="notes-box">
+          <p><strong>Terms & Conditions:</strong></p>
+          <p>1. Payments received by Cheque / Draft / NEFT are subject to realization.</p>
+          <p>2. This receipt acknowledges receipt of money for the specified accounts only.</p>
+          <p>3. Please preserve this receipt for future reference.</p>
+        </td>
+        <td class="signatory-box">
+          <div class="signatory-title">For <%= company.name %></div>
+          <div class="signatory-line"></div>
+          <div class="signatory-sub">Authorized Signatory</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="disclaimer-bar">
+      This is a system-generated official payment receipt voucher generated on <%= generatedAt %>.
+    </div>
+  </div>
+</body>
+</html>
