@@ -2,44 +2,70 @@ const { Router } = require('express');
 const validate = require('../middlewares/validate');
 const {
     createReceiptSchema,
-    queryReceiptsSchema,
-    receiptIdParamSchema,
+    createVendorPaymentSchema,
+    applyCustomerAdvanceSchema,
+    queryPaymentsSchema,
+    paymentIdParamSchema,
     partyIdParamSchema,
     invoiceIdParamSchema
 } = require('../validation/payment.validation');
 const {
     createReceipt,
+    createVendorPayment,
+    applyCustomerAdvanceHandler,
+    getAvailableAdvancesHandler,
     getAllReceipts,
     getReceiptsMeta,
     getReceiptsSummary,
-    getReceiptById,
-    cancelReceiptHandler,
+    getAllVendorPayments,
+    getVendorPaymentsMeta,
+    getVendorPaymentsSummary,
+    getPaymentById,
+    cancelPaymentHandler,
+    getNextPaymentNumberHandler,
     getNextReceiptNumber,
     getUnpaidInvoices,
     getInvoicePaymentHistoryHandler,
-    getReceiptPDF
+    getPaymentPDF
 } = require('../controllers/payment.controller');
 
 const router = Router();
 
-// Summary Metrics across filtered receipts (decoupled from pagination)
-router.get(['/summary', '/receipts/summary'], validate(queryReceiptsSchema), getReceiptsSummary);
+// ==========================================
+// 1. Customer Advances & Knock-Off Endpoints
+// ==========================================
+router.get('/advances/:partyId', validate(partyIdParamSchema), getAvailableAdvancesHandler);
+router.post(['/:id/apply-advance', '/receipts/:id/apply-advance'], validate(applyCustomerAdvanceSchema), applyCustomerAdvanceHandler);
 
-// Metadata & Helpers
-router.get(['/pagination', '/receipts/pagination'], validate(queryReceiptsSchema), getReceiptsMeta);
-router.get(['/next-number', '/receipts/next-number'], getNextReceiptNumber);
+// ==========================================
+// 2. Vendor Payments (OUTWARD)
+// ==========================================
+router.get('/vendor-payments/summary', validate(queryPaymentsSchema), getVendorPaymentsSummary);
+router.get('/vendor-payments/pagination', validate(queryPaymentsSchema), getVendorPaymentsMeta);
+router.get('/vendor-payments', validate(queryPaymentsSchema), getAllVendorPayments);
+router.post('/vendor-payments', validate(createVendorPaymentSchema), createVendorPayment);
+
+// ==========================================
+// 3. Customer Receipts (INWARD) & Summaries
+// ==========================================
+router.get(['/summary', '/receipts/summary'], validate(queryPaymentsSchema), getReceiptsSummary);
+router.get(['/pagination', '/receipts/pagination'], validate(queryPaymentsSchema), getReceiptsMeta);
+router.get('/next-number', getNextPaymentNumberHandler);
+router.get('/receipts/next-number', getNextReceiptNumber);
 router.get(['/unpaid-invoices/:partyId', '/party/:partyId/unpaid-invoices'], validate(partyIdParamSchema), getUnpaidInvoices);
 router.get(['/invoice-history/:invoiceId', '/invoices/:invoiceId/history'], validate(invoiceIdParamSchema), getInvoicePaymentHistoryHandler);
 
-// Receipt PDF
-router.get(['/:id/pdf', '/receipts/:id/pdf'], validate(receiptIdParamSchema), getReceiptPDF);
+// ==========================================
+// 4. Common Document PDF & Cancellation
+// ==========================================
+router.get(['/:id/pdf', '/receipts/:id/pdf', '/vendor-payments/:id/pdf'], validate(paymentIdParamSchema), getPaymentPDF);
+router.post(['/:id/cancel', '/receipts/:id/cancel', '/vendor-payments/:id/cancel'], validate(paymentIdParamSchema), cancelPaymentHandler);
 
-// Receipt Actions
-router.post(['/:id/cancel', '/receipts/:id/cancel'], validate(receiptIdParamSchema), cancelReceiptHandler);
-
-// Core CRUD (Supports both /payments and /payments/receipts)
-router.get(['/', '/receipts'], validate(queryReceiptsSchema), getAllReceipts);
+// ==========================================
+// 5. Core CRUD Operations
+// ==========================================
+router.get(['/', '/receipts'], validate(queryPaymentsSchema), getAllReceipts);
 router.post(['/', '/receipts'], validate(createReceiptSchema), createReceipt);
-router.get(['/:id', '/receipts/:id'], validate(receiptIdParamSchema), getReceiptById);
+router.get(['/:id', '/receipts/:id', '/vendor-payments/:id'], validate(paymentIdParamSchema), getPaymentById);
 
 module.exports = router;
