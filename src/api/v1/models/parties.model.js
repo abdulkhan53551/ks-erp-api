@@ -328,6 +328,7 @@ const fetchAllParties = async (firmId, query) => {
                 'p.logo_url as logoUrl',
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
+                'p.credit_period_days',
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'p.created_at',
@@ -419,6 +420,7 @@ const fetchPartyById = async (partyId, firmId) => {
                 'logo_url as logoUrl',
                 'logo_public_id as logoPublicId',
                 'remarks',
+                'credit_period_days',
                 'status'
             )
             .where({
@@ -1659,7 +1661,8 @@ const fetchPartiesByName = async (firmId, search) => {
                 'id',
                 'party_code',
                 'legal_name',
-                'display_name'
+                'display_name',
+                'credit_period_days'
             )
             .where({
                 firm_id: firmId,
@@ -1703,6 +1706,7 @@ const fetchPartyDetails = async (partyId) => {
                 'pan_number',
                 'website',
                 'remarks',
+                'credit_period_days',
                 'status'
             )
             .where({ id: partyId, is_active: true })

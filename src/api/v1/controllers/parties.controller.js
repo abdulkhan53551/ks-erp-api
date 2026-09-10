@@ -264,6 +264,7 @@ const createParty = asyncHandler(async (req, res) => {
         logoUrl,
         logoPublicId,
         remarks,
+        creditPeriodDays,
         status
     } = req.body;
 
@@ -283,6 +284,7 @@ const createParty = asyncHandler(async (req, res) => {
         logo_url: logoUrl || null,
         logo_public_id: logoPublicId || null,
         remarks: remarks || null,
+        credit_period_days: Number(creditPeriodDays) || 0,
         status: status || 'ACTIVE'
     };
 
@@ -327,6 +329,7 @@ const updateParty = asyncHandler(async (req, res) => {
         logoUrl,
         logoPublicId,
         remarks,
+        creditPeriodDays,
         status
     } = req.body;
 
@@ -345,6 +348,7 @@ const updateParty = asyncHandler(async (req, res) => {
     if (logoUrl !== undefined) partyData.logo_url = logoUrl || null;
     if (logoPublicId !== undefined) partyData.logo_public_id = logoPublicId || null;
     if (remarks !== undefined) partyData.remarks = remarks || null;
+    if (creditPeriodDays !== undefined) partyData.credit_period_days = Number(creditPeriodDays) || 0;
     if (status !== undefined) partyData.status = status;
 
     // Check if logo is being replaced or removed and clean up previous Cloudinary asset
