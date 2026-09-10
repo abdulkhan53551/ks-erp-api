@@ -186,6 +186,17 @@ const createPartySchema = {
             .allow(null, "")
             .optional(),
         remarks: Joi.string().max(1000).allow(null, ""),
+        creditPeriodDays: Joi.number()
+            .integer()
+            .min(0)
+            .max(365)
+            .allow(null, '')
+            .default(0)
+            .messages({
+                "number.base": "Credit period must be a valid number.",
+                "number.min": "Credit period cannot be negative.",
+                "number.max": "Credit period cannot exceed 365 days."
+            }),
         status: Joi.string()
             .valid('ACTIVE', 'INACTIVE')
             .default('ACTIVE'),
