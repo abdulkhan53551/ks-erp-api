@@ -603,6 +603,40 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
             return 0;
         }
 
+        // Protective check: Guard against deleting parties with active invoices, bills, or payments
+        const hasInvoices = await trx('invoices')
+            .where({ party_id: partyId, firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasInvoices) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active invoices are associated with it.'
+            });
+        }
+
+        const hasVendorBills = await trx('vendor_bills')
+            .where({ party_id: partyId, firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasVendorBills) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active vendor bills are associated with it.'
+            });
+        }
+
+        const hasPayments = await trx('payments')
+            .where({ party_id: partyId, firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasPayments) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active payment transactions are associated with it.'
+            });
+        }
+
         if (isPermanentDelete) {
             // Fetch associated attachments before deleting
             const attachments = await trx('attachments')
@@ -670,6 +704,43 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
     const trx = await db.transaction();
     try {
         const { firmId = 0 } = getContext();
+
+        // Protective check: Guard against bulk deleting parties with active invoices, bills, or payments
+        const hasInvoices = await trx('invoices')
+            .whereIn('party_id', partyIds)
+            .andWhere({ firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasInvoices) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active invoices are associated with them.'
+            });
+        }
+
+        const hasVendorBills = await trx('vendor_bills')
+            .whereIn('party_id', partyIds)
+            .andWhere({ firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasVendorBills) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active vendor bills are associated with them.'
+            });
+        }
+
+        const hasPayments = await trx('payments')
+            .whereIn('party_id', partyIds)
+            .andWhere({ firm_id: firmId, is_active: true })
+            .first();
+
+        if (hasPayments) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active payment transactions are associated with them.'
+            });
+        }
 
         if (isPermanentDelete) {
             // Fetch party logos and attachments before deleting

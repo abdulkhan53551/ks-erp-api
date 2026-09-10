@@ -11,12 +11,21 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { amountToWords, formatAmount, toTitleCase } = require('../services/conversion');
 const { getBrowser } = require('./invoice.controller');
 const {
+    generateNextPaymentNumber,
     generateNextReceiptNumber,
     createReceiptTransaction,
+    createVendorPaymentTransaction,
+    applyCustomerAdvanceTransaction,
+    fetchAvailableAdvancesByParty,
+    cancelPaymentTransaction,
     cancelReceiptTransaction,
     fetchAllReceipts,
     fetchReceiptsMeta,
     fetchReceiptsSummary,
+    fetchAllVendorPayments,
+    fetchVendorPaymentsMeta,
+    fetchVendorPaymentsSummary,
+    fetchPaymentById,
     fetchReceiptById,
     fetchUnpaidInvoicesByParty,
     fetchInvoicePaymentHistory
@@ -24,7 +33,7 @@ const {
 const { fetchStates, fetchAllCities } = require('../models/masters.model');
 
 /**
- * Record a new customer payment receipt
+ * Record a new customer payment receipt (INWARD)
  */
 const createReceipt = asyncHandler(async (req, res) => {
     const result = await createReceiptTransaction(req.body);
@@ -38,7 +47,53 @@ const createReceipt = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get paginated list of receipts with filters
+ * Record a new vendor outward payment (OUTWARD)
+ */
+const createVendorPayment = asyncHandler(async (req, res) => {
+    const result = await createVendorPaymentTransaction(req.body);
+    return res.status(201).json(
+        new ApiResponse({
+            statusCode: 201,
+            data: result,
+            message: `Vendor payment voucher ${result.payment_no} created successfully.`
+        })
+    );
+});
+
+/**
+ * Apply unallocated customer advance balance to invoices
+ */
+const applyCustomerAdvanceHandler = asyncHandler(async (req, res) => {
+    const result = await applyCustomerAdvanceTransaction({
+        paymentId: req.params.id,
+        allocations: req.body.allocations
+    });
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: `Advance of ₹${result.appliedAmount} applied to invoices successfully. Remaining advance: ₹${result.remainingAdvance}.`
+        })
+    );
+});
+
+/**
+ * Get available unallocated advance payments for a party
+ */
+const getAvailableAdvancesHandler = asyncHandler(async (req, res) => {
+    const type = req.query.type?.toUpperCase() === 'OUTWARD' ? 'OUTWARD' : 'INWARD';
+    const advances = await fetchAvailableAdvancesByParty(req.params.partyId, type);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: advances,
+            message: advances.length ? 'Available advances fetched successfully.' : 'No unused advance balances for this party.'
+        })
+    );
+});
+
+/**
+ * Get paginated list of receipts with filters (INWARD)
  */
 const getAllReceipts = asyncHandler(async (req, res) => {
     const result = await fetchAllReceipts(req.query);
@@ -52,7 +107,7 @@ const getAllReceipts = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get receipts pagination metadata
+ * Get receipts pagination metadata (INWARD)
  */
 const getReceiptsMeta = asyncHandler(async (req, res) => {
     const result = await fetchReceiptsMeta(req.query);
@@ -66,7 +121,7 @@ const getReceiptsMeta = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get aggregate summary metrics across filtered receipts
+ * Get aggregate summary metrics across filtered receipts (INWARD)
  */
 const getReceiptsSummary = asyncHandler(async (req, res) => {
     const result = await fetchReceiptsSummary(req.query);
@@ -80,40 +135,103 @@ const getReceiptsSummary = asyncHandler(async (req, res) => {
 });
 
 /**
- * Get receipt details by ID with allocated invoices
+ * Get paginated list of vendor payments with filters (OUTWARD)
  */
-const getReceiptById = asyncHandler(async (req, res) => {
-    const receipt = await fetchReceiptById(req.params.id);
-    if (!receipt) {
-        throw new ApiError({ statusCode: 404, message: 'Payment receipt not found.' });
+const getAllVendorPayments = asyncHandler(async (req, res) => {
+    const result = await fetchAllVendorPayments(req.query);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: result.length ? 'Vendor payments fetched successfully.' : 'No vendor payments found.'
+        })
+    );
+});
+
+/**
+ * Get vendor payments pagination metadata (OUTWARD)
+ */
+const getVendorPaymentsMeta = asyncHandler(async (req, res) => {
+    const result = await fetchVendorPaymentsMeta(req.query);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Vendor payments pagination metadata fetched successfully.'
+        })
+    );
+});
+
+/**
+ * Get aggregate summary metrics across vendor payments (OUTWARD)
+ */
+const getVendorPaymentsSummary = asyncHandler(async (req, res) => {
+    const result = await fetchVendorPaymentsSummary(req.query);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Vendor payments summary metrics fetched successfully.'
+        })
+    );
+});
+
+/**
+ * Get payment details by ID (polymorphic: customer receipt or vendor payment)
+ */
+const getPaymentById = asyncHandler(async (req, res) => {
+    const payment = await fetchPaymentById(req.params.id);
+    if (!payment) {
+        throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
     }
 
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
-            data: receipt,
-            message: 'Receipt details fetched successfully.'
+            data: payment,
+            message: 'Payment details fetched successfully.'
         })
     );
 });
 
+const getReceiptById = getPaymentById;
+
 /**
- * Cancel a payment receipt
+ * Cancel a payment (works for both INWARD and OUTWARD)
  */
-const cancelReceiptHandler = asyncHandler(async (req, res) => {
-    const result = await cancelReceiptTransaction(req.params.id);
+const cancelPaymentHandler = asyncHandler(async (req, res) => {
+    const result = await cancelPaymentTransaction(req.params.id);
+    const targetType = result.paymentType === 'OUTWARD' ? 'Vendor payment' : 'Receipt';
+    const targetEntity = result.paymentType === 'OUTWARD' ? 'Vendor bill' : 'Invoice';
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
             data: result,
-            message: `Receipt ${result.paymentNo} cancelled successfully. Invoice balances and payment statuses have been rolled back.`
+            message: `${targetType} ${result.paymentNo} cancelled successfully. ${targetEntity} balances and payment statuses have been rolled back.`
         })
     );
 });
 
+const cancelReceiptHandler = cancelPaymentHandler;
+
 /**
- * Get next receipt number for preview
+ * Get next sequential payment number (supports type query: INWARD or OUTWARD)
  */
+const getNextPaymentNumberHandler = asyncHandler(async (req, res) => {
+    const { firmId = 0 } = getContext();
+    const type = req.query.type?.toUpperCase() === 'OUTWARD' ? 'OUTWARD' : 'INWARD';
+    const nextNo = await generateNextPaymentNumber(firmId, type);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { nextNumber: nextNo, paymentType: type },
+            message: `Next ${type} number generated.`
+        })
+    );
+});
+
 const getNextReceiptNumber = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
     const nextNo = await generateNextReceiptNumber(firmId);
@@ -155,13 +273,13 @@ const getInvoicePaymentHistoryHandler = asyncHandler(async (req, res) => {
 });
 
 /**
- * Prepare template data for Receipt PDF
+ * Prepare template data for PDF (handles both INWARD receipt and OUTWARD voucher)
  */
-const prepareReceiptPdfData = async (receiptId) => {
+const preparePaymentPdfData = async (paymentId) => {
     const { firmId = 0 } = getContext();
-    const receipt = await fetchReceiptById(receiptId);
-    if (!receipt) {
-        throw new ApiError({ statusCode: 404, message: 'Payment receipt not found.' });
+    const payment = await fetchPaymentById(paymentId);
+    if (!payment) {
+        throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
     }
 
     // Load master mappings for cities & states
@@ -201,7 +319,7 @@ const prepareReceiptPdfData = async (receiptId) => {
     const companyAddressParts = [firm?.address, companyCity, companyState, firm?.pincode].filter(Boolean);
     const companyFullAddress = companyAddressParts.join(', ');
 
-    // Fetch customer party details
+    // Fetch party details
     const party = await db('parties as p')
         .select(
             'p.id',
@@ -218,21 +336,20 @@ const prepareReceiptPdfData = async (receiptId) => {
         .leftJoin('party_branches as pb', function () {
             this.on('p.id', '=', 'pb.party_id').andOn('pb.is_head_office', '=', db.raw('?', [true]));
         })
-        .where({ 'p.id': receipt.partyId })
+        .where({ 'p.id': payment.partyId })
         .first();
 
-    const customerCity = cityMap[party?.city_id]?.name || '';
-    const customerState = toTitleCase(stateMap[party?.state_id]?.name || '');
-    const customerAddressParts = [party?.address, customerCity, customerState, party?.pincode].filter(Boolean);
-    const customerFullAddress = customerAddressParts.join(', ');
+    const partyCity = cityMap[party?.city_id]?.name || '';
+    const partyState = toTitleCase(stateMap[party?.state_id]?.name || '');
+    const partyAddressParts = [party?.address, partyCity, partyState, party?.pincode].filter(Boolean);
+    const partyFullAddress = partyAddressParts.join(', ');
 
-    // Process allocations
     let hasTds = false;
     let hasWriteOff = false;
     let totalTds = 0;
     let totalWriteOff = 0;
 
-    const formattedAllocations = (receipt.allocations || []).map(item => {
+    const formattedAllocations = (payment.allocations || []).map(item => {
         const tds = Number(item.tdsAmount || 0);
         const writeOff = Number(item.writeOffAmount || 0);
         if (tds > 0) hasTds = true;
@@ -241,19 +358,25 @@ const prepareReceiptPdfData = async (receiptId) => {
         totalWriteOff += writeOff;
 
         return {
-            invoiceNo: item.invoiceNo,
-            formattedDate: item.invoiceDate ? moment(item.invoiceDate).format('DD MMM YYYY') : '',
-            invoiceTotal: formatAmount(item.invoiceTotal),
+            invoiceNo: item.invoiceNo || item.billNo,
+            billNo: item.billNo || item.invoiceNo,
+            formattedDate: item.invoiceDate || item.billDate ? moment(item.invoiceDate || item.billDate).format('DD MMM YYYY') : '',
+            invoiceTotal: formatAmount(item.invoiceTotal || item.billTotal || 0),
+            billTotal: formatAmount(item.billTotal || item.invoiceTotal || 0),
             allocatedAmount: formatAmount(item.allocatedAmount),
             tdsAmount: formatAmount(tds),
             writeOffAmount: formatAmount(writeOff),
             writeOffReason: item.writeOffReason || '',
-            rawBalance: Number(item.currentInvoiceBalance || 0),
-            currentInvoiceBalance: formatAmount(item.currentInvoiceBalance)
+            rawBalance: Number(item.currentInvoiceBalance !== undefined ? item.currentInvoiceBalance : item.currentBillBalance || 0),
+            currentInvoiceBalance: formatAmount(item.currentInvoiceBalance || 0),
+            currentBillBalance: formatAmount(item.currentBillBalance || 0)
         };
     });
 
+    const isOutward = payment.paymentType === 'OUTWARD';
+
     return {
+        isOutward,
         company: {
             name: firm?.name || 'KS Engineering Works',
             tradeName: firm?.tradeName || '',
@@ -266,26 +389,52 @@ const prepareReceiptPdfData = async (receiptId) => {
             website: firm?.website || ''
         },
         customer: {
-            name: receipt.customerName || party?.display_name || party?.legal_name || 'Valued Customer',
+            name: payment.partyName || party?.display_name || party?.legal_name || 'Valued Customer',
             gstin: party?.gstin || '',
-            address: customerFullAddress,
+            address: partyFullAddress,
+            phone: party?.phone || ''
+        },
+        vendor: {
+            name: payment.partyName || party?.display_name || party?.legal_name || 'Vendor',
+            gstin: party?.gstin || '',
+            address: partyFullAddress,
             phone: party?.phone || ''
         },
         receipt: {
-            paymentNo: receipt.paymentNo,
-            formattedDate: moment(receipt.paymentDate).format('DD MMM YYYY').toUpperCase(),
-            formattedReferenceDate: receipt.referenceDate ? moment(receipt.referenceDate).format('DD MMM YYYY') : '',
-            status: receipt.status,
-            paymentMode: receipt.paymentMode || 'Direct',
-            referenceNo: receipt.referenceNo || '',
-            bankName: receipt.bankName || '',
-            createdByName: receipt.createdByName || '',
-            notes: receipt.notes || '',
-            totalAmount: formatAmount(receipt.totalAmount),
-            totalAmountInWords: amountToWords(receipt.totalAmount || 0),
-            allocatedAmount: formatAmount(receipt.allocatedAmount),
-            rawUnallocated: Number(receipt.unallocatedAmount || 0),
-            unallocatedAmount: formatAmount(receipt.unallocatedAmount),
+            paymentNo: payment.paymentNo,
+            formattedDate: moment(payment.paymentDate).format('DD MMM YYYY').toUpperCase(),
+            formattedReferenceDate: payment.referenceDate ? moment(payment.referenceDate).format('DD MMM YYYY') : '',
+            status: payment.status,
+            paymentMode: payment.paymentMode || 'Direct',
+            referenceNo: payment.referenceNo || '',
+            bankName: payment.bankName || '',
+            createdByName: payment.createdByName || '',
+            notes: payment.notes || '',
+            totalAmount: formatAmount(payment.totalAmount),
+            totalAmountInWords: amountToWords(payment.totalAmount || 0),
+            allocatedAmount: formatAmount(payment.allocatedAmount),
+            rawUnallocated: Number(payment.unallocatedAmount || 0),
+            unallocatedAmount: formatAmount(payment.unallocatedAmount),
+            rawTds: totalTds,
+            tdsAmount: formatAmount(totalTds),
+            rawWriteOff: totalWriteOff,
+            writeOffAmount: formatAmount(totalWriteOff)
+        },
+        payment: {
+            paymentNo: payment.paymentNo,
+            formattedDate: moment(payment.paymentDate).format('DD MMM YYYY').toUpperCase(),
+            formattedReferenceDate: payment.referenceDate ? moment(payment.referenceDate).format('DD MMM YYYY') : '',
+            status: payment.status,
+            paymentMode: payment.paymentMode || 'Direct',
+            referenceNo: payment.referenceNo || '',
+            bankName: payment.bankName || '',
+            createdByName: payment.createdByName || '',
+            notes: payment.notes || '',
+            totalAmount: formatAmount(payment.totalAmount),
+            totalAmountInWords: amountToWords(payment.totalAmount || 0),
+            allocatedAmount: formatAmount(payment.allocatedAmount),
+            rawUnallocated: Number(payment.unallocatedAmount || 0),
+            unallocatedAmount: formatAmount(payment.unallocatedAmount),
             rawTds: totalTds,
             tdsAmount: formatAmount(totalTds),
             rawWriteOff: totalWriteOff,
@@ -298,12 +447,15 @@ const prepareReceiptPdfData = async (receiptId) => {
     };
 };
 
+const prepareReceiptPdfData = preparePaymentPdfData;
+
 /**
- * Generate & download receipt voucher PDF
+ * Generate & download payment voucher / receipt PDF
  */
-const getReceiptPDF = asyncHandler(async (req, res) => {
-    const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/receipt/`, 'receipt-template.ejs');
-    const pdfData = await prepareReceiptPdfData(req.params.id);
+const getPaymentPDF = asyncHandler(async (req, res) => {
+    const pdfData = await preparePaymentPdfData(req.params.id);
+    const templateFileName = pdfData.isOutward ? 'payment-voucher-template.ejs' : 'receipt-template.ejs';
+    const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/receipt/`, templateFileName);
     const filledHtml = await ejs.renderFile(templatePath, pdfData);
 
     const browser = await getBrowser(puppeteer);
@@ -324,7 +476,8 @@ const getReceiptPDF = asyncHandler(async (req, res) => {
             }
         });
 
-        const fileName = `Receipt-${pdfData.receipt.paymentNo}.pdf`;
+        const prefix = pdfData.isOutward ? 'Payment-Voucher' : 'Receipt';
+        const fileName = `${prefix}-${pdfData.payment.paymentNo}.pdf`;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
         res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -336,16 +489,29 @@ const getReceiptPDF = asyncHandler(async (req, res) => {
     }
 });
 
+const getReceiptPDF = getPaymentPDF;
+
 module.exports = {
     createReceipt,
+    createVendorPayment,
+    applyCustomerAdvanceHandler,
+    getAvailableAdvancesHandler,
     getAllReceipts,
     getReceiptsMeta,
     getReceiptsSummary,
+    getAllVendorPayments,
+    getVendorPaymentsMeta,
+    getVendorPaymentsSummary,
+    getPaymentById,
     getReceiptById,
+    cancelPaymentHandler,
     cancelReceiptHandler,
+    getNextPaymentNumberHandler,
     getNextReceiptNumber,
     getUnpaidInvoices,
     getInvoicePaymentHistoryHandler,
+    preparePaymentPdfData,
     prepareReceiptPdfData,
+    getPaymentPDF,
     getReceiptPDF
 };
