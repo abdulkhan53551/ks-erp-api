@@ -14,6 +14,7 @@ const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
 const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
 const { getContext } = require("../helpers/requestContext");
+const { getPaymentStatusIds } = require("../models/payment.model");
 const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
@@ -79,6 +80,9 @@ const createInvoice = asyncHandler(async (req, res) => {
     }
 
     // Create invoice
+    const statusMap = await getPaymentStatusIds();
+    const isPaid = Number(invoice.paymentStatusId) === statusMap['PAID'];
+
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo,
         invoice_date: invoice.invoiceDate,
@@ -100,6 +104,8 @@ const createInvoice = asyncHandler(async (req, res) => {
         sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
         igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
         total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        paid_amount: isPaid ? new Decimal(invoice.total).toDecimalPlaces(2).toNumber() : 0.00,
+        balance_amount: isPaid ? 0.00 : new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId,
@@ -204,6 +210,53 @@ const updateInvoice = asyncHandler(async (req, res) => {
         })
     }
 
+    // Fetch existing invoice to verify payment guards and state
+    const existingInvoice = await fetchInvoiceById(invoiceId);
+    if (!existingInvoice) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+    }
+
+    const paidAmount = new Decimal(existingInvoice.paid_amount || 0);
+    const newTotal = new Decimal(invoice.total || 0);
+
+    // Guard 1: Cannot reduce invoice total below already received payment
+    if (paidAmount.gt(0) && newTotal.lt(paidAmount.minus(0.01))) {
+        const excess = paidAmount.minus(newTotal);
+        throw new ApiError({
+            statusCode: 422,
+            message: `Cannot reduce invoice ${existingInvoice.invoice_no} total to ₹${newTotal.toFixed(2)} because ₹${paidAmount.toFixed(2)} has already been received against it. Please cancel or adjust the associated Payment Receipt before modifying this invoice.`,
+            errors: [{
+                invoiceNo: existingInvoice.invoice_no,
+                attemptedTotal: newTotal.toNumber(),
+                alreadyPaid: paidAmount.toNumber(),
+                excessAmount: excess.toNumber()
+            }]
+        });
+    }
+
+    // Guard 2: Cannot change customer party once payments exist
+    if (paidAmount.gt(0)) {
+        if (invoice.partyId !== undefined && Number(invoice.partyId) !== Number(existingInvoice.party_id)) {
+            throw new ApiError({
+                statusCode: 422,
+                message: `Cannot change customer on invoice ${existingInvoice.invoice_no} because payments totaling ₹${paidAmount.toFixed(2)} have already been recorded against it.`
+            });
+        }
+    }
+
+    // Recalculate balance and payment status
+    const newBalance = newTotal.minus(paidAmount);
+    const cleanBalance = newBalance.lte(0.01) ? 0 : newBalance.toNumber();
+    const statusMap = await getPaymentStatusIds();
+    let autoPaymentStatusId = invoice.paymentStatusId;
+    if (cleanBalance <= 0) {
+        autoPaymentStatusId = statusMap['PAID'] || invoice.paymentStatusId;
+    } else if (paidAmount.gt(0)) {
+        autoPaymentStatusId = statusMap['PARTIAL'] || invoice.paymentStatusId;
+    } else {
+        autoPaymentStatusId = statusMap['PENDING'] || invoice.paymentStatusId;
+    }
+
     // Update invoice
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo,
@@ -225,10 +278,12 @@ const updateInvoice = asyncHandler(async (req, res) => {
         cgst: new Decimal(invoice.cgst).toDecimalPlaces(2).toNumber(),
         sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
         igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
-        total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        total: newTotal.toDecimalPlaces(2).toNumber(),
+        paid_amount: paidAmount.toNumber(),
+        balance_amount: cleanBalance,
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
-        payment_status_id: invoice.paymentStatusId,
+        payment_status_id: autoPaymentStatusId,
         payment_mode_id: invoice.paymentModeId,
         status: 'Final',
         firm_id: firmId
@@ -439,6 +494,19 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
+    // Guard: Check if invoice has active payments attached
+    const invoice = await fetchInvoiceById(invoiceId);
+    if (!invoice) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
+    }
+
+    if (Number(invoice.paid_amount || 0) > 0) {
+        throw new ApiError({
+            statusCode: 422,
+            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipts totaling ₹${Number(invoice.paid_amount).toFixed(2)} are attached to it. Please cancel or adjust the payment receipts first.`
+        });
+    }
+
     // Delete invoice by ID
     const deleted = await deleteInvoiceById(invoiceId, permanent);
 
@@ -481,6 +549,20 @@ const restoreInvoice = asyncHandler(async (req, res) => {
 const bulkDeleteInvoices = asyncHandler(async (req, res) => {
     const { ids = [], isPermanentDelete = false } = req.body;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    // Guard: Check if any target invoice has active payments
+    const paidInvoices = await db('invoices')
+        .select('invoice_no', 'paid_amount')
+        .whereIn('id', ids)
+        .where('paid_amount', '>', 0);
+
+    if (paidInvoices.length > 0) {
+        const list = paidInvoices.map(i => `${i.invoice_no} (₹${Number(i.paid_amount).toFixed(2)})`).join(', ');
+        throw new ApiError({
+            statusCode: 422,
+            message: `Cannot delete invoice(s) with active payment receipts: ${list}. Please cancel the payment receipts first.`
+        });
+    }
 
     const affectedRows = await bulkDeleteInvoicesModel(ids, permanent);
 
@@ -695,7 +777,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         company: {
             logo: invoice.company_logo,
             name: invoice.company_name,
-            gstNo: invoice.gst_number,
+            gstNo: invoice.firm_gstin || '',
             address: companyAddress,
             mobile: invoice.company_phone_number,
             email: invoice.company_email
@@ -1155,5 +1237,6 @@ module.exports = {
     getNextInvoiceNumber,
     generateInvoicePDF,
     prepareInvoicePdfJsonData,
-    getInvoicePdf
+    getInvoicePdf,
+    getBrowser
 };

@@ -13,6 +13,7 @@ const partyRoutes = require('./party.routes');
 const uploadRoutes = require('./upload.routes');
 const attachmentRoutes = require('./attachment.routes');
 const productRoutes = require('./product.routes');
+const paymentRoutes = require('./payment.routes');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
 
@@ -45,6 +46,7 @@ router.use('/invoice', invoiceRoutes);
 router.use('/parties', partyRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/attachments', attachmentRoutes);
+router.use('/payments', paymentRoutes);
 
 module.exports = router;
 // exports.products = productRoutes;
