@@ -23,8 +23,8 @@ function patchKnex(knex) {
           ...record,
           created_at: record.created_at || now,
           updated_at: record.updated_at || now,
-          created_by: record.created_by || userId,
-          updated_by: record.updated_by || userId,
+          created_by: record.created_by || (userId ? userId : null),
+          updated_by: record.updated_by || (userId ? userId : null),
           is_active: record.is_active !== undefined ? record.is_active : true,
         }));
       } else {
@@ -32,8 +32,8 @@ function patchKnex(knex) {
           ...data,
           created_at: data.created_at || now,
           updated_at: data.updated_at || now,
-          created_by: data.created_by || userId,
-          updated_by: data.updated_by || userId,
+          created_by: data.created_by || (userId ? userId : null),
+          updated_by: data.updated_by || (userId ? userId : null),
           is_active: data.is_active !== undefined ? data.is_active : true,
         };
       }
@@ -55,13 +55,13 @@ function patchKnex(knex) {
         data = {
           ...data,
           updated_at: now,
-          updated_by: userId,
+          updated_by: data.updated_by !== undefined ? data.updated_by : (userId ? userId : null),
         };
 
         // If soft-deleting (moving to trash)
         if (data.is_active === false && data.deleted_at === undefined) {
           data.deleted_at = now;
-          data.deleted_by = userId;
+          data.deleted_by = data.deleted_by !== undefined ? data.deleted_by : (userId ? userId : null);
         }
 
         // If restoring from trash

@@ -477,8 +477,17 @@ const insertParty = async (data, partyRoleIds = []) => {
 
     const trx = await db.transaction();
     try {
+        const {
+            address: branchAddress,
+            city_id: branchCityId,
+            state_id: branchStateId,
+            pincode: branchPincode,
+            country: branchCountry,
+            ...partyData
+        } = data;
+
         const [createdParty] = await trx('parties')
-            .insert(data)
+            .insert(partyData)
             .returning('id');
 
         const partyId = createdParty?.id || createdParty;
@@ -486,6 +495,28 @@ const insertParty = async (data, partyRoleIds = []) => {
         if (partyRoleIds && partyRoleIds.length > 0) {
             await insertPartyRoleMappings(partyId, partyRoleIds, trx);
         }
+
+        // Auto-create default "Head Office" branch with address if provided
+        const defaultState = branchStateId 
+            ? await trx('state').where({ id: branchStateId }).first()
+            : (await trx('state').whereILike('name', '%MAHARASHTRA%').first() || await trx('state').first());
+        await trx('party_branches').insert({
+            firm_id: partyData.firm_id,
+            party_id: partyId,
+            branch_name: 'Head Office',
+            branch_code: partyData.party_code ? `${partyData.party_code}-HO` : null,
+            gstin: partyData.gstin || null,
+            state_id: defaultState?.id || 12,
+            address: branchAddress || null,
+            city_id: branchCityId || null,
+            pincode: branchPincode ? String(branchPincode) : null,
+            country: branchCountry || 'India',
+            is_head_office: true,
+            is_default: true,
+            email: partyData.email || null,
+            mobile: partyData.mobile || null,
+            is_active: true
+        });
 
         await trx.commit();
         return partyId;
@@ -582,7 +613,7 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
             await trx('party_role_mapping').where({ party_id: partyId }).del();
             await trx('party_bank_accounts').where({ party_id: partyId }).del();
             await trx('party_contacts').where({ party_id: partyId }).del();
-            await trx('party_addresses').where({ party_id: partyId }).del();
+            await trx('party_branches').where({ party_id: partyId }).del();
             const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).del();
 
             await trx.commit();
@@ -606,7 +637,7 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
         await trx('attachments').where({ entity_type: 'PARTY', entity_id: partyId }).update({ is_active: false });
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: false });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: false });
-        await trx('party_addresses').where({ party_id: partyId }).update({ is_active: false });
+        await trx('party_branches').where({ party_id: partyId }).update({ is_active: false });
         const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: false });
 
         await trx.commit();
@@ -656,7 +687,7 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
             await trx('party_role_mapping').whereIn('party_id', partyIds).del();
             await trx('party_bank_accounts').whereIn('party_id', partyIds).del();
             await trx('party_contacts').whereIn('party_id', partyIds).del();
-            await trx('party_addresses').whereIn('party_id', partyIds).del();
+            await trx('party_branches').whereIn('party_id', partyIds).del();
             const affectedRows = await trx('parties')
                 .whereIn('id', partyIds)
                 .andWhere({ firm_id: firmId })
@@ -685,7 +716,7 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
         await trx('attachments').where('entity_type', 'PARTY').whereIn('entity_id', partyIds).update({ is_active: false });
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: false });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: false });
-        await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: false });
+        await trx('party_branches').whereIn('party_id', partyIds).update({ is_active: false });
         const affectedRows = await trx('parties')
             .whereIn('id', partyIds)
             .andWhere({ firm_id: firmId })
@@ -737,7 +768,7 @@ const restorePartyMaster = async (partyId) => {
         await trx('attachments').where({ entity_type: 'PARTY', entity_id: partyId }).update({ is_active: true });
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: true });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: true });
-        await trx('party_addresses').where({ party_id: partyId }).update({ is_active: true });
+        await trx('party_branches').where({ party_id: partyId }).update({ is_active: true });
         const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: true });
 
         await trx.commit();
@@ -767,7 +798,7 @@ const bulkRestoreParties = async (partyIds = []) => {
         await trx('attachments').where('entity_type', 'PARTY').whereIn('entity_id', partyIds).update({ is_active: true });
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: true });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: true });
-        await trx('party_addresses').whereIn('party_id', partyIds).update({ is_active: true });
+        await trx('party_branches').whereIn('party_id', partyIds).update({ is_active: true });
         const affectedRows = await trx('parties')
             .whereIn('id', partyIds)
             .andWhere({ firm_id: firmId, is_active: false })
@@ -790,171 +821,313 @@ const bulkRestoreParties = async (partyIds = []) => {
     }
 };
 
-// Fetch all addresses for a given party
-const fetchAllPartyAddresses = async (partyId) => {
+// ==================== PARTY BRANCHES ====================
+
+// Fetch all branches for a given party
+const fetchAllPartyBranches = async (partyId) => {
     try {
-        const partyAddresses = await db('party_addresses AS PA')
-            .leftJoin('address_types AS AT', 'PA.address_type_id', 'AT.id')
-            .leftJoin('parties as P', 'P.id', 'PA.party_id')
+        const { firmId = 0 } = getContext();
+
+        const branches = await db('party_branches AS PB')
+            .leftJoin('city AS C', 'PB.city_id', 'C.id')
+            .leftJoin('state AS S', 'PB.state_id', 'S.id')
             .select(
-                'PA.id',
-                'PA.party_id',
-                'PA.address_type_id',
-                'AT.code AS address_type_code',
-                'AT.name AS address_type_name',
-                'PA.address',
-                'PA.city_id',
-                'PA.state_id',
-                'PA.country',
-                'PA.pincode'
+                'PB.id',
+                'PB.party_id as partyId',
+                'PB.branch_name as branchName',
+                'PB.branch_code as branchCode',
+                'PB.gstin',
+                'PB.address',
+                'PB.city_id as cityId',
+                'C.name as cityName',
+                'PB.state_id as stateId',
+                'S.name as stateName',
+                'PB.pincode',
+                'PB.country',
+                'PB.is_head_office as isHeadOffice',
+                'PB.is_default as isDefault',
+                'PB.email',
+                'PB.mobile',
+                'PB.remarks',
+                'PB.is_active as isActive',
+                'PB.created_at as createdAt',
+                'PB.updated_at as updatedAt'
             )
             .where({
-                'PA.party_id': partyId,
-                'PA.is_active': true,
-                'P.is_active': true
+                'PB.party_id': partyId,
+                'PB.firm_id': firmId,
+                'PB.is_active': true
             })
-            .orderBy('PA.id', 'asc');
+            .orderBy('PB.is_default', 'desc')
+            .orderBy('PB.id', 'asc');
 
-        return partyAddresses;
+        for (const branch of branches) {
+            branch.billingAddress = {
+                id: branch.id,
+                partyId: branch.partyId,
+                branchId: branch.id,
+                address: branch.address || '',
+                cityId: branch.cityId,
+                cityName: branch.cityName,
+                stateId: branch.stateId,
+                stateName: branch.stateName,
+                pincode: branch.pincode || '',
+                country: branch.country || 'India'
+            };
+            branch.shippingAddress = branch.billingAddress;
+            branch.addresses = [branch.billingAddress];
+        }
 
+        return branches;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while fetching party addresses.'
+            message: 'Something went wrong while fetching party branches.'
         });
     }
 };
 
-// Fetch party address by ID for a given party
-const fetchPartyAddressById = async (partyAddressId, partyId) => {
+// Fetch party branch by ID for a given party
+const fetchPartyBranchById = async (branchId, partyId) => {
     try {
-        const partyAddress = await db('party_addresses AS PA')
-            .leftJoin('address_types AS AT', 'PA.address_type_id', 'AT.id')
-            .leftJoin('parties as P', 'P.id', 'PA.party_id')
+        const { firmId = 0 } = getContext();
+
+        const branch = await db('party_branches AS PB')
+            .leftJoin('city AS C', 'PB.city_id', 'C.id')
+            .leftJoin('state AS S', 'PB.state_id', 'S.id')
             .select(
-                'PA.id',
-                'PA.party_id',
-                'PA.address_type_id',
-                'AT.code AS address_type_code',
-                'AT.name AS address_type_name',
-                'PA.address',
-                'PA.city_id',
-                'PA.state_id',
-                'PA.country',
-                'PA.pincode'
+                'PB.id',
+                'PB.party_id as partyId',
+                'PB.branch_name as branchName',
+                'PB.branch_code as branchCode',
+                'PB.gstin',
+                'PB.address',
+                'PB.city_id as cityId',
+                'C.name as cityName',
+                'PB.state_id as stateId',
+                'S.name as stateName',
+                'PB.pincode',
+                'PB.country',
+                'PB.is_head_office as isHeadOffice',
+                'PB.is_default as isDefault',
+                'PB.email',
+                'PB.mobile',
+                'PB.remarks',
+                'PB.is_active as isActive',
+                'PB.created_at as createdAt',
+                'PB.updated_at as updatedAt'
             )
             .where({
-                'PA.id': partyAddressId,
-                'PA.party_id': partyId,
-                'PA.is_active': true,
-                'P.is_active': true
+                'PB.id': branchId,
+                'PB.party_id': partyId,
+                'PB.firm_id': firmId,
+                'PB.is_active': true
             })
             .first();
 
-        return partyAddress;
+        if (!branch) return null;
 
+        branch.billingAddress = {
+            id: branch.id,
+            partyId: branch.partyId,
+            branchId: branch.id,
+            address: branch.address || '',
+            cityId: branch.cityId,
+            cityName: branch.cityName,
+            stateId: branch.stateId,
+            stateName: branch.stateName,
+            pincode: branch.pincode || '',
+            country: branch.country || 'India'
+        };
+        branch.shippingAddress = branch.billingAddress;
+        branch.addresses = [branch.billingAddress];
+
+        return branch;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while fetching party address.'
+            message: 'Something went wrong while fetching party branch.'
         });
     }
 };
 
-// Insert party address
-const insertPartyAddress = async (data) => {
+// Insert party branch
+const insertPartyBranch = async (data) => {
     try {
-        const [partyAddressId] = await db('party_addresses')
-            .insert(data)
-            .returning('id');
+        const { firmId = 0 } = getContext();
+        const branchData = {
+            firm_id: firmId,
+            party_id: data.partyId,
+            branch_name: data.branchName,
+            branch_code: data.branchCode || null,
+            gstin: data.gstin || null,
+            state_id: data.stateId,
+            address: data.address || null,
+            city_id: data.cityId || null,
+            pincode: data.pincode ? String(data.pincode) : null,
+            country: data.country || 'India',
+            is_head_office: data.isHeadOffice || false,
+            is_default: data.isDefault || false,
+            email: data.email || null,
+            mobile: data.mobile || null,
+            remarks: data.remarks || null
+        };
 
-        return partyAddressId?.id || partyAddressId;
+        return await db.transaction(async (trx) => {
+            if (branchData.is_default) {
+                await trx('party_branches')
+                    .where({ party_id: data.partyId, firm_id: firmId })
+                    .update({ is_default: false });
+            } else {
+                const existingCount = await trx('party_branches')
+                    .where({ party_id: data.partyId, firm_id: firmId, is_active: true })
+                    .count('* as total')
+                    .first();
+                if (parseInt(existingCount?.total || 0) === 0) {
+                    branchData.is_default = true;
+                }
+            }
 
-    } catch (error) {
-        if (error.code === '23503') { // Foreign key violation
-            throw new ApiError({
-                statusCode: 400,
-                message: 'Invalid party, address type, city, or state.'
-            });
-        }
+            const [created] = await trx('party_branches')
+                .insert(branchData)
+                .returning('id');
 
-        if (error.code === '23505') { // Unique violation
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This party address already exists.'
-            });
-        }
-
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Something went wrong while creating party address.'
+            return created?.id || created;
         });
-    }
-};
-
-// Update party address
-const updatePartyAddressMaster = async (partyAddressId, data) => {
-    try {
-        const affectedRows = await db('party_addresses')
-            .update(data)
-            .where({ id: partyAddressId, is_active: true });
-
-        return affectedRows;
-
-    } catch (error) {
-        if (error.code === '23503') { // Foreign key violation
-            throw new ApiError({
-                statusCode: 400,
-                message: 'Invalid party, address type, city, or state.'
-            });
-        }
-
-        if (error.code === '23505') { // Unique violation
-            throw new ApiError({
-                statusCode: 409,
-                message: 'This party address already exists.'
-            });
-        }
-
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Something went wrong while updating party address data.'
-        });
-    }
-};
-
-// Delete party address
-const deletePartyAddressMaster = async (partyAddressId, partyId, isPermanentDelete = false) => {
-    try {
-        if (isPermanentDelete) {
-            return await db('party_addresses')
-                .where({
-                    id: partyAddressId,
-                    party_id: partyId
-                })
-                .del();
-        }
-
-        return await db('party_addresses')
-            .where({
-                id: partyAddressId,
-                party_id: partyId
-            })
-            .update({
-                is_active: false
-            });
-
     } catch (error) {
         if (error.code === '23503') {
             throw new ApiError({
-                statusCode: 409,
-                message: 'Party address cannot be deleted because it is already in use.'
+                statusCode: 400,
+                message: 'Invalid party, city, or state.'
             });
         }
-
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while deleting party address.'
+            message: 'Something went wrong while creating party branch.'
+        });
+    }
+};
+
+// Update party branch
+const updatePartyBranchById = async (branchId, partyId, data) => {
+    try {
+        const { firmId = 0 } = getContext();
+        const updateData = {};
+        if (data.branchName !== undefined) updateData.branch_name = data.branchName;
+        if (data.branchCode !== undefined) updateData.branch_code = data.branchCode;
+        if (data.gstin !== undefined) updateData.gstin = data.gstin;
+        if (data.stateId !== undefined) updateData.state_id = data.stateId;
+        if (data.address !== undefined) updateData.address = data.address;
+        if (data.cityId !== undefined) updateData.city_id = data.cityId;
+        if (data.pincode !== undefined) updateData.pincode = data.pincode ? String(data.pincode) : null;
+        if (data.country !== undefined) updateData.country = data.country;
+        if (data.isHeadOffice !== undefined) updateData.is_head_office = data.isHeadOffice;
+        if (data.isDefault !== undefined) updateData.is_default = data.isDefault;
+        if (data.email !== undefined) updateData.email = data.email;
+        if (data.mobile !== undefined) updateData.mobile = data.mobile;
+        if (data.remarks !== undefined) updateData.remarks = data.remarks;
+
+        return await db.transaction(async (trx) => {
+            if (updateData.is_default) {
+                await trx('party_branches')
+                    .where({ party_id: partyId, firm_id: firmId })
+                    .andWhereNot({ id: branchId })
+                    .update({ is_default: false });
+            }
+
+            const affected = await trx('party_branches')
+                .where({ id: branchId, party_id: partyId, firm_id: firmId, is_active: true })
+                .update(updateData);
+
+            return affected;
+        });
+    } catch (error) {
+        if (error.code === '23503') {
+            throw new ApiError({
+                statusCode: 400,
+                message: 'Invalid state, city, or party.'
+            });
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while updating party branch.'
+        });
+    }
+};
+
+// Set default party branch
+const setDefaultPartyBranch = async (branchId, partyId) => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return await db.transaction(async (trx) => {
+            await trx('party_branches')
+                .where({ party_id: partyId, firm_id: firmId })
+                .update({ is_default: false });
+
+            const affected = await trx('party_branches')
+                .where({ id: branchId, party_id: partyId, firm_id: firmId, is_active: true })
+                .update({ is_default: true });
+
+            return affected;
+        });
+    } catch (error) {
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while setting default party branch.'
+        });
+    }
+};
+
+// Delete party branch
+const deletePartyBranchById = async (branchId, partyId, isPermanentDelete = false) => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return await db.transaction(async (trx) => {
+            const activeBranches = await trx('party_branches')
+                .select('id', 'is_default')
+                .where({ party_id: partyId, firm_id: firmId, is_active: true });
+
+            if (activeBranches.length <= 1) {
+                throw new ApiError({
+                    statusCode: 400,
+                    message: 'Cannot delete the only branch of a party. A party must have at least one branch.'
+                });
+            }
+
+            const targetBranch = activeBranches.find(b => b.id === Number(branchId));
+            if (!targetBranch) {
+                throw new ApiError({
+                    statusCode: 404,
+                    message: 'Branch not found.'
+                });
+            }
+
+            if (targetBranch.is_default) {
+                const nextBranch = activeBranches.find(b => b.id !== Number(branchId));
+                if (nextBranch) {
+                    await trx('party_branches')
+                        .where({ id: nextBranch.id })
+                        .update({ is_default: true });
+                }
+            }
+
+            if (isPermanentDelete) {
+                return await trx('party_branches')
+                    .where({ id: branchId, party_id: partyId, firm_id: firmId })
+                    .del();
+            } else {
+                return await trx('party_branches')
+                    .where({ id: branchId, party_id: partyId, firm_id: firmId })
+                    .update({ is_active: false });
+            }
+        });
+    } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while deleting party branch.'
         });
     }
 };
@@ -1468,31 +1641,53 @@ const fetchPartyDetails = async (partyId) => {
             return null;
         }
 
-        // Fetch billing and shipping addresses
-        const addresses = await db('party_addresses AS PA')
-            .leftJoin('address_types AS AT', 'PA.address_type_id', 'AT.id')
+        // Fetch branches for this party with native address and city
+        const branches = await db('party_branches as pb')
+            .leftJoin('city as c', 'pb.city_id', 'c.id')
+            .leftJoin('state as s', 'pb.state_id', 's.id')
             .select(
-                'PA.id',
-                'PA.party_id',
-                'PA.address_type_id',
-                'AT.code AS address_type_code',
-                'AT.name AS address_type_name',
-                'PA.address',
-                'PA.city_id',
-                'PA.state_id',
-                'PA.country',
-                'PA.pincode'
+                'pb.id',
+                'pb.party_id as partyId',
+                'pb.branch_name as branchName',
+                'pb.branch_code as branchCode',
+                'pb.gstin',
+                'pb.address',
+                'pb.city_id as cityId',
+                'c.name as cityName',
+                'pb.state_id as stateId',
+                's.name as stateName',
+                'pb.pincode',
+                'pb.country',
+                'pb.is_head_office as isHeadOffice',
+                'pb.is_default as isDefault',
+                'pb.email',
+                'pb.mobile'
             )
-            .where({ 'PA.party_id': partyId, 'PA.is_active': true })
-            .whereIn('AT.code', ['BILLING', 'SHIPPING']);
+            .where({ 'pb.party_id': partyId, 'pb.is_active': true })
+            .orderBy('pb.is_default', 'desc')
+            .orderBy('pb.id', 'asc');
 
-        const billingAddress = addresses.find(
-            (address) => address.address_type_code === 'BILLING'
-        ) || null;
+        // Attach billingAddress and shippingAddress to each branch for backward compatibility
+        for (const branch of branches) {
+            branch.billingAddress = {
+                id: branch.id,
+                partyId: branch.partyId,
+                branchId: branch.id,
+                address: branch.address || '',
+                cityId: branch.cityId,
+                cityName: branch.cityName,
+                stateId: branch.stateId,
+                stateName: branch.stateName,
+                pincode: branch.pincode || '',
+                country: branch.country || 'India'
+            };
+            branch.shippingAddress = branch.billingAddress;
+            branch.addresses = [branch.billingAddress];
+        }
 
-        const shippingAddress = addresses.find(
-            (address) => address.address_type_code === 'SHIPPING'
-        ) || null;
+        const defaultBranch = branches.find(b => b.isDefault) || branches[0] || null;
+        const billingAddress = defaultBranch ? defaultBranch.billingAddress : null;
+        const shippingAddress = billingAddress;
 
         // Fetch mapped roles for this party
         const roles = await db('party_role_mapping as prm')
@@ -1506,6 +1701,8 @@ const fetchPartyDetails = async (partyId) => {
 
         return {
             ...party,
+            branches,
+            defaultBranch,
             billingAddress,
             shippingAddress,
             roles,
@@ -1540,11 +1737,6 @@ module.exports = {
     bulkDeleteParties,
     restorePartyMaster,
     bulkRestoreParties,
-    fetchAllPartyAddresses,
-    fetchPartyAddressById,
-    insertPartyAddress,
-    updatePartyAddressMaster,
-    deletePartyAddressMaster,
     getAllPartyContactsModel,
     getPartyContactByIdModel,
     insertPartyContact,
@@ -1558,5 +1750,11 @@ module.exports = {
     fetchPartyRolesByPartyId,
     insertPartyRoleMappings,
     fetchPartiesByName,
-    fetchPartyDetails
+    fetchPartyDetails,
+    fetchAllPartyBranches,
+    fetchPartyBranchById,
+    insertPartyBranch,
+    updatePartyBranchById,
+    setDefaultPartyBranch,
+    deletePartyBranchById
 };

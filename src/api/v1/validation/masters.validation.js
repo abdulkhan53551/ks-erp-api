@@ -7,99 +7,7 @@ const getCityByStateIdValidationSchema = {
   })
 };
 
-// Validation schema for creating a new address type
-const getAddressTypeSchema = {
-  params: Joi.object({
-    id: Joi.number().integer().required(),
-  })
-};
 
-// Validation schema for creating a new address type
-const createAddressTypeSchema = {
-  body: Joi.object({
-    typeCode: Joi.string().max(50).required().uppercase(),
-    typeName: Joi.string().max(100).required(),
-    description: Joi.string().allow("", null).optional()
-  })
-};
-
-// Validation schema for updating an existing address type
-const updateAddressTypeSchema = {
-  params: Joi.object({
-    id: Joi.number().integer().required().label('Address Type ID'),
-  }),
-  body: Joi.object({
-    typeCode: Joi.string().max(50).uppercase().optional(),
-    typeName: Joi.string().max(100).optional(),
-    description: Joi.string().allow("", null).optional()
-  })
-};
-
-// Validation schema for deleting an address type
-const deleteAddressTypeSchema = {
-  params: Joi.object({
-    id: Joi.number().integer().required().label('Address Type ID'),
-  }),
-  query: Joi.object({
-    isPermanentDelete: Joi.boolean()
-      .default(false)
-      .label('Is Permanent Delete')
-      .messages({
-        'boolean.base': `"isPermanentDelete" must be a boolean value.`,
-      })
-  })
-};
-
-// Validation schema for restoring an address type
-const restoreAddressTypeSchema = {
-  params: Joi.object({
-    id: Joi.number().integer().required().label('Address Type ID'),
-  })
-};
-
-// Validation schema for bulk deleting address types
-const bulkDeleteAddressTypesSchema = {
-  body: Joi.object({
-    ids: Joi.array()
-      .items(Joi.number().integer().positive().messages({
-        'number.base': 'Invalid address type ID.'
-      }))
-      .min(1)
-      .unique()
-      .required()
-      .messages({
-        'array.base': 'Address type IDs must be an array.',
-        'array.min': 'Please select at least one address type.',
-        'array.unique': 'Duplicate address type IDs are not allowed.',
-        'any.required': 'Address type IDs are required.'
-      }),
-    isPermanentDelete: Joi.boolean()
-      .default(false)
-      .label('Is Permanent Delete')
-      .messages({
-        'boolean.base': `"isPermanentDelete" must be a boolean value.`
-      })
-  })
-};
-
-// Validation schema for bulk restoring address types
-const bulkRestoreAddressTypesSchema = {
-  body: Joi.object({
-    ids: Joi.array()
-      .items(Joi.number().integer().positive().messages({
-        'number.base': 'Invalid address type ID.'
-      }))
-      .min(1)
-      .unique()
-      .required()
-      .messages({
-        'array.base': 'Address type IDs must be an array.',
-        'array.min': 'Please select at least one address type to restore.',
-        'array.unique': 'Duplicate address type IDs are not allowed.',
-        'any.required': 'Address type IDs are required.'
-      })
-  })
-};
 
 // Validation schema for getting a contact role by ID
 const getContactRoleSchema = {
@@ -197,13 +105,6 @@ const bulkRestoreContactRolesSchema = {
 
 module.exports = {
   getCityByStateIdValidationSchema,
-  getAddressTypeSchema,
-  createAddressTypeSchema,
-  updateAddressTypeSchema,
-  deleteAddressTypeSchema,
-  restoreAddressTypeSchema,
-  bulkDeleteAddressTypesSchema,
-  bulkRestoreAddressTypesSchema,
   getContactRoleSchema,
   createContactRoleSchema,
   updateContactRoleSchema,

@@ -2,8 +2,8 @@ const { Router } = require('express')
 const validate = require('../middlewares/validate')
 const { getStates, getCityByState, getPyamentModes, getPyamentStatuses, getGstSlabs, getProductUnits } = require('../controllers/masters.controller')
 const { getCityByStateIdValidationSchema } = require('../validation/masters.validation')
-const { createPartyTypeSchema, getPartyTypeSchema, updatePartyTypeSchema, deletePartyTypeSchema, createPartySchema, updatePartySchema, getPartySchema, deletePartySchema, restorePartySchema, bulkDeletePartiesSchema, bulkRestorePartiesSchema, createPartyAddressSchema, getPartyAddressSchema, updatePartyAddressSchema, deletePartyAddressSchema, createPartyContactSchema, getPartyContactSchema, updatePartyContactSchema, deletePartyContactSchema, createPartyBankAccountSchema, getPartyBankAccountSchema, updatePartyBankAccountSchema, deletePartyBankAccountSchema, createPartyRolesSchema, getPartyRolesSchema, updatePartyRolesSchema, deletePartyRolesSchema, restorePartyRolesSchema, bulkDeletePartyRolesSchema, bulkRestorePartyRolesSchema, searchPartiesSchema, getPartyDetailsSchema } = require('../validation/parties.validation')
-const { getAllPartyRoles, getPartyRolesMeta, createPartyRole, getPartyRoleById, updatePartyRole, deletePartyRole, restorePartyRole, bulkDeletePartyRoles, bulkRestorePartyRoles, getAllParties, createParty, getPartyById, updateParty, deleteParty, restoreParty, bulkDeleteParties, bulkRestoreParties, getPartyMeta, getAllPartyAddresses, createPartyAddress, getPartyAddressById, updatePartyAddress, deletePartyAddress, getAllPartyContacts, getPartyContactById, createPartyContact, updatePartyContact, deletePartyContact, getAllPartyBankAccounts, createPartyBankAccount, getPartyBankAccountById, updatePartyBankAccount, deletePartyBankAccount, searchParties, getPartyDetails } = require('../controllers/parties.controller')
+const { createPartyTypeSchema, getPartyTypeSchema, updatePartyTypeSchema, deletePartyTypeSchema, createPartySchema, updatePartySchema, getPartySchema, deletePartySchema, restorePartySchema, bulkDeletePartiesSchema, bulkRestorePartiesSchema, createPartyContactSchema, getPartyContactSchema, updatePartyContactSchema, deletePartyContactSchema, createPartyBankAccountSchema, getPartyBankAccountSchema, updatePartyBankAccountSchema, deletePartyBankAccountSchema, createPartyRolesSchema, getPartyRolesSchema, updatePartyRolesSchema, deletePartyRolesSchema, restorePartyRolesSchema, bulkDeletePartyRolesSchema, bulkRestorePartyRolesSchema, searchPartiesSchema, getPartyDetailsSchema, createPartyBranchSchema, getPartyBranchSchema, updatePartyBranchSchema, deletePartyBranchSchema, setDefaultPartyBranchSchema } = require('../validation/parties.validation')
+const { getAllPartyRoles, getPartyRolesMeta, createPartyRole, getPartyRoleById, updatePartyRole, deletePartyRole, restorePartyRole, bulkDeletePartyRoles, bulkRestorePartyRoles, getAllParties, createParty, getPartyById, updateParty, deleteParty, restoreParty, bulkDeleteParties, bulkRestoreParties, getPartyMeta, getAllPartyContacts, getPartyContactById, createPartyContact, updatePartyContact, deletePartyContact, getAllPartyBankAccounts, createPartyBankAccount, getPartyBankAccountById, updatePartyBankAccount, deletePartyBankAccount, searchParties, getPartyDetails, getAllPartyBranches, getPartyBranchById, createPartyBranch, updatePartyBranch, deletePartyBranch, setDefaultPartyBranch } = require('../controllers/parties.controller')
 const router = Router()
 
 // Party Roles
@@ -30,12 +30,13 @@ router.patch('/:id', validate(updatePartySchema), updateParty);
 router.patch('/:id/restore', validate(restorePartySchema), restoreParty);
 router.delete('/:id', validate(deletePartySchema), deleteParty);
 
-// Party Address
-router.get('/:partyId/addresses', getAllPartyAddresses);
-router.post('/:partyId/addresses', validate(createPartyAddressSchema), createPartyAddress);
-router.get('/:partyId/addresses/:id', validate(getPartyAddressSchema), getPartyAddressById);
-router.patch('/:partyId/addresses/:id', validate(updatePartyAddressSchema), updatePartyAddress);
-router.delete('/:partyId/addresses/:id', validate(deletePartyAddressSchema), deletePartyAddress);
+// Party Branch
+router.get('/:partyId/branches', getAllPartyBranches);
+router.post('/:partyId/branches', validate(createPartyBranchSchema), createPartyBranch);
+router.get('/:partyId/branches/:id', validate(getPartyBranchSchema), getPartyBranchById);
+router.patch('/:partyId/branches/:id/set-default', validate(setDefaultPartyBranchSchema), setDefaultPartyBranch);
+router.patch('/:partyId/branches/:id', validate(updatePartyBranchSchema), updatePartyBranch);
+router.delete('/:partyId/branches/:id', validate(deletePartyBranchSchema), deletePartyBranch);
 
 // Party Contact
 router.get('/:partyId/contacts', getAllPartyContacts);
