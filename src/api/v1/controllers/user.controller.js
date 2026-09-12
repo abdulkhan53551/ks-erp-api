@@ -1,6 +1,29 @@
-const { asyncHandler } = require('./../services/asyncHandler.js')
+const { asyncHandler } = require('./../services/asyncHandler.js');
 const { ApiError } = require('./../services/ApiError.js');
-const { isUserExist, isPasswordCorrect, generateToken, generateRefreshToken, updatePassword, demoDBCall, fetchUserById } = require('../models/user.model.js');
+const {
+    isUserExist,
+    isPasswordCorrect,
+    generateRefreshToken,
+    updatePassword,
+    demoDBCall,
+    fetchUserById,
+    findUserById,
+    fetchAllUsers,
+    fetchUsersMeta,
+    softDeleteUser,
+    restoreUser,
+    permanentDeleteUser,
+    bulkDeleteUsers,
+    bulkRestoreUsers,
+    updateUserRole,
+    updateUserActiveStatus,
+    updateUserApprovalStatus,
+    approvePasswordReset,
+    getHashedPassword,
+    completePasswordReset
+} = require('../models/user.model.js');
+const { deleteRefreshTokenByUserID } = require('../models/auth.model.js');
+const { hashToken, generateToken } = require('../helpers/token.js');
 const { uploadOnCloudinary } = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
 const { ApiResponse } = require('../services/ApiResponse.js');
@@ -22,45 +45,34 @@ const userData = [
         password: '456',
         yourData: 'something 2'
     }
-]
+];
 
 const registerUser = asyncHandler(async (req, res) => {
+    const { fullName, email, username, password } = req.body;
 
-    // Get user detail
-    const { fullName, email, username, password } = req.body
-
-    // Validation - not empty
-    if (
-        [fullName, email, username, password].some(field => !field?.trim())
-    ) {
+    if ([fullName, email, username, password].some(field => !field?.trim())) {
         throw new ApiError({ statusCode: 400, message: 'All fields are required' });
     }
 
-    // Check if user already exist
-    const existedUser = isUserExist(username, email)
-
-    // Throw error if user exist
+    const existedUser = isUserExist(username, email);
     if (existedUser.length > 0) {
         throw new ApiError({ statusCode: 409, message: 'User with email or username already exist' });
     }
 
-    // Check for image upload them to server
-    const avatarLocalPath = req.files?.avatar?.[0]?.path
-    const coverImageLocalPath = req.files?.coverImage?.[0]?.path
+    const avatarLocalPath = req.files?.avatar?.[0]?.path;
+    const coverImageLocalPath = req.files?.coverImage?.[0]?.path;
 
     if (!avatarLocalPath) {
-        throw new ApiError({ statusCode: 400, message: 'Avatar local file is required' })
+        throw new ApiError({ statusCode: 400, message: 'Avatar local file is required' });
     }
 
-    // Upload them to cloudanary, image
-    const avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+    const avatar = await uploadOnCloudinary(avatarLocalPath);
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath);
 
     if (!avatar) {
-        throw new ApiError({ statusCode: 400, message: 'Avatar file is required' })
+        throw new ApiError({ statusCode: 400, message: 'Avatar file is required' });
     }
 
-    // Create user in database
     const dbData = {
         fullName,
         avatar: avatar.url,
@@ -68,35 +80,30 @@ const registerUser = asyncHandler(async (req, res) => {
         email,
         password,
         username: username.toLowerCase()
-    }
+    };
 
+    await delay(2000);
 
-    await delay(2000) // Wait time for fetching data from database for inserted record
-
-    // Remove password & refresh token field from response
     const createdUser = {
         fullName,
         avatar: avatar.url,
         coverImage: coverImage?.url || '',
         email,
         username: username.toLowerCase()
-    }
+    };
 
-    // Check for user creation
     if (!createdUser) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' });
     }
 
-    // Return response
     return res.status(201).json(
         new ApiResponse({ statusCode: 200, data: createdUser, message: 'User registered successfully.' })
-    )
-})
+    );
+});
 
 // Get user by id
 const getCurrentUser = asyncHandler(async (req, res) => {
     const userId = req.user.id || 0;
-
     const result = await fetchUserById(userId);
 
     if (!result) {
@@ -113,98 +120,338 @@ const getCurrentUser = asyncHandler(async (req, res) => {
 });
 
 const changeCurrentPassword = asyncHandler(async (req, res) => {
-    // Get old and new password from request
-    const { oldPassword, newPassword } = req.body
+    const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) {
-        throw new ApiError({ statusCode: 400, message: 'old password and new password are required' })
+        throw new ApiError({ statusCode: 400, message: 'old password and new password are required' });
     }
 
-    // Get user data from request which is put by middleware when user loged in successfully
-    // Get user by id
-    const user = userData.find(user => user.id == req.user.id)
-
-    // Check the old password is correct with db user password
-    // If password is not correct, throw error
-    const isPasswordCorrect = await isPasswordCorrect(oldPassword)
-    if (!isPasswordCorrect) {
-        throw new ApiError({ statusCode: 400, message: 'Invalid old password' })
+    const user = userData.find(user => user.id == req.user.id);
+    const passwordValid = await isPasswordCorrect(oldPassword);
+    if (!passwordValid) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid old password' });
     }
 
-    // Set new password to db
-    user.password = newPassword
-    // updatePassword(oldPassword, newPassword)
+    user.password = newPassword;
 
-    // Return response
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: {}, message: 'Password changed successfully' }))
-})
+        .json(new ApiResponse({ statusCode: 200, data: {}, message: 'Password changed successfully' }));
+});
 
 const updateAccountDetail = asyncHandler(async (req, res) => {
-    // Get update data from request
-    const { fullName, email } = req.body
+    const { fullName, email } = req.body;
 
     if (!fullName || !email) {
-        throw new ApiError({ statusCode: 400, message: 'All fields are required' })
+        throw new ApiError({ statusCode: 400, message: 'All fields are required' });
     }
 
-    // Find user by id
-    const user = userData.find(user => user.id == req.user?.id)
+    const user = userData.find(user => user.id == req.user?.id);
 
-    // Update user data in db and get updated data from db
-
-    // Return response
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Account detail updated successfully' }))
-})
+        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Account detail updated successfully' }));
+});
 
 const updateUserAvatar = asyncHandler(async (req, res) => {
-    // Get file from request
-    const avatarLocalPath = req.file?.path
+    const avatarLocalPath = req.file?.path;
 
     if (!avatarLocalPath) {
-        throw new ApiError({ statusCode: 400, message: 'Avatar file is missing' })
+        throw new ApiError({ statusCode: 400, message: 'Avatar file is missing' });
     }
 
-    // Upload on server or cloudinary
-    const avatar = await uploadOnCloudinary(avatarLocalPath)
+    const avatar = await uploadOnCloudinary(avatarLocalPath);
 
     if (!avatar.url) {
-        throw new ApiError({ statusCode: 400, message: 'Error while uploading avatar' })
+        throw new ApiError({ statusCode: 400, message: 'Error while uploading avatar' });
     }
 
-    // Update avatar in db
-    const user = userData.find(user => user.id == req.user?.id)
-    user.avatar = avatar.url
+    const user = userData.find(user => user.id == req.user?.id);
+    user.avatar = avatar.url;
 
-    // Return response
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Avatar updated successfully' }))
-})
+        .json(new ApiResponse({ statusCode: 200, data: user, message: 'Avatar updated successfully' }));
+});
 
-const generateAccessAndRefreshTokens = async (userId) => {
-    try {
-        const foundUser = await userData.find((user) => user.id === userId)
-        const accessToken = generateToken(foundUser)
-        const refreshToken = generateRefreshToken(foundUser)
+// ========== USER MANAGEMENT & RECYCLE BIN ==========
+const getAllUsers = asyncHandler(async (req, res) => {
+    const users = await fetchAllUsers(req.query);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: users,
+            message: 'Users retrieved successfully.'
+        })
+    );
+});
 
-        // Update refresh token to db of user
-        foundUser.refreshToken = refreshToken
-        userData.map(obj => obj.id === foundUser.id ? foundUser : obj);
-        console.log(foundUser);
+const getUsersMeta = asyncHandler(async (req, res) => {
+    const meta = await fetchUsersMeta(req.query);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: meta,
+            message: 'Users pagination meta retrieved successfully.'
+        })
+    );
+});
 
-        return { accessToken, refreshToken }
-    } catch (error) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' })
+const deleteUser = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+    const { permanent } = req.query;
+    const isPermanent = permanent === 'true';
+
+    if (targetUserId === req.user.id) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'You cannot delete your own account.'
+        });
     }
-}
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    if (isPermanent) {
+        await permanentDeleteUser(targetUserId);
+        await deleteRefreshTokenByUserID(targetUserId);
+        return res.status(200).json(
+            new ApiResponse({
+                statusCode: 200,
+                data: null,
+                message: 'User deleted permanently.'
+            })
+        );
+    } else {
+        await softDeleteUser(targetUserId, req.user.id);
+        await deleteRefreshTokenByUserID(targetUserId);
+        return res.status(200).json(
+            new ApiResponse({
+                statusCode: 200,
+                data: null,
+                message: 'User moved to recycle bin.'
+            })
+        );
+    }
+});
+
+const restoreUserController = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    await restoreUser(targetUserId);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: null,
+            message: 'User restored successfully.'
+        })
+    );
+});
+
+const bulkDeleteUsersController = asyncHandler(async (req, res) => {
+    const { ids = [], permanent = false } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        throw new ApiError({ statusCode: 400, message: 'User IDs array is required.' });
+    }
+
+    const filteredIds = ids.map(id => parseInt(id, 10)).filter(id => id !== req.user.id);
+
+    if (filteredIds.length === 0) {
+        throw new ApiError({ statusCode: 400, message: 'No valid user IDs to delete (cannot delete own account).' });
+    }
+
+    await bulkDeleteUsers(filteredIds, permanent, req.user.id);
+
+    for (const id of filteredIds) {
+        await deleteRefreshTokenByUserID(id);
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedCount: filteredIds.length },
+            message: permanent ? 'Selected users deleted permanently.' : 'Selected users moved to recycle bin.'
+        })
+    );
+});
+
+const bulkRestoreUsersController = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        throw new ApiError({ statusCode: 400, message: 'User IDs array is required.' });
+    }
+
+    const cleanIds = ids.map(id => parseInt(id, 10));
+    await bulkRestoreUsers(cleanIds);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedCount: cleanIds.length },
+            message: 'Selected users restored successfully.'
+        })
+    );
+});
+
+const changeUserRole = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+    const { roleId } = req.body;
+
+    if (!roleId) {
+        throw new ApiError({ statusCode: 400, message: 'Role ID is required.' });
+    }
+
+    if (targetUserId === req.user.id) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'You cannot change your own role.'
+        });
+    }
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    await updateUserRole(targetUserId, roleId);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: null,
+            message: 'User role updated successfully.'
+        })
+    );
+});
+
+const toggleUserStatus = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+    const { isActive } = req.body;
+
+    if (typeof isActive !== 'boolean') {
+        throw new ApiError({ statusCode: 400, message: 'isActive boolean flag is required.' });
+    }
+
+    if (targetUserId === req.user.id && !isActive) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'You cannot deactivate your own account.'
+        });
+    }
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    await updateUserActiveStatus(targetUserId, isActive);
+
+    if (!isActive) {
+        await deleteRefreshTokenByUserID(targetUserId);
+    }
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: null,
+            message: isActive ? 'User activated successfully.' : 'User deactivated successfully.'
+        })
+    );
+});
+
+const adminGenerateResetLink = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    const cryptoToken = generateToken(32);
+    const tokenHash = hashToken(cryptoToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await approvePasswordReset(targetUserId, tokenHash, expiresAt);
+
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || (req.headers.referer ? req.headers.referer.replace(/\/$/, '') : null) || 'http://localhost:5173';
+    const resetLink = `${frontendBase}/auth/reset-password?token=${cryptoToken}`;
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                token: cryptoToken,
+                resetToken: cryptoToken,
+                resetLink,
+                expiresAt,
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    userName: user.userName || user.user_name,
+                    firstName: user.firstName || user.first_name,
+                    lastName: user.lastName || user.last_name
+                }
+            },
+            message: 'Password reset link generated successfully.'
+        })
+    );
+});
+
+const adminDirectSetPassword = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { newPassword } = req.body;
+    const targetUserId = parseInt(id, 10);
+
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+        throw new ApiError({ statusCode: 400, message: 'New password is required and must be at least 6 characters long.' });
+    }
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    const hashedPassword = await getHashedPassword(newPassword.trim());
+    await completePasswordReset(targetUserId, hashedPassword);
+    await deleteRefreshTokenByUserID(targetUserId);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                id: targetUserId,
+                email: user.email
+            },
+            message: `Password for ${user.email} has been updated successfully.`
+        })
+    );
+});
 
 module.exports = {
     registerUser,
     changeCurrentPassword,
     getCurrentUser,
     updateAccountDetail,
-    updateUserAvatar
-}
+    updateUserAvatar,
+    getAllUsers,
+    getUsersMeta,
+    deleteUser,
+    restoreUserController,
+    bulkDeleteUsersController,
+    bulkRestoreUsersController,
+    changeUserRole,
+    toggleUserStatus,
+    adminGenerateResetLink,
+    adminDirectSetPassword
+};

@@ -3,9 +3,26 @@ const { ApiResponse } = require('../services/ApiResponse.js');
 const { ApiError } = require('../services/ApiError.js');
 const { rotateRefreshToken, createRefreshToken } = require('../services/tokenService.js');
 const { JWT } = require('../../../config/config.js');
-const { isUserExist, getHashedPassword, isPasswordCorrect } = require('../models/user.model.js');
+const {
+    isUserExist,
+    getHashedPassword,
+    isPasswordCorrect,
+    fetchUserById,
+    findUserById,
+    getPendingRegistrations,
+    getRejectedRegistrations,
+    approveUserRegistration,
+    rejectUserRegistration,
+    requestPasswordReset,
+    getPendingPasswordResets,
+    approvePasswordReset,
+    rejectPasswordReset,
+    findUserByResetToken,
+    completePasswordReset,
+    getAllRoles
+} = require('../models/user.model.js');
 const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, assignPermissionToRole, removeAssignedRolePermissionById, getResourcePermissionById, createAbacPolicy, deleteAbacPolicy, getAllAbacPolicy } = require('../models/auth.model.js');
-const { hashToken, generateAccessToken } = require('../helpers/token.js');
+const { hashToken, generateToken, generateAccessToken } = require('../helpers/token.js');
 const { clearAccessAndRefreshTokenCookie } = require('../../../utils/cookies.js');
 const casbinDb = require('../models/auth.model.js');
 const { getEnforcer } = require('../services/casbin.js');
@@ -24,68 +41,53 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     // Get user detail
-    const { firstName, lastName, role, email, userName, password } = req.body
+    const { firstName, lastName, role, email, userName, password } = req.body;
 
     // Validation - not empty
     if (
-        [firstName, lastName, role, email, userName, password].some(field => !field?.trim())
+        [firstName, email, userName, password].some(field => !field?.trim())
     ) {
-        throw new ApiError({ statusCode: 400, message: 'All fields are required' });
+        throw new ApiError({ statusCode: 400, message: 'First name, email, username, and password are required' });
     }
 
     // Check if user already exist
-    const existedUser = await isUserExist(userName, email)
+    const existedUser = await isUserExist(userName, email);
 
     // Throw error if user exist
     if (existedUser?.id > 0) {
-        throw new ApiError({ statusCode: 409, message: 'User with email or username already exist' });
+        throw new ApiError({ statusCode: 409, message: 'User with email or username already exists' });
     }
 
     // Hashed password
-    const hashedPassword = await getHashedPassword(password)
-
-    // Check for image upload them to server
-    // const avatarLocalPath = req.files?.avatar?.[0]?.path
-    // const coverImageLocalPath = req.files?.coverImage?.[0]?.path
-
-    // if (!avatarLocalPath) {
-    //     throw new ApiError({statusCode: 400, message: 'Avatar local file is required'})
-    // }
-
-    // // Upload them to cloudanary, image
-    // const avatar = await uploadOnCloudinary(avatarLocalPath)
-    // const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-
-    // if (!avatar) {
-    //     throw new ApiError({statusCode: 400, message: 'Avatar file is required'})
-    // }
+    const hashedPassword = await getHashedPassword(password);
 
     const userData = {
-        email: email,
+        email: email.trim().toLowerCase(),
         password: hashedPassword,
-        first_name: firstName,
-        last_name: lastName,
-        role_id: role,
-        user_name: userName.toLowerCase()
-    }
+        first_name: firstName.trim(),
+        last_name: (lastName || '').trim(),
+        role_id: role ? parseInt(role, 10) : null,
+        user_name: userName.trim().toLowerCase(),
+        approval_status: 'PENDING',
+        is_active: false
+    };
 
-    // Remove password & refresh token field from response
-    const newUser = await createUser(userData)
+    // Create user in pending state
+    const newUser = await createUser(userData);
 
-    // Check for user creation
     if (!newUser) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' });
     }
 
     // Prepare response
     response = {
         statusCode: 201,
         data: newUser,
-        message: 'User registered successfully.'
-    }
+        message: 'Registration submitted successfully. Your account is pending Super Admin approval.'
+    };
 
-    return res.status(response.statusCode).json(new ApiResponse(response))
-})
+    return res.status(response.statusCode).json(new ApiResponse(response));
+});
 
 const loginUser = asyncHandler(async (req, res) => {
     const { userName, email, password } = req.body;
@@ -111,14 +113,53 @@ const loginUser = asyncHandler(async (req, res) => {
     }
 
     // Check password
-    const isPasswordValid = await isPasswordCorrect(password, user?.password)
+    const isPasswordValid = await isPasswordCorrect(password, user?.password);
     if (!isPasswordValid) {
-        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' })
+        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' });
     }
 
-    // Acess and refresh token generation
-    const tokenData = { user: user, ip: ipAddress, userAgent, deviceId: null }
-    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData)
+    // Approval gate checks
+    if (user.approval_status === 'PENDING') {
+        throw new ApiError({ statusCode: 403, message: 'Your account is pending Super Admin approval. Please contact administrator.' });
+    }
+
+    if (user.approval_status === 'REJECTED') {
+        throw new ApiError({ statusCode: 403, message: 'Your account registration has been rejected. Please contact administrator.' });
+    }
+
+    if (user.deleted_at) {
+        throw new ApiError({ statusCode: 403, message: 'Your account has been deleted. Please contact administrator.' });
+    }
+
+    if (!user.is_active) {
+        throw new ApiError({ statusCode: 403, message: 'Your account has been deactivated. Please contact administrator.' });
+    }
+
+    // Role and tenant firm context
+    const roleSlug = user.role_slug || 'admin';
+    const roleName = user.role_name || 'Administrator';
+    const firmId = 1;
+
+    // Access and refresh token generation
+    const tokenData = {
+        user: { ...user, role: roleSlug, firmId },
+        ip: ipAddress,
+        userAgent,
+        deviceId: null
+    };
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData);
+
+    const userProfile = {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        userName: user.user_name,
+        roleId: user.role_id,
+        role: roleSlug,
+        roleName: roleName,
+        firmId: firmId
+    };
 
     // Generate new access and refresh token
     const optionsCookie = {
@@ -126,24 +167,28 @@ const loginUser = asyncHandler(async (req, res) => {
         secure: true,
         sameSite: 'None',
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
-    }
+    };
 
     response = {
         statusCode: 200,
-        data: { accessToken, refreshToken },
+        data: {
+            accessToken,
+            refreshToken,
+            user: userProfile
+        },
         message: 'Successfully logged in'
-    }
+    };
 
     // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
         .cookie('refreshToken', refreshToken, optionsCookie)
-        .json(new ApiResponse(response))
+        .json(new ApiResponse(response));
 });
 
 // Generate refresh token
 const refreshUserToken = asyncHandler(async (req, res) => {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     const ip = req.ip;
     const userAgent = req.get('User-Agent');
 
@@ -151,18 +196,18 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         statusCode: 500,
         data: null,
         message: 'Something went wrong while generating refresh token'
-    }
+    };
 
     // Check if refresh token is present
     if (!refreshToken) {
-        throw new ApiError({ statusCode: 400, message: 'Refresh token is required' })
+        throw new ApiError({ statusCode: 400, message: 'Refresh token is required' });
     }
 
     // Get new refresh token
     const { accessToken, newToken: newRefreshToken } = await rotateRefreshToken(refreshToken, ip, userAgent);
 
     // Get token data
-    const tokens = { accessToken, refreshToken: newRefreshToken }
+    const tokens = { accessToken, ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}) };
 
     // Generate new access and refresh token
     const optionsCookie = {
@@ -170,52 +215,90 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         secure: true,
         sameSite: 'None',
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
-    }
+    };
 
     response = {
         statusCode: 200,
         data: tokens,
         message: 'Successfully generated access and refreshed token'
+    };
+
+    // Set refresh token as HTTP-only cookie if rotated
+    if (newRefreshToken) {
+        res.cookie('refreshToken', newRefreshToken, optionsCookie);
     }
 
-    // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
-        .cookie('refreshToken', newRefreshToken, optionsCookie)
-        .json(new ApiResponse(response))
-})
+        .json(new ApiResponse(response));
+});
 
 // Generate access and refresh token
 const generateAccessAndRefreshTokens = async (tokenData) => {
     try {
-        const { user, ip, userAgent, deviceId } = tokenData
+        const { user, ip, userAgent, deviceId } = tokenData;
 
         // Generate access token
         const tokenPayload = {
             id: user.id,
             email: user.email,
-            userName: user.user_name,
-            fullName: `${user.first_name} ${user.last_name}`
-        }
-        const accessToken = generateAccessToken(tokenPayload)
+            userName: user.user_name || user.userName,
+            fullName: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
+            role: user.role || user.role_slug || 'admin',
+            roleId: user.role_id || user.roleId,
+            firmId: user.firmId || 1
+        };
+        const accessToken = generateAccessToken(tokenPayload);
 
         // Generate refresh token
         const { token: refreshToken } = await createRefreshToken(user.id, ip, userAgent, deviceId);
 
-        return { accessToken, refreshToken }
+        return { accessToken, refreshToken };
     } catch (error) {
         console.log('Error generating access and refresh token:', error);
 
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' });
     }
-}
+};
+
+// Get Current Authenticated User (/auth/me)
+const getCurrentUser = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const user = await fetchUserById(userId);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    const roleSlug = user.role_slug || req.user.role || 'admin';
+    const roleName = user.role_name || 'Administrator';
+    const firmId = req.user.firmId || 1;
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: {
+            user: {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                email: user.email,
+                userName: user.user_name,
+                roleId: user.role_id,
+                role: roleSlug,
+                roleName: roleName,
+                firmId
+            }
+        },
+        message: 'Current user profile fetched successfully'
+    }));
+});
 
 // Check verify access token
 const checkVerifyAccessToken = asyncHandler(async (req, res, next) => {
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, message: 'Access token is valid' }))
-})
+        .json(new ApiResponse({ statusCode: 200, message: 'Access token is valid' }));
+});
 
 // Check verify access token
 const checkIsAuthorizeAccess = asyncHandler(async (req, res, next) => {
@@ -552,10 +635,199 @@ const clearAllPolicies = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Successfully deleted all policies' }))
 })
 
+// ========== FORGOT & RESET PASSWORD ==========
+const forgotPassword = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email?.trim()) {
+        throw new ApiError({ statusCode: 400, message: 'Email is required' });
+    }
+
+    const user = await isUserExist('', email.trim());
+    if (user?.id) {
+        await requestPasswordReset(email.trim());
+    }
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password reset request submitted. Awaiting Super Admin approval.'
+    }));
+});
+
+const validateResetToken = asyncHandler(async (req, res) => {
+    const { token } = req.query;
+    if (!token) {
+        throw new ApiError({ statusCode: 400, message: 'Token is required' });
+    }
+
+    const tokenHash = hashToken(token);
+    const user = await findUserByResetToken(tokenHash);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid or expired password reset link' });
+    }
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: { valid: true, email: user.email },
+        message: 'Reset token is valid'
+    }));
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+    const token = req.body.token;
+    const newPassword = req.body.newPassword || req.body.password;
+    if (!token || !newPassword) {
+        throw new ApiError({ statusCode: 400, message: 'Token and new password are required' });
+    }
+
+    const tokenHash = hashToken(token);
+    const user = await findUserByResetToken(tokenHash);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid or expired password reset link' });
+    }
+
+    const hashedPassword = await getHashedPassword(newPassword);
+    await completePasswordReset(user.id, hashedPassword);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password has been reset successfully. You can now sign in.'
+    }));
+});
+
+// ========== SUPER ADMIN APPROVAL ACTIONS ==========
+const getPendingRegistrationsList = asyncHandler(async (req, res) => {
+    const users = await getPendingRegistrations();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: users,
+        message: 'Pending registrations fetched successfully'
+    }));
+});
+
+const approveRegistration = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { roleId } = req.body;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await approveUserRegistration(id, roleId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'User registration approved successfully'
+    }));
+});
+
+const rejectRegistration = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await rejectUserRegistration(id);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'User registration rejected'
+    }));
+});
+
+const getRejectedRegistrationsList = asyncHandler(async (req, res) => {
+    const requests = await getRejectedRegistrations();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: requests,
+        message: 'Rejected registrations fetched successfully'
+    }));
+});
+
+const getPendingPasswordResetsList = asyncHandler(async (req, res) => {
+    const requests = await getPendingPasswordResets();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: requests,
+        message: 'Pending password reset requests fetched successfully'
+    }));
+});
+
+const approvePasswordResetRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    const cryptoToken = generateToken(32);
+    const tokenHash = hashToken(cryptoToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await approvePasswordReset(id, tokenHash, expiresAt);
+
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || (req.headers.referer ? req.headers.referer.replace(/\/$/, '') : null) || 'http://localhost:5173';
+    const resetLink = `${frontendBase}/auth/reset-password?token=${cryptoToken}`;
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: {
+            token: cryptoToken,
+            resetToken: cryptoToken,
+            resetLink,
+            expiresAt,
+            user: {
+                id: user.id,
+                email: user.email,
+                userName: user.userName || user.user_name,
+                firstName: user.firstName || user.first_name,
+                lastName: user.lastName || user.last_name
+            }
+        },
+        message: 'Password reset approved. Reset link generated successfully.'
+    }));
+});
+
+const rejectPasswordResetRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await rejectPasswordReset(id);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password reset request rejected'
+    }));
+});
+
+const getRoles = asyncHandler(async (req, res) => {
+    const roles = await getAllRoles();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: roles,
+        message: 'Roles fetched successfully'
+    }));
+});
+
 module.exports = {
     registerUser,
     loginUser,
     refreshUserToken,
+    getCurrentUser,
     checkVerifyAccessToken,
     checkIsAuthorizeAccess,
     logout,
@@ -569,5 +841,16 @@ module.exports = {
     clearAllPolicies,
     createPolicy,
     deletePolicy,
-    updatePolicy
-}
+    updatePolicy,
+    forgotPassword,
+    validateResetToken,
+    resetPassword,
+    getPendingRegistrationsList,
+    getRejectedRegistrationsList,
+    approveRegistration,
+    rejectRegistration,
+    getPendingPasswordResetsList,
+    approvePasswordResetRequest,
+    rejectPasswordResetRequest,
+    getRoles
+};
