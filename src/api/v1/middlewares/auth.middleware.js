@@ -56,7 +56,13 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
     try {
         const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
         req.user = {
-            id: decoded.id, // or whatever you encoded in the token
+            id: decoded.id,
+            email: decoded.email,
+            userName: decoded.userName,
+            fullName: decoded.fullName,
+            role: decoded.role,
+            roleId: decoded.roleId,
+            firmId: decoded.firmId || 1,
         };
         next();
     } catch (err) {
@@ -95,8 +101,17 @@ const authorizeAccess = asyncHandler(async (req, res, next) => {
     next();
 });
 
+// Ensure caller is Super Admin
+const requireSuperAdmin = asyncHandler(async (req, res, next) => {
+    if (!req.user || req.user.role !== 'super-admin') {
+        throw new ApiError({ statusCode: 403, message: 'Access denied. Super Admin privileges required.' });
+    }
+    next();
+});
+
 module.exports = {
     verifyJWT,  // Remove this line. This is not needed anymore
     verifyAccessToken,
-    authorizeAccess
+    authorizeAccess,
+    requireSuperAdmin
 };
