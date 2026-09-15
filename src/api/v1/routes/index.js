@@ -15,6 +15,7 @@ const attachmentRoutes = require('./attachment.routes');
 const productRoutes = require('./product.routes');
 const paymentRoutes = require('./payment.routes');
 const vendorBillRoutes = require('./vendorBill.routes');
+const rolePermissionRoutes = require('./rolePermission.routes');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
 
@@ -49,6 +50,7 @@ router.use('/uploads', uploadRoutes);
 router.use('/attachments', attachmentRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/vendor-bills', vendorBillRoutes);
+router.use('/admin', rolePermissionRoutes);
 
 module.exports = router;
 // exports.products = productRoutes;

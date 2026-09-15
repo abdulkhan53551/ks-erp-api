@@ -5,17 +5,16 @@ const { RedisWatcher } = require('@casbin/redis-watcher');
 const path = require('path');
 
 let enforcer;
+let activeWatcher;
 
-const initCasbin = async (redisClient) => {
+/**
+ * Initialize Casbin Enforcer
+ * @param {object|null} redisClient Optional Redis client. If null/omitted, runs in Standalone In-Memory mode.
+ */
+const initCasbin = async (redisClient = null) => {
     try {
-        // Initialize adapter using Knex
+        // Initialize adapter using Knex (persists policies in PostgreSQL 'policies' table)
         const adapter = await KnexAdapter.newAdapter(db);
-
-        // Initialize Redis Watcher
-        const watcher = await RedisWatcher.newWatcher({
-            channel: 'casbin_policy_updates',
-            redisInstance: redisClient, // reuse existing Redis client
-        });
 
         // Resolve absolute path to model file
         const modelPath = path.join(__dirname, './casbinModel.conf');
@@ -23,22 +22,31 @@ const initCasbin = async (redisClient) => {
         // Initialize enforcer with model and adapter
         enforcer = await casbin.newEnforcer(modelPath, adapter);
 
-        // Assign watcher to enforcer
-        await enforcer.setWatcher(watcher);
+        // If Redis client is provided and ready, attach Redis Watcher for multi-instance sync
+        if (redisClient && typeof redisClient.publish === 'function') {
+            try {
+                activeWatcher = await RedisWatcher.newWatcher({
+                    channel: 'casbin_policy_updates',
+                    redisInstance: redisClient,
+                });
 
-        // const policies = await enforcer.getPolicy();
-        // console.log('Current policies:', policies);
+                await enforcer.setWatcher(activeWatcher);
 
-        // Callback when watcher receives a policy update from Redis
-        watcher.setUpdateCallback(async () => {
-            console.log('🔁 Reloading policy from Redis update');
-            await enforcer.loadPolicy();
+                activeWatcher.setUpdateCallback(async () => {
+                    console.log('🔁 Reloading Casbin policies from Redis Watcher update');
+                    await enforcer.loadPolicy();
+                });
 
-            const policies = await enforcer.getPolicy();
-            console.log('Watcher policies:', policies);
-        });
+                console.log('✅ Casbin initialized with Redis Watcher');
+            } catch (watcherErr) {
+                console.warn('⚠️ Redis Watcher failed to attach, falling back to Standalone In-Memory mode:', watcherErr.message);
+            }
+        } else {
+            console.log('✅ Casbin initialized in Standalone In-Memory mode (Render Free Tier compatible)');
+        }
 
-        console.log('✅ Casbin with Redis Watcher initialized');
+        // Load policies into Node.js RAM
+        await enforcer.loadPolicy();
         return enforcer;
     } catch (error) {
         console.error('❌ Error initializing Casbin:', error);
@@ -46,9 +54,25 @@ const initCasbin = async (redisClient) => {
     }
 };
 
+/**
+ * Returns the active Casbin enforcer instance
+ */
 const getEnforcer = async () => {
-    if (!enforcer) throw new Error('Casbin not initialized');
+    if (!enforcer) {
+        await initCasbin(null);
+    }
     return enforcer;
-}
+};
 
-module.exports = { initCasbin, getEnforcer };
+/**
+ * Manually reload Casbin policies into RAM
+ * Used after permissions are updated via the Admin API
+ */
+const reloadPolicy = async () => {
+    if (enforcer) {
+        await enforcer.loadPolicy();
+        console.log('🔄 Casbin policies reloaded into in-memory cache');
+    }
+};
+
+module.exports = { initCasbin, getEnforcer, reloadPolicy };
