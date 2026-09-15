@@ -22,12 +22,13 @@ const { PORT } = require('./config');
 // });
 
 connectDB()
-    // .then(() => {
-    //     return connectRedis(); // Ensure Redis is connected
-    // })
-    // .then((redisClient) => {
-    //     return initCasbin(redisClient)
-    // })
+    .then(async () => {
+        // Initialize Casbin (runs in Standalone In-Memory mode on Render Free Tier)
+        await initCasbin(null);
+        // Automatically sync module registry permissions and Casbin policies
+        const { bootstrapPermissions } = require("./api/v1/services/permissionBootstrapper");
+        await bootstrapPermissions();
+    })
     .then(() => {
         app.listen(PORT, () => console.log('✅ Server listing on port ' + PORT));
     })

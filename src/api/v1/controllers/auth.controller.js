@@ -28,9 +28,27 @@ const casbinDb = require('../models/auth.model.js');
 const { getEnforcer } = require('../services/casbin.js');
 const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
 
+const { db } = require('../database');
+const { getFirmRolePermissions } = require('../services/firmPermissionCache');
+
 // Convert to expiry days to number
 const REFRESH_TOKEN_EXPIRY_DAYS = Number(JWT.REFRESH_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
 const REFRESH_TOKEN_EXPIRY_IN_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+
+/**
+ * Helper to fetch permission strings for a user role, using the in-memory LRU cache
+ */
+const getUserPermissions = async (roleSlug, roleId, firmId = 1) => {
+    if (roleSlug === 'super-admin' || roleId === 1) return ['*'];
+    if (!roleId) return [];
+    try {
+        const permSet = await getFirmRolePermissions(firmId, roleId);
+        return Array.from(permSet);
+    } catch (err) {
+        console.error('Error fetching user permissions:', err);
+        return [];
+    }
+};
 
 // Register user
 const registerUser = asyncHandler(async (req, res) => {
@@ -149,6 +167,8 @@ const loginUser = asyncHandler(async (req, res) => {
     };
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData);
 
+    const permissions = await getUserPermissions(roleSlug, user.role_id, firmId);
+
     const userProfile = {
         id: user.id,
         firstName: user.first_name,
@@ -158,7 +178,8 @@ const loginUser = asyncHandler(async (req, res) => {
         roleId: user.role_id,
         role: roleSlug,
         roleName: roleName,
-        firmId: firmId
+        firmId: firmId,
+        permissions
     };
 
     // Generate new access and refresh token
@@ -273,6 +294,7 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     const roleSlug = user.role_slug || req.user.role || 'admin';
     const roleName = user.role_name || 'Administrator';
     const firmId = req.user.firmId || 1;
+    const permissions = await getUserPermissions(roleSlug, user.role_id || req.user.roleId, firmId);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
@@ -286,7 +308,8 @@ const getCurrentUser = asyncHandler(async (req, res) => {
                 roleId: user.role_id,
                 role: roleSlug,
                 roleName: roleName,
-                firmId
+                firmId,
+                permissions
             }
         },
         message: 'Current user profile fetched successfully'
