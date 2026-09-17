@@ -55,17 +55,35 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
-        req.user = {
-            id: decoded.id,
-            email: decoded.email,
-            userName: decoded.userName,
-            fullName: decoded.fullName,
-            role: decoded.role,
-            roleId: decoded.roleId,
-            firmId: decoded.firmId || 1,
-        };
+
+        if (req.tenantAccessDenied) {
+            throw new ApiError({ statusCode: 403, message: 'Access denied: You do not have access to this firm or branch.' });
+        }
+
+        if (!req.user) {
+            const isSuperAdmin = (decoded.role || '').toLowerCase() === 'super-admin' || decoded.roleId === 1;
+            let firmId = null;
+            if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
+                const parsed = parseInt(req.headers['x-firm-id'], 10);
+                if (!isNaN(parsed) && parsed > 0) firmId = parsed;
+            } else if (!isSuperAdmin) {
+                firmId = decoded.firmId || 1;
+            }
+
+            req.user = {
+                id: decoded.id,
+                email: decoded.email,
+                userName: decoded.userName,
+                fullName: decoded.fullName,
+                role: decoded.role,
+                roleId: decoded.roleId,
+                firmId,
+                isSuperAdmin
+            };
+        }
         next();
     } catch (err) {
+        if (err instanceof ApiError) throw err;
         throw new ApiError({ statusCode: 401, message: 'Access token expired or invalid' })
     }
 });

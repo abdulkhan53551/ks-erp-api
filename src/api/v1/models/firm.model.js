@@ -4,8 +4,9 @@ const { getContext } = require("../helpers/requestContext");
 
 // Fetch all firms with their addresses and bank accounts
 const fetchAllFirm = async (query) => {
-    const { page = 1, pageSize = 10, search = '' } = query;
+    const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
     const { userId = 0 } = getContext();
+    const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
         .select(
@@ -38,12 +39,8 @@ const fetchAllFirm = async (query) => {
         .leftJoin('city AS C', 'UC.city_id', 'C.id')
         .leftJoin('state AS S', 'UC.state_id', 'S.id')
         .leftJoin('users AS u', 'F.created_by', 'u.id')
-        .where('F.is_active', true)
+        .where('F.is_active', !showTrash)
         .andWhere('F.created_by', userId)  // Show only firms created by the user
-
-    // if (search) {
-    //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
-    // }
 
     baseQuery.orderBy('F.id', 'desc');
 
@@ -54,8 +51,9 @@ const fetchAllFirm = async (query) => {
 
 // Fetch firm meta data for pagination
 const fetchFirmMeta = async (query) => {
-    const { page = 1, pageSize = 10, search = '' } = query;
+    const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
     const { userId = 0 } = getContext();
+    const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
         .join('user_contacts AS UC', function () {
@@ -63,12 +61,8 @@ const fetchFirmMeta = async (query) => {
                 .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
         })
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
-        .where('F.is_active', true)
+        .where('F.is_active', !showTrash)
         .andWhere('F.created_by', userId)
-
-    // if (search) {
-    //     baseQuery.andWhere('f.firm_name', 'ilike', `%${search}%`);
-    // }
 
     const result = await buildPagination({ baseQuery, page, pageSize });
 
@@ -250,6 +244,23 @@ const deleteBankAccountByFirmId = async (firmId, isPermanentDelete) => {
     return result > 0;
 }
 
+// Restore soft-deleted firm by ID
+const restoreFirmById = async (firmId) => {
+    const firmUpdated = await db('firms')
+        .where({ id: firmId })
+        .update({ is_active: true });
+
+    await db('user_contacts')
+        .where({ entity_type: 'firm', entity_id: firmId })
+        .update({ is_active: true });
+
+    await db('firm_bank_accounts')
+        .where({ firm_id: firmId })
+        .update({ is_active: true });
+
+    return firmUpdated > 0;
+};
+
 // Fetch firm types from the database
 const fetchFirmTypes = async () => {
     const enumLabels = await db('pg_enum as e')
@@ -271,6 +282,7 @@ module.exports = {
     insertFirm,
     updateFirmById,
     deleteFirmtById,
+    restoreFirmById,
     insertAddress,
     updateAddressByEntity,
     deleteAddressByFirmId,

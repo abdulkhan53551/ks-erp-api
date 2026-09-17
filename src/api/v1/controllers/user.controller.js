@@ -20,7 +20,9 @@ const {
     updateUserApprovalStatus,
     approvePasswordReset,
     getHashedPassword,
-    completePasswordReset
+    completePasswordReset,
+    fetchUserAssignments,
+    saveUserAssignments
 } = require('../models/user.model.js');
 const { deleteRefreshTokenByUserID } = require('../models/auth.model.js');
 const { hashToken, generateToken } = require('../helpers/token.js');
@@ -438,6 +440,82 @@ const adminDirectSetPassword = asyncHandler(async (req, res) => {
     );
 });
 
+const getUserAssignments = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    const assignments = await fetchUserAssignments(targetUserId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: assignments,
+        message: 'User assignments fetched successfully'
+    }));
+});
+
+const updateUserAssignments = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+    const { assignments = [] } = req.body;
+
+    if (!Array.isArray(assignments)) {
+        throw new ApiError({ statusCode: 400, message: 'assignments must be an array.' });
+    }
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    // Validate uniqueness of firm + branch scope
+    const seenScopes = new Set();
+    let defaultCount = 0;
+
+    for (const a of assignments) {
+        if (!a.firmId || !a.roleId) {
+            throw new ApiError({ statusCode: 400, message: 'Every assignment must have a valid firm and role selected.' });
+        }
+        const firmId = parseInt(a.firmId, 10);
+        const firmBranchId = a.firmBranchId ? parseInt(a.firmBranchId, 10) : 'all';
+        const scopeKey = `${firmId}:${firmBranchId}`;
+
+        if (seenScopes.has(scopeKey)) {
+            const scopeLabel = firmBranchId === 'all' ? 'All Branches (Firm-Wide)' : `Branch #${firmBranchId}`;
+            throw new ApiError({
+                statusCode: 400,
+                message: `Duplicate assignment detected: Firm #${firmId} with ${scopeLabel} is assigned more than once. A user can only hold one role per branch scope.`
+            });
+        }
+        seenScopes.add(scopeKey);
+
+        if (a.isDefault) {
+            defaultCount++;
+        }
+    }
+
+    // Ensure exactly one default when assignments exist
+    let normalizedAssignments = [...assignments];
+    if (normalizedAssignments.length > 0 && defaultCount !== 1) {
+        normalizedAssignments = normalizedAssignments.map((a, idx) => ({
+            ...a,
+            isDefault: idx === 0
+        }));
+    }
+
+    await saveUserAssignments(targetUserId, normalizedAssignments);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: { userId: targetUserId, assignmentCount: normalizedAssignments.length },
+        message: 'User entity assignments updated successfully.'
+    }));
+});
+
 module.exports = {
     registerUser,
     changeCurrentPassword,
@@ -453,5 +531,7 @@ module.exports = {
     changeUserRole,
     toggleUserStatus,
     adminGenerateResetLink,
-    adminDirectSetPassword
+    adminDirectSetPassword,
+    getUserAssignments,
+    updateUserAssignments
 };

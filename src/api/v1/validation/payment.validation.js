@@ -20,6 +20,7 @@ const createReceiptSchema = {
         referenceNo: Joi.string().trim().max(100).allow('', null).optional(),
         referenceDate: Joi.date().iso().allow('', null).optional(),
         bankName: Joi.string().trim().max(150).allow('', null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         notes: Joi.string().trim().max(1000).allow('', null).optional(),
         allocations: Joi.array().items(
             Joi.object({
@@ -55,6 +56,7 @@ const createVendorPaymentSchema = {
         referenceNo: Joi.string().trim().max(100).allow('', null).optional(),
         referenceDate: Joi.date().iso().allow('', null).optional(),
         bankName: Joi.string().trim().max(150).allow('', null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         notes: Joi.string().trim().max(1000).allow('', null).optional(),
         allocations: Joi.array().items(
             Joi.object({

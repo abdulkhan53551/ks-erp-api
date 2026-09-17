@@ -21,8 +21,9 @@ const getPaymentStatusIds = async (trx = null) => {
  */
 const createVendorBill = async (billData) => {
     const { firmId = 0 } = getContext();
-    if (!firmId) {
-        throw new ApiError({ statusCode: 400, message: 'Firm context is required.' });
+    const effectiveFirmId = billData.firmId ? Number(billData.firmId) : (firmId || null);
+    if (!effectiveFirmId) {
+        throw new ApiError({ statusCode: 400, message: 'Firm context is required. Please select a firm.' });
     }
 
     const {
@@ -44,7 +45,7 @@ const createVendorBill = async (billData) => {
 
     // Verify vendor exists
     const party = await db('parties')
-        .where({ id: partyId, firm_id: firmId, is_active: true })
+        .where({ id: partyId, firm_id: effectiveFirmId, is_active: true })
         .first();
 
     if (!party) {
@@ -54,7 +55,7 @@ const createVendorBill = async (billData) => {
     // Check duplicate bill number for same vendor in this firm
     const existingBill = await db('vendor_bills')
         .where({
-            firm_id: firmId,
+            firm_id: effectiveFirmId,
             party_id: partyId,
             bill_no: billNo.trim(),
             is_active: true
@@ -102,8 +103,22 @@ const createVendorBill = async (billData) => {
         finalDueDate = d.toISOString().split('T')[0];
     }
 
+    // Resolve internal firm branch
+    let resolvedFirmBranchId = billData.firmBranchId ? Number(billData.firmBranchId) : null;
+    if (!resolvedFirmBranchId) {
+        const { branchId = null } = getContext();
+        resolvedFirmBranchId = branchId;
+    }
+    if (!resolvedFirmBranchId) {
+        const ho = await db('firm_branches')
+            .where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true })
+            .first();
+        if (ho) resolvedFirmBranchId = ho.id;
+    }
+
     const [vendorBill] = await db('vendor_bills').insert({
-        firm_id: firmId,
+        firm_id: effectiveFirmId,
+        firm_branch_id: resolvedFirmBranchId,
         party_id: partyId,
         branch_id: branchId || null,
         bill_no: billNo.trim(),
@@ -131,7 +146,7 @@ const createVendorBill = async (billData) => {
  * Fetch all vendor bills with pagination, search, and filters
  */
 const fetchAllVendorBills = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -153,6 +168,9 @@ const fetchAllVendorBills = async (query = {}) => {
             'vb.due_days as dueDays',
             'vb.due_date as dueDate',
             'vb.party_id as partyId',
+            'vb.firm_branch_id as firmBranchId',
+            'fb.name as firmBranchName',
+            'fb.code as firmBranchCode',
             db.raw('COALESCE(pt.display_name, pt.legal_name) as "vendorName"'),
             'pt.gstin as vendorGstin',
             'vb.branch_id as branchId',
@@ -171,15 +189,26 @@ const fetchAllVendorBills = async (query = {}) => {
             'ps.code as paymentStatusCode',
             'vb.status',
             'vb.notes',
+            'f.firm_name as firmName',
+            'f.code as firmCode',
             'vb.created_at as createdAt',
             db.raw("CONCAT(u.first_name, ' ', u.last_name) as createdByName")
         )
         .leftJoin('parties as pt', 'vb.party_id', 'pt.id')
         .leftJoin('party_branches as pb', 'vb.branch_id', 'pb.id')
+        .leftJoin('firm_branches as fb', 'vb.firm_branch_id', 'fb.id')
+        .leftJoin('firms as f', 'vb.firm_id', 'f.id')
         .leftJoin('payment_statuses as ps', 'vb.payment_status_id', 'ps.id')
         .leftJoin('users as u', 'vb.created_by', 'u.id')
-        .where('vb.firm_id', firmId)
         .where('vb.is_active', true);
+
+    if (firmId) {
+        baseQuery.where('vb.firm_id', firmId);
+    }
+
+    if (branchId) {
+        baseQuery.where('vb.firm_branch_id', branchId);
+    }
 
     if (partyId) {
         baseQuery.where('vb.party_id', partyId);
@@ -231,7 +260,7 @@ const fetchAllVendorBills = async (query = {}) => {
  * Fetch vendor bills pagination metadata
  */
 const fetchVendorBillsMeta = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -245,8 +274,15 @@ const fetchVendorBillsMeta = async (query = {}) => {
 
     const baseQuery = db('vendor_bills as vb')
         .leftJoin('parties as pt', 'vb.party_id', 'pt.id')
-        .where('vb.firm_id', firmId)
         .where('vb.is_active', true);
+
+    if (firmId) {
+        baseQuery.where('vb.firm_id', firmId);
+    }
+
+    if (branchId) {
+        baseQuery.where('vb.firm_branch_id', branchId);
+    }
 
     if (partyId) {
         baseQuery.where('vb.party_id', partyId);
@@ -284,7 +320,7 @@ const fetchVendorBillsMeta = async (query = {}) => {
  * Fetch summary metrics for vendor bills
  */
 const fetchVendorBillsSummary = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         search = '',
         partyId,
@@ -297,8 +333,15 @@ const fetchVendorBillsSummary = async (query = {}) => {
     const baseQuery = db('vendor_bills as vb')
         .leftJoin('parties as pt', 'vb.party_id', 'pt.id')
         .leftJoin('payment_statuses as ps', 'vb.payment_status_id', 'ps.id')
-        .where('vb.firm_id', firmId)
         .where('vb.is_active', true);
+
+    if (firmId) {
+        baseQuery.where('vb.firm_id', firmId);
+    }
+
+    if (branchId) {
+        baseQuery.where('vb.firm_branch_id', branchId);
+    }
 
     if (partyId) {
         baseQuery.where('vb.party_id', partyId);
@@ -357,10 +400,13 @@ const fetchVendorBillsSummary = async (query = {}) => {
 const fetchVendorBillById = async (id) => {
     const { firmId = 0 } = getContext();
 
-    const bill = await db('vendor_bills as vb')
+    const billQuery = db('vendor_bills as vb')
         .select(
             'vb.id',
             'vb.firm_id as firmId',
+            'vb.firm_branch_id as firmBranchId',
+            'fb.name as firmBranchName',
+            'fb.code as firmBranchCode',
             'vb.bill_no as billNo',
             'vb.bill_date as billDate',
             'vb.due_days as dueDays',
@@ -394,10 +440,17 @@ const fetchVendorBillById = async (id) => {
         )
         .leftJoin('parties as pt', 'vb.party_id', 'pt.id')
         .leftJoin('party_branches as pb', 'vb.branch_id', 'pb.id')
+        .leftJoin('firm_branches as fb', 'vb.firm_branch_id', 'fb.id')
+        .leftJoin('firms as f', 'vb.firm_id', 'f.id')
         .leftJoin('payment_statuses as ps', 'vb.payment_status_id', 'ps.id')
         .leftJoin('users as u', 'vb.created_by', 'u.id')
-        .where({ 'vb.id': id, 'vb.firm_id': firmId, 'vb.is_active': true })
-        .first();
+        .where({ 'vb.id': id, 'vb.is_active': true });
+
+    if (firmId) {
+        billQuery.andWhere({ 'vb.firm_id': firmId });
+    }
+
+    const bill = await billQuery.first();
 
     if (!bill) {
         return null;
@@ -473,6 +526,7 @@ const updateVendorBill = async (id, updateData) => {
 
     const {
         branchId,
+        firmBranchId,
         billNo,
         billDate,
         dueDays,
@@ -527,6 +581,7 @@ const updateVendorBill = async (id, updateData) => {
 
     const updateFields = {};
     if (branchId !== undefined) updateFields.branch_id = branchId || null;
+    if (firmBranchId !== undefined) updateFields.firm_branch_id = firmBranchId ? Number(firmBranchId) : null;
     if (billNo) updateFields.bill_no = billNo.trim();
     if (billDate) updateFields.bill_date = billDate;
     if (dueDays !== undefined) updateFields.due_days = dueDays ? Number(dueDays) : null;
@@ -560,9 +615,9 @@ const updateVendorBill = async (id, updateData) => {
         updateFields.balance_amount = finalTotal;
     }
 
-    await db('vendor_bills')
-        .where({ id, firm_id: firmId })
-        .update(updateFields);
+    const updateQuery = db('vendor_bills').where({ id });
+    if (firmId) updateQuery.andWhere({ firm_id: firmId });
+    await updateQuery.update(updateFields);
 
     return await fetchVendorBillById(id);
 };
@@ -573,9 +628,9 @@ const updateVendorBill = async (id, updateData) => {
 const deleteVendorBill = async (id) => {
     const { firmId = 0 } = getContext();
 
-    const bill = await db('vendor_bills')
-        .where({ id, firm_id: firmId, is_active: true })
-        .first();
+    const billQuery = db('vendor_bills').where({ id, is_active: true });
+    if (firmId) billQuery.andWhere({ firm_id: firmId });
+    const bill = await billQuery.first();
 
     if (!bill) {
         throw new ApiError({ statusCode: 404, message: 'Vendor bill not found.' });
@@ -601,9 +656,9 @@ const deleteVendorBill = async (id) => {
         });
     }
 
-    await db('vendor_bills')
-        .where({ id, firm_id: firmId })
-        .update({ is_active: false });
+    const delQuery = db('vendor_bills').where({ id });
+    if (firmId) delQuery.andWhere({ firm_id: firmId });
+    await delQuery.update({ is_active: false });
 
     return { id, message: `Vendor bill #${bill.bill_no} deleted successfully.` };
 };

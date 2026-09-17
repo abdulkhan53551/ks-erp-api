@@ -17,6 +17,12 @@ const fetchAllInvoiceChallans = async (query) => {
                 'IC.id AS challan_id',
                 'IC.challan_no',
                 'IC.challan_date',
+                'IC.firm_id',
+                'F.firm_name',
+                'F.code AS firm_code',
+                'IC.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code',
                 db.raw('("IC"."invoice_id" IS NOT NULL) AS is_invoiced'),
                 'I.invoice_no',
                 'IC.customer_name',
@@ -26,11 +32,21 @@ const fetchAllInvoiceChallans = async (query) => {
                 'IC.deleted_at',
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
+            .leftJoin('firms AS F', 'IC.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
+            .leftJoin('firm_branches AS FB', 'IC.firm_branch_id', 'FB.id')
             .leftJoin('users AS u', 'IC.created_by', 'u.id')
             .leftJoin('users AS du', 'IC.deleted_by', 'du.id')
-            .where('IC.is_active', !isTrash)
-            .andWhere('IC.firm_id', firmId);
+            .where('IC.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('IC.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('IC.firm_branch_id', branchId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -62,11 +78,18 @@ const fetchInvoiceChallanMeta = async (query) => {
     try {
         const { page = 1, pageSize = 10, search = '', trash = false } = query;
         const isTrash = trash === true || trash === 'true';
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, branchId = null } = getContext();
 
         const baseQuery = db('invoice_challans AS IC')
-            .where('IC.is_active', !isTrash)
-            .andWhere('IC.firm_id', firmId);
+            .where('IC.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('IC.firm_id', firmId);
+        }
+
+        if (branchId) {
+            baseQuery.andWhere('IC.firm_branch_id', branchId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -91,21 +114,33 @@ const fetchInvoiceChallanById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const challan = await db('invoice_challans AS IC')
+        const challanQuery = db('invoice_challans AS IC')
             .select(
                 'IC.id AS challan_id',
                 'IC.challan_no',
                 'IC.challan_date',
+                'IC.firm_id',
+                'F.firm_name',
+                'F.code AS firm_code',
+                'IC.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code',
                 db.raw('("IC"."invoice_id" IS NOT NULL) AS is_invoiced'),
                 'IC.invoice_id',
                 'IC.customer_name',
                 'I.invoice_no'
             )
+            .leftJoin('firms AS F', 'IC.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
+            .leftJoin('firm_branches AS FB', 'IC.firm_branch_id', 'FB.id')
             .where('IC.id', id)
-            .andWhere('IC.firm_id', firmId)
-            .andWhere('IC.is_active', true)
-            .first();
+            .andWhere('IC.is_active', true);
+
+        if (firmId) {
+            challanQuery.andWhere('IC.firm_id', firmId);
+        }
+
+        const challan = await challanQuery.first();
 
         return challan || null;
     } catch (err) {
@@ -130,8 +165,11 @@ const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallan
                 'IC.customer_name'
             )
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
-            .where('IC.firm_id', firmId)
-            .andWhere('IC.is_active', true);
+            .where('IC.is_active', true);
+
+        if (firmId) {
+            baseQuery.andWhere('IC.firm_id', firmId);
+        }
 
         if (includeUnmappedChallans) {
             baseQuery.andWhere(function () {
@@ -251,12 +289,16 @@ const deleteInvoiceChallanById = async (id, isPermanentDelete) => {
 
         // Hard delete
         if (isPermanentDelete) {
-            const result = await db('invoice_challans').where({ id, firm_id: firmId }).del();
+            const delQuery = db('invoice_challans').where('id', id);
+            if (firmId) delQuery.andWhere('firm_id', firmId);
+            const result = await delQuery.del();
             return result > 0;
         }
 
         // Soft delete (move to trash)
-        const updated = await db('invoice_challans').where({ id, firm_id: firmId }).update({ is_active: false });
+        const updateQuery = db('invoice_challans').where('id', id);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const updated = await updateQuery.update({ is_active: false });
         return updated > 0;
     } catch (err) {
         if (err instanceof ApiError) {
@@ -291,14 +333,16 @@ const bulkDeleteInvoiceChallans = async (challanIds = [], isPermanentDelete = fa
         }
 
         if (isPermanentDelete) {
-            return await db('invoice_challans').whereIn('id', challanIds).andWhere({ firm_id: firmId }).del();
+            const delQuery = db('invoice_challans').whereIn('id', challanIds);
+            if (firmId) delQuery.andWhere('firm_id', firmId);
+            return await delQuery.del();
         }
 
         // Soft delete (bulk move to trash)
-        const affectedRows = await db('invoice_challans')
-            .whereIn('id', challanIds)
-            .andWhere({ firm_id: firmId })
-            .update({ is_active: false });
+        const updateQuery = db('invoice_challans')
+            .whereIn('id', challanIds);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: false });
 
         return affectedRows;
     } catch (err) {
@@ -317,9 +361,10 @@ const restoreInvoiceChallanById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const challan = await db('invoice_challans')
-            .where({ id, firm_id: firmId, is_active: false })
-            .first();
+        const challanQuery = db('invoice_challans')
+            .where({ id, is_active: false });
+        if (firmId) challanQuery.andWhere('firm_id', firmId);
+        const challan = await challanQuery.first();
 
         if (!challan) {
             throw new ApiError({
@@ -328,9 +373,10 @@ const restoreInvoiceChallanById = async (id) => {
             });
         }
 
-        const affectedRows = await db('invoice_challans')
-            .where({ id, firm_id: firmId })
-            .update({ is_active: true });
+        const updateQuery = db('invoice_challans')
+            .where('id', id);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: true });
 
         return affectedRows > 0;
     } catch (err) {
@@ -350,10 +396,11 @@ const bulkRestoreInvoiceChallans = async (challanIds = []) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const affectedRows = await db('invoice_challans')
+        const updateQuery = db('invoice_challans')
             .whereIn('id', challanIds)
-            .andWhere({ firm_id: firmId, is_active: false })
-            .update({ is_active: true });
+            .andWhere('is_active', false);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: true });
 
         return affectedRows;
     } catch (err) {
@@ -377,11 +424,12 @@ const updateInvoiceChallanMapping = async (trx, invoiceId, newChallanIds) => {
 
     if (uniqueNewIds.length > 0) {
         // 0️⃣ Fetch all challans being requested (validation)
-        const challans = await trx('invoice_challans')
+        const challansQuery = trx('invoice_challans')
             .select('id', 'invoice_id')
             .whereIn('id', uniqueNewIds)
-            .where('firm_id', firmId)
             .where('is_active', true);
+        if (firmId) challansQuery.andWhere('firm_id', firmId);
+        const challans = await challansQuery;
 
         // Validate: All challans must exist
         if (challans.length !== uniqueNewIds.length) {
@@ -392,9 +440,11 @@ const updateInvoiceChallanMapping = async (trx, invoiceId, newChallanIds) => {
         }
 
         // 1️⃣ Fetch existing challans mapped to this invoice
-        const existing = await trx('invoice_challans')
+        const existingQuery = trx('invoice_challans')
             .select('id')
-            .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true });
+            .where({ invoice_id: invoiceId, is_active: true });
+        if (firmId) existingQuery.andWhere('firm_id', firmId);
+        const existing = await existingQuery;
 
         const oldIds = existing.map(c => c.id);
 
@@ -429,9 +479,10 @@ const updateInvoiceChallanMapping = async (trx, invoiceId, newChallanIds) => {
         return { added: toAdd, removed: toRemove };
     } else {
         // Unmap all existing challans for this invoice
-        await trx('invoice_challans')
-            .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true })
-            .update({ invoice_id: null });
+        const unmapQuery = trx('invoice_challans')
+            .where({ invoice_id: invoiceId, is_active: true });
+        if (firmId) unmapQuery.andWhere('firm_id', firmId);
+        await unmapQuery.update({ invoice_id: null });
 
         return { added: [], removed: [] };
     }

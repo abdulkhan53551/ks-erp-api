@@ -55,7 +55,23 @@ async function rotateRefreshToken(oldToken, ip, userAgent, deviceId = null) {
         }
 
         const role = existing.role_slug || 'admin';
-        const firmId = 1;
+        
+        // Resolve default firmId for user if assigned
+        let firmId = 1;
+        const defaultAssignment = await db('user_firm_branches')
+            .where({ user_id: existing.user_id, is_default: true, is_active: true })
+            .first();
+        if (defaultAssignment) {
+            firmId = defaultAssignment.firm_id;
+        } else {
+            const anyAssignment = await db('user_firm_branches')
+                .where({ user_id: existing.user_id, is_active: true })
+                .orderBy('id', 'asc')
+                .first();
+            if (anyAssignment) {
+                firmId = anyAssignment.firm_id;
+            }
+        }
 
         // Generate access token
         const tokenPayload = {

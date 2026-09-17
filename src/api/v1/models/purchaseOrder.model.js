@@ -17,6 +17,11 @@ const fetchAllPurchaseOrder = async (query) => {
                 'PO.po_date',
                 'PO.status',
                 'PO.customer_name',
+                'PO.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code',
+                'F.firm_name AS firm_name',
+                'F.code AS firm_code',
                 db.raw(`(
                     SELECT STRING_AGG(DISTINCT I.invoice_no::text, ', ' ORDER BY I.invoice_no::text)
                     FROM purchase_order_invoices POI
@@ -29,10 +34,20 @@ const fetchAllPurchaseOrder = async (query) => {
                 'PO.deleted_at',
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
+            .leftJoin('firm_branches AS FB', 'PO.firm_branch_id', 'FB.id')
+            .leftJoin('firms AS F', 'PO.firm_id', 'F.id')
             .leftJoin('users AS u', 'PO.created_by', 'u.id')
             .leftJoin('users AS du', 'PO.deleted_by', 'du.id')
-            .where('PO.is_active', !isTrash)
-            .andWhere('PO.firm_id', firmId);
+            .where('PO.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('PO.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('PO.firm_branch_id', branchId);
+        }
 
         if (status) {
             baseQuery.where('PO.status', status);
@@ -68,11 +83,18 @@ const fetchPurchaseOrderMeta = async (query) => {
     try {
         const { page = 1, pageSize = 10, search = '', status, trash = false } = query;
         const isTrash = trash === true || trash === 'true';
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, branchId = null } = getContext();
 
         const baseQuery = db('purchase_orders AS PO')
-            .where('PO.firm_id', firmId)
-            .andWhere('PO.is_active', !isTrash);
+            .where('PO.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('PO.firm_id', firmId);
+        }
+
+        if (branchId) {
+            baseQuery.andWhere('PO.firm_branch_id', branchId);
+        }
 
         if (status) {
             baseQuery.where('PO.status', status);
@@ -85,9 +107,9 @@ const fetchPurchaseOrderMeta = async (query) => {
             });
         }
 
-        const meta = await buildPagination({ baseQuery, page, pageSize });
+        const result = await buildPagination({ baseQuery, page, pageSize });
 
-        return meta;
+        return result;
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
@@ -101,18 +123,26 @@ const fetchPurchaseOrderById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const purchaseOrder = await db('purchase_orders AS PO')
+        const poQuery = db('purchase_orders AS PO')
             .select(
                 'PO.id AS po_id',
                 'PO.po_no',
                 'PO.po_date',
                 'PO.status',
-                'PO.customer_name'
+                'PO.customer_name',
+                'PO.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code'
             )
+            .leftJoin('firm_branches AS FB', 'PO.firm_branch_id', 'FB.id')
             .where('PO.id', id)
-            .andWhere('PO.firm_id', firmId)
-            .andWhere('PO.is_active', true)
-            .first();
+            .andWhere('PO.is_active', true);
+
+        if (firmId) {
+            poQuery.andWhere('PO.firm_id', firmId);
+        }
+
+        const purchaseOrder = await poQuery.first();
 
         if (!purchaseOrder) {
             return null;
@@ -269,15 +299,17 @@ const deletePurchaseOrderById = async (id, isPermanentDelete) => {
             });
         }
 
+        const poWhere = firmId ? { id, firm_id: firmId } : { id };
+
         // Hard delete
         if (isPermanentDelete) {
             await db('purchase_order_invoices').where({ purchase_order_id: id }).del();
-            const result = await db('purchase_orders').where({ id, firm_id: firmId }).del();
+            const result = await db('purchase_orders').where(poWhere).del();
             return result > 0;
         }
 
         // Soft delete (move to trash)
-        const updated = await db('purchase_orders').where({ id, firm_id: firmId }).update({ is_active: false });
+        const updated = await db('purchase_orders').where(poWhere).update({ is_active: false });
         if (updated) {
             await db('purchase_order_invoices').where({ purchase_order_id: id }).update({ is_active: false });
         }
@@ -316,16 +348,18 @@ const bulkDeletePurchaseOrders = async (poIds = [], isPermanentDelete = false) =
             });
         }
 
+        const poQuery = db('purchase_orders').whereIn('id', poIds);
+        if (firmId) {
+            poQuery.andWhere({ firm_id: firmId });
+        }
+
         if (isPermanentDelete) {
             await db('purchase_order_invoices').whereIn('purchase_order_id', poIds).del();
-            return await db('purchase_orders').whereIn('id', poIds).andWhere({ firm_id: firmId }).del();
+            return await poQuery.del();
         }
 
         // Soft delete (bulk move to trash)
-        const affectedRows = await db('purchase_orders')
-            .whereIn('id', poIds)
-            .andWhere({ firm_id: firmId })
-            .update({ is_active: false });
+        const affectedRows = await poQuery.update({ is_active: false });
 
         await db('purchase_order_invoices').whereIn('purchase_order_id', poIds).update({ is_active: false });
 
@@ -346,9 +380,11 @@ const restorePurchaseOrderById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const po = await db('purchase_orders')
-            .where({ id, firm_id: firmId, is_active: false })
-            .first();
+        const poQuery = db('purchase_orders').where({ id, is_active: false });
+        if (firmId) {
+            poQuery.andWhere({ firm_id: firmId });
+        }
+        const po = await poQuery.first();
 
         if (!po) {
             throw new ApiError({
@@ -357,9 +393,11 @@ const restorePurchaseOrderById = async (id) => {
             });
         }
 
-        const affectedRows = await db('purchase_orders')
-            .where({ id, firm_id: firmId })
-            .update({ is_active: true });
+        const restoreQuery = db('purchase_orders').where({ id });
+        if (firmId) {
+            restoreQuery.andWhere({ firm_id: firmId });
+        }
+        const affectedRows = await restoreQuery.update({ is_active: true });
 
         return affectedRows > 0;
     } catch (err) {

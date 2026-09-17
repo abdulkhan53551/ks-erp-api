@@ -12,7 +12,9 @@ const {
     changeUserRole,
     toggleUserStatus,
     adminGenerateResetLink,
-    adminDirectSetPassword
+    adminDirectSetPassword,
+    getUserAssignments,
+    updateUserAssignments
 } = require('../controllers/user.controller.js');
 const { getCurrentUser } = require('../controllers/auth.controller.js');
 const upload = require('./../middlewares/multer.middleware.js');
@@ -41,6 +43,8 @@ router.post('/bulk-delete', verifyAccessToken, requireSuperAdmin, bulkDeleteUser
 router.post('/bulk-restore', verifyAccessToken, requireSuperAdmin, bulkRestoreUsersController);
 
 router.get('/', verifyAccessToken, requireSuperAdmin, getAllUsers);
+router.get('/:id/assignments', verifyAccessToken, requireSuperAdmin, getUserAssignments);
+router.put('/:id/assignments', verifyAccessToken, requireSuperAdmin, updateUserAssignments);
 router.delete('/:id', verifyAccessToken, requireSuperAdmin, deleteUser);
 router.patch('/:id/restore', verifyAccessToken, requireSuperAdmin, restoreUserController);
 router.patch('/:id/role', verifyAccessToken, requireSuperAdmin, changeUserRole);

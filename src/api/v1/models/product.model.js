@@ -24,6 +24,8 @@ const fetchAllProducts = async (firmId, query = {}) => {
             .select(
                 'p.id',
                 'p.firm_id as firmId',
+                'f.firm_name as firmName',
+                'f.code as firmCode',
                 'p.item_code as itemCode',
                 'p.name',
                 'p.item_type as itemType',
@@ -52,15 +54,17 @@ const fetchAllProducts = async (firmId, query = {}) => {
                 db.raw(`CONCAT(uu.first_name, ' ', uu.last_name) AS updated_by_name`),
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by_name`)
             )
+            .leftJoin('firms as f', 'p.firm_id', 'f.id')
             .leftJoin('gst_slabs as gs', 'p.gst_slab_id', 'gs.id')
             .leftJoin('item_units as iu', 'p.item_unit_id', 'iu.id')
             .leftJoin('users as cu', 'p.created_by', 'cu.id')
             .leftJoin('users as uu', 'p.updated_by', 'uu.id')
             .leftJoin('users as du', 'p.deleted_by', 'du.id')
-            .where({
-                'p.firm_id': firmId,
-                'p.is_active': !isTrash
-            });
+            .where('p.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('p.firm_id', firmId);
+        }
 
         // Filter by itemType (single or comma-separated, e.g. "FINISHED_GOODS,SERVICE")
         if (itemType) {
@@ -134,10 +138,11 @@ const fetchProductsMeta = async (firmId, query = {}) => {
         const isTrash = trash === true || trash === 'true';
 
         const baseQuery = db('products as p')
-            .where({
-                'p.firm_id': firmId,
-                'p.is_active': !isTrash
-            });
+            .where('p.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('p.firm_id', firmId);
+        }
 
         if (itemType) {
             const types = itemType.split(',').map(t => t.trim().toUpperCase()).filter(Boolean);
@@ -182,6 +187,9 @@ const searchProducts = async (firmId, query = {}) => {
         const dbQuery = db('products as p')
             .select(
                 'p.id',
+                'p.firm_id as firmId',
+                'f.firm_name as firmName',
+                'f.code as firmCode',
                 'p.name',
                 'p.item_code as itemCode',
                 'p.item_type as itemType',
@@ -198,13 +206,17 @@ const searchProducts = async (firmId, query = {}) => {
                 'p.unit_weight_kg as unitWeightKg',
                 'p.image_url as imageUrl'
             )
+            .leftJoin('firms as f', 'p.firm_id', 'f.id')
             .leftJoin('gst_slabs as gs', 'p.gst_slab_id', 'gs.id')
             .leftJoin('item_units as iu', 'p.item_unit_id', 'iu.id')
             .where({
-                'p.firm_id': firmId,
                 'p.is_active': true,
                 'p.status': 'ACTIVE'
             });
+
+        if (firmId) {
+            dbQuery.andWhere('p.firm_id', firmId);
+        }
 
         // Comma-separated itemType filter (e.g. "FINISHED_GOODS,SERVICE")
         if (itemType) {
@@ -243,10 +255,12 @@ const searchProducts = async (firmId, query = {}) => {
  */
 const fetchProductById = async (id, firmId) => {
     try {
-        const product = await db('products as p')
+        const productQuery = db('products as p')
             .select(
                 'p.id',
                 'p.firm_id as firmId',
+                'f.firm_name as firmName',
+                'f.code as firmCode',
                 'p.item_code as itemCode',
                 'p.name',
                 'p.item_type as itemType',
@@ -275,16 +289,19 @@ const fetchProductById = async (id, firmId) => {
                 db.raw(`CONCAT(uu.first_name, ' ', uu.last_name) AS updated_by_name`),
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by_name`)
             )
+            .leftJoin('firms as f', 'p.firm_id', 'f.id')
             .leftJoin('gst_slabs as gs', 'p.gst_slab_id', 'gs.id')
             .leftJoin('item_units as iu', 'p.item_unit_id', 'iu.id')
             .leftJoin('users as cu', 'p.created_by', 'cu.id')
             .leftJoin('users as uu', 'p.updated_by', 'uu.id')
             .leftJoin('users as du', 'p.deleted_by', 'du.id')
-            .where({
-                'p.id': id,
-                'p.firm_id': firmId
-            })
-            .first();
+            .where('p.id', id);
+
+        if (firmId) {
+            productQuery.andWhere('p.firm_id', firmId);
+        }
+
+        const product = await productQuery.first();
 
         if (!product) {
             throw new ApiError({
@@ -401,9 +418,11 @@ const updateProductById = async (id, firmId, userId, data) => {
         if (data.notes !== undefined) payload.notes = data.notes;
         if (data.status !== undefined) payload.status = data.status;
 
-        const updatedCount = await db('products')
-            .where({ id, firm_id: firmId })
-            .update(payload);
+        const updateQuery = db('products').where('id', id);
+        if (firmId) {
+            updateQuery.andWhere('firm_id', firmId);
+        }
+        const updatedCount = await updateQuery.update(payload);
 
         if (!updatedCount) {
             throw new ApiError({
@@ -432,7 +451,11 @@ const updateProductById = async (id, firmId, userId, data) => {
  */
 const deleteProductById = async (id, firmId, userId, isPermanentDelete = false) => {
     try {
-        const product = await db('products').where({ id, firm_id: firmId }).first();
+        const productQuery = db('products').where('id', id);
+        if (firmId) {
+            productQuery.andWhere('firm_id', firmId);
+        }
+        const product = await productQuery.first();
         if (!product) {
             throw new ApiError({
                 statusCode: 404,
@@ -442,17 +465,19 @@ const deleteProductById = async (id, firmId, userId, isPermanentDelete = false) 
 
         if (isPermanentDelete) {
             // Permanent delete from database
-            await db('products').where({ id, firm_id: firmId }).del();
+            const delQuery = db('products').where('id', id);
+            if (firmId) delQuery.andWhere('firm_id', firmId);
+            await delQuery.del();
         } else {
             // Soft delete
             const auditUserId = (userId && Number(userId) > 0) ? Number(userId) : null;
-            await db('products')
-                .where({ id, firm_id: firmId })
-                .update({
-                    is_active: false,
-                    deleted_at: new Date(),
-                    deleted_by: auditUserId
-                });
+            const softDelQuery = db('products').where('id', id);
+            if (firmId) softDelQuery.andWhere('firm_id', firmId);
+            await softDelQuery.update({
+                is_active: false,
+                deleted_at: new Date(),
+                deleted_by: auditUserId
+            });
         }
 
         return true;
@@ -469,9 +494,12 @@ const deleteProductById = async (id, firmId, userId, isPermanentDelete = false) 
  */
 const restoreProductById = async (id, firmId, userId) => {
     try {
-        const product = await db('products')
-            .where({ id, firm_id: firmId, is_active: false })
-            .first();
+        const productQuery = db('products')
+            .where({ id, is_active: false });
+        if (firmId) {
+            productQuery.andWhere('firm_id', firmId);
+        }
+        const product = await productQuery.first();
 
         if (!product) {
             throw new ApiError({
@@ -480,15 +508,15 @@ const restoreProductById = async (id, firmId, userId) => {
             });
         }
 
-        await db('products')
-            .where({ id, firm_id: firmId })
-            .update({
-                is_active: true,
-                deleted_at: null,
-                deleted_by: null,
-                updated_by: userId,
-                updated_at: new Date()
-            });
+        const restoreQuery = db('products').where('id', id);
+        if (firmId) restoreQuery.andWhere('firm_id', firmId);
+        await restoreQuery.update({
+            is_active: true,
+            deleted_at: null,
+            deleted_by: null,
+            updated_by: userId,
+            updated_at: new Date()
+        });
 
         return true;
     } catch (error) {
@@ -507,20 +535,20 @@ const bulkDeleteProducts = async (ids, firmId, userId, isPermanentDelete = false
         if (!ids || ids.length === 0) return 0;
 
         if (isPermanentDelete) {
-            const count = await db('products')
-                .whereIn('id', ids)
-                .andWhere({ firm_id: firmId })
-                .del();
+            const query = db('products').whereIn('id', ids);
+            if (firmId) query.andWhere('firm_id', firmId);
+            const count = await query.del();
             return count;
         } else {
-            const count = await db('products')
+            const query = db('products')
                 .whereIn('id', ids)
-                .andWhere({ firm_id: firmId, is_active: true })
-                .update({
-                    is_active: false,
-                    deleted_at: new Date(),
-                    deleted_by: userId
-                });
+                .andWhere('is_active', true);
+            if (firmId) query.andWhere('firm_id', firmId);
+            const count = await query.update({
+                is_active: false,
+                deleted_at: new Date(),
+                deleted_by: userId
+            });
             return count;
         }
     } catch (error) {
@@ -538,16 +566,18 @@ const bulkRestoreProducts = async (ids, firmId, userId) => {
     try {
         if (!ids || ids.length === 0) return 0;
 
-        const count = await db('products')
+        const query = db('products')
             .whereIn('id', ids)
-            .andWhere({ firm_id: firmId, is_active: false })
-            .update({
-                is_active: true,
-                deleted_at: null,
-                deleted_by: null,
-                updated_by: userId,
-                updated_at: new Date()
-            });
+            .andWhere('is_active', false);
+        if (firmId) query.andWhere('firm_id', firmId);
+
+        const count = await query.update({
+            is_active: true,
+            deleted_at: null,
+            deleted_by: null,
+            updated_by: userId,
+            updated_at: new Date()
+        });
 
         return count;
     } catch (error) {

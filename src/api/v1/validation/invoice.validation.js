@@ -20,6 +20,7 @@ const createInvoiceValidationSchema = {
     customerName: Joi.string().max(255).required(),
     partyId: Joi.number().integer().positive().allow(null).optional(),
     branchId: Joi.number().integer().positive().allow(null).optional(),
+    firmBranchId: Joi.number().integer().positive().allow(null).optional(),
     hasGst: Joi.boolean().default(false),
     gstNumber: Joi.string()
       .allow(null, '')
@@ -159,6 +160,7 @@ const updateInvoiceValidationSchema = {
     customerName: Joi.string().max(255).required(),
     partyId: Joi.number().integer().positive().allow(null).optional(),
     branchId: Joi.number().integer().positive().allow(null).optional(),
+    firmBranchId: Joi.number().integer().positive().allow(null).optional(),
     hasGst: Joi.boolean().default(false),
 
     gstNumber: Joi.string()

@@ -447,6 +447,49 @@ const updateUserApprovalStatus = async (userId, approvalStatus) => {
     return db('users').where({ id: userId }).update(updateData);
 };
 
+// Fetch user firm and branch assignments
+const fetchUserAssignments = async (userId) => {
+    return db('user_firm_branches as ufb')
+        .join('firms as f', 'ufb.firm_id', 'f.id')
+        .leftJoin('firm_branches as fb', 'ufb.firm_branch_id', 'fb.id')
+        .join('roles as r', 'ufb.role_id', 'r.id')
+        .where({ 'ufb.user_id': userId })
+        .select(
+            'ufb.id',
+            'ufb.firm_id as firmId',
+            'f.firm_name as firmName',
+            'ufb.firm_branch_id as firmBranchId',
+            'fb.branch_name as branchName',
+            'fb.branch_code as branchCode',
+            'ufb.role_id as roleId',
+            'r.name as roleName',
+            'r.slug as roleSlug',
+            'ufb.is_default as isDefault',
+            'ufb.is_active as isActive'
+        )
+        .orderBy('ufb.firm_id', 'asc');
+};
+
+// Save user firm and branch assignments in a transaction
+const saveUserAssignments = async (userId, assignments = []) => {
+    return db.transaction(async (trx) => {
+        await trx('user_firm_branches').where({ user_id: userId }).del();
+
+        if (assignments.length > 0) {
+            const rowsToInsert = assignments.map(a => ({
+                user_id: userId,
+                firm_id: parseInt(a.firmId, 10),
+                firm_branch_id: a.firmBranchId ? parseInt(a.firmBranchId, 10) : null,
+                role_id: parseInt(a.roleId, 10),
+                is_default: !!a.isDefault,
+                is_active: a.isActive !== undefined ? !!a.isActive : true
+            }));
+
+            await trx('user_firm_branches').insert(rowsToInsert);
+        }
+    });
+};
+
 module.exports = {
     isUserExist,
     findUserById,
@@ -476,5 +519,7 @@ module.exports = {
     bulkRestoreUsers,
     updateUserRole,
     updateUserActiveStatus,
-    updateUserApprovalStatus
+    updateUserApprovalStatus,
+    fetchUserAssignments,
+    saveUserAssignments
 };

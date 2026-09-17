@@ -1,4 +1,4 @@
-const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmtById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById, fetchFirmMeta } = require("../models/firm.model");
+const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmtById, restoreFirmById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById, fetchFirmMeta } = require("../models/firm.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
@@ -408,6 +408,25 @@ const deleteFirmLogo = asyncHandler(async (req, res) => {
     );
 });
 
+// Restore firm from recycle bin
+const restoreFirm = asyncHandler(async (req, res) => {
+    const { id: firmId } = req.params;
+
+    const firmExist = await fetchFirmById(firmId);
+    if (!firmExist) {
+        throw new ApiError({ statusCode: 404, message: 'Firm with this ID does not exist.' });
+    }
+
+    const restored = await restoreFirmById(firmId);
+    if (!restored) {
+        throw new ApiError({ statusCode: 500, message: 'Failed to restore firm.' });
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Firm restored successfully.' }));
+});
+
 module.exports = {
     getAllFirm,
     getFirmMeta,
@@ -415,6 +434,7 @@ module.exports = {
     createFirm,
     updateFirm,
     deleteFirm,
+    restoreFirm,
     getFirmType,
     uploadFirmLogo,
     deleteFirmLogo
