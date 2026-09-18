@@ -8,7 +8,6 @@ const upload = require('../middlewares/multer.middleware');
 const router = Router();
 
 // Firm routes guarded by Casbin in-memory RBAC
-router.get('/branches', checkPermission('firms', 'read'), getFirmBranches);
 router.get('/firm-type', checkPermission('firms', 'read'), getFirmType);
 router.get('/firm-pagination', checkPermission('firms', 'read'), getFirmMeta);
 router.get('/', checkPermission('firms', 'read'), getAllFirm);

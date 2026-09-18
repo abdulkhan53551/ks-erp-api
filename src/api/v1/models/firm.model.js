@@ -5,7 +5,8 @@ const { getContext } = require("../helpers/requestContext");
 // Fetch all firms with their addresses and bank accounts
 const fetchAllFirm = async (query) => {
     const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
-    const { userId = 0 } = getContext();
+    const { userId = 0, isSuperAdmin = false, roleId = null, role = '' } = getContext();
+    const isGlobalSuperAdmin = isSuperAdmin || roleId === 1 || (role || '').toLowerCase() === 'super-admin';
     const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
@@ -39,8 +40,27 @@ const fetchAllFirm = async (query) => {
         .leftJoin('city AS C', 'UC.city_id', 'C.id')
         .leftJoin('state AS S', 'UC.state_id', 'S.id')
         .leftJoin('users AS u', 'F.created_by', 'u.id')
-        .where('F.is_active', !showTrash)
-        .andWhere('F.created_by', userId)  // Show only firms created by the user
+        .where('F.is_active', !showTrash);
+
+    // If not super admin, restrict to firms created by the user or assigned in user_firm_branches
+    if (!isGlobalSuperAdmin) {
+        baseQuery.andWhere(function () {
+            this.where('F.created_by', userId)
+                .orWhereIn('F.id', db('user_firm_branches').select('firm_id').where({ user_id: userId, is_active: true }));
+        });
+    }
+
+    if (search && search.trim()) {
+        const term = `%${search.trim()}%`;
+        baseQuery.andWhere(function () {
+            this.where('F.firm_name', 'ILIKE', term)
+                .orWhere('F.trade_name', 'ILIKE', term)
+                .orWhere('F.gstin', 'ILIKE', term)
+                .orWhere('C.name', 'ILIKE', term)
+                .orWhere('S.name', 'ILIKE', term)
+                .orWhere('UC.phone_number', 'ILIKE', term);
+        });
+    }
 
     baseQuery.orderBy('F.id', 'desc');
 
@@ -52,7 +72,8 @@ const fetchAllFirm = async (query) => {
 // Fetch firm meta data for pagination
 const fetchFirmMeta = async (query) => {
     const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
-    const { userId = 0 } = getContext();
+    const { userId = 0, isSuperAdmin = false, roleId = null, role = '' } = getContext();
+    const isGlobalSuperAdmin = isSuperAdmin || roleId === 1 || (role || '').toLowerCase() === 'super-admin';
     const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
@@ -61,8 +82,29 @@ const fetchFirmMeta = async (query) => {
                 .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
         })
         .leftJoin('firm_bank_accounts AS FBA', 'F.id', 'FBA.firm_id')
-        .where('F.is_active', !showTrash)
-        .andWhere('F.created_by', userId)
+        .leftJoin('city AS C', 'UC.city_id', 'C.id')
+        .leftJoin('state AS S', 'UC.state_id', 'S.id')
+        .where('F.is_active', !showTrash);
+
+    // If not super admin, restrict to firms created by the user or assigned in user_firm_branches
+    if (!isGlobalSuperAdmin) {
+        baseQuery.andWhere(function () {
+            this.where('F.created_by', userId)
+                .orWhereIn('F.id', db('user_firm_branches').select('firm_id').where({ user_id: userId, is_active: true }));
+        });
+    }
+
+    if (search && search.trim()) {
+        const term = `%${search.trim()}%`;
+        baseQuery.andWhere(function () {
+            this.where('F.firm_name', 'ILIKE', term)
+                .orWhere('F.trade_name', 'ILIKE', term)
+                .orWhere('F.gstin', 'ILIKE', term)
+                .orWhere('C.name', 'ILIKE', term)
+                .orWhere('S.name', 'ILIKE', term)
+                .orWhere('UC.phone_number', 'ILIKE', term);
+        });
+    }
 
     const result = await buildPagination({ baseQuery, page, pageSize });
 
@@ -151,10 +193,11 @@ const isFirmExistWithNameAndPhone = async (firmName, phoneNumber, firmId = 0) =>
 };
 
 
-// Insert a new firm
-const insertFirm = async (data) => {
+// Insert a new firm (supports transaction)
+const insertFirm = async (data, trx = null) => {
     try {
-        const query = db('firms').insert(data).returning('id');
+        const conn = trx || db;
+        const query = conn('firms').insert(data).returning('id');
         const [{ id }] = await query
         return id || null;
     } catch (error) {
@@ -162,103 +205,116 @@ const insertFirm = async (data) => {
     }
 }
 
-// Update firm by ID
-const updateFirmById = async (id, data) => {
-    const updatedCount = await db('firms').update(data).where({ id });
+// Update firm by ID (supports transaction)
+const updateFirmById = async (id, data, trx = null) => {
+    const conn = trx || db;
+    const updatedCount = await conn('firms').update(data).where({ id });
     return updatedCount > 0; // true if update was successful
 };
 
-// Delete firm by ID
-const deleteFirmtById = async (id, isPermanentDelete) => {
+// Delete firm by ID (supports transaction) — renamed from deleteFirmtById
+const deleteFirmById = async (id, isPermanentDelete, trx = null) => {
+    const conn = trx || db;
+
     if (isPermanentDelete) {
-        const result = await db('firms')
+        const result = await conn('firms')
             .where({ id: id })
             .del();
         return result > 0;
     }
 
-    const result = await db('firms')
+    const result = await conn('firms')
         .update({ is_active: false })
         .where({ id: id });
     return result > 0;
 }
 
-// Insert address for a firm
-const insertAddress = async (data) => {
-    const query = db('user_contacts').insert(data).returning('id');
+// Insert address for a firm (supports transaction)
+const insertAddress = async (data, trx = null) => {
+    const conn = trx || db;
+    const query = conn('user_contacts').insert(data).returning('id');
     const [{ id }] = await query
     return id || null;
 }
 
-// Update address by entity type and ID
-const updateAddressByEntity = async (id, addressData) => {
-    const updatedCount = await db('user_contacts')
+// Update address by entity type and ID (supports transaction)
+const updateAddressByEntity = async (id, addressData, trx = null) => {
+    const conn = trx || db;
+    const updatedCount = await conn('user_contacts')
         .update(addressData)
         .where({ id: id });
     return updatedCount > 0;
 };
 
-// Delete address by ID
-const deleteAddressByFirmId = async (firmId, isPermanentDelete) => {
+// Delete address by ID (supports transaction)
+const deleteAddressByFirmId = async (firmId, isPermanentDelete, trx = null) => {
+    const conn = trx || db;
+
     if (isPermanentDelete) {
-        const result = await db('user_contacts')
+        const result = await conn('user_contacts')
             .where({ entity_type: 'firm', entity_id: firmId })
             .del();
         return result > 0;
     }
 
-    const result = await db('user_contacts')
+    const result = await conn('user_contacts')
         .where({ entity_type: 'firm', entity_id: firmId })
         .update({ is_active: false });
     return result > 0;
 }
 
-// Insert bank account for a firm
-const insertBankAccount = async (data) => {
-    const query = db('firm_bank_accounts').insert(data).returning('id');
+// Insert bank account for a firm (supports transaction)
+const insertBankAccount = async (data, trx = null) => {
+    const conn = trx || db;
+    const query = conn('firm_bank_accounts').insert(data).returning('id');
     const [{ id }] = await query
     return id || null;
 }
 
-// Update bank account by firm ID
-const updateBankAccountByFirmId = async (id, bankData) => {
-    return await db('firm_bank_accounts')
+// Update bank account by firm ID (supports transaction)
+const updateBankAccountByFirmId = async (id, bankData, trx = null) => {
+    const conn = trx || db;
+    return await conn('firm_bank_accounts')
         .update(bankData)
         .where({ id: id });
 };
 
-// Delete bank account by ID
-const deleteBankAccountByFirmId = async (firmId, isPermanentDelete) => {
+// Delete bank account by ID (supports transaction)
+const deleteBankAccountByFirmId = async (firmId, isPermanentDelete, trx = null) => {
+    const conn = trx || db;
+
     if (isPermanentDelete) {
-        const result = await db('firm_bank_accounts')
+        const result = await conn('firm_bank_accounts')
             .where({ firm_id: firmId })
             .del();
 
         return result > 0;
     }
 
-    const result = await db('firm_bank_accounts')
+    const result = await conn('firm_bank_accounts')
         .where({ firm_id: firmId })
         .update({ is_active: false });
 
     return result > 0;
 }
 
-// Restore soft-deleted firm by ID
+// Restore soft-deleted firm by ID (wrapped in transaction)
 const restoreFirmById = async (firmId) => {
-    const firmUpdated = await db('firms')
-        .where({ id: firmId })
-        .update({ is_active: true });
+    return await db.transaction(async (trx) => {
+        const firmUpdated = await trx('firms')
+            .where({ id: firmId })
+            .update({ is_active: true });
 
-    await db('user_contacts')
-        .where({ entity_type: 'firm', entity_id: firmId })
-        .update({ is_active: true });
+        await trx('user_contacts')
+            .where({ entity_type: 'firm', entity_id: firmId })
+            .update({ is_active: true });
 
-    await db('firm_bank_accounts')
-        .where({ firm_id: firmId })
-        .update({ is_active: true });
+        await trx('firm_bank_accounts')
+            .where({ firm_id: firmId })
+            .update({ is_active: true });
 
-    return firmUpdated > 0;
+        return firmUpdated > 0;
+    });
 };
 
 // Fetch firm types from the database
@@ -281,7 +337,7 @@ module.exports = {
     isFirmExistWithNameAndPhone,
     insertFirm,
     updateFirmById,
-    deleteFirmtById,
+    deleteFirmById,
     restoreFirmById,
     insertAddress,
     updateAddressByEntity,
