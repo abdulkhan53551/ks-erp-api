@@ -21,7 +21,6 @@ const fetchAllPurchaseOrder = async (query) => {
                 'FB.branch_name AS firm_branch_name',
                 'FB.branch_code AS firm_branch_code',
                 'F.firm_name AS firm_name',
-                'F.code AS firm_code',
                 db.raw(`(
                     SELECT STRING_AGG(DISTINCT I.invoice_no::text, ', ' ORDER BY I.invoice_no::text)
                     FROM purchase_order_invoices POI

@@ -35,7 +35,6 @@ const fetchAllInvoice = async (query) => {
                 'FB.branch_name AS firm_branch_name',
                 'FB.branch_code AS firm_branch_code',
                 'F.firm_name AS firm_name',
-                'F.code AS firm_code',
                 'PS.code AS payment_status_code',
                 'PM.code AS payment_mode_code',
                 db.raw(`(
@@ -150,6 +149,7 @@ const fetchInvoiceMeta = async (query) => {
             });
         }
 
+        // Fetch pagination metadata using the utility function
         const result = await buildPagination({ baseQuery, page, pageSize });
 
         return result;
