@@ -8,6 +8,7 @@ const {
     findBranchById,
     findBranchByCode,
     clearHeadOffice,
+    clearDefaultBranch,
     insertFirmBranch,
     updateFirmBranchRecord,
     countActiveBranches,
@@ -17,7 +18,11 @@ const {
 // Get all branches for a firm
 const getFirmBranches = asyncHandler(async (req, res) => {
     const context = getContext();
-    const firmId = req.params.firmId ? parseInt(req.params.firmId, 10) : (context.firmId || 1);
+    const firmId = req.params.firmId ? parseInt(req.params.firmId, 10) : context.firmId;
+
+    if (!firmId) {
+        throw new ApiError({ statusCode: 400, message: 'firmId is required to fetch branches.' });
+    }
 
     const branches = await fetchFirmBranches(firmId);
 
@@ -48,12 +53,17 @@ const getFirmBranchById = asyncHandler(async (req, res) => {
 // Create a new branch under a firm
 const createFirmBranch = asyncHandler(async (req, res) => {
     const context = getContext();
-    const firmId = req.params.firmId ? parseInt(req.params.firmId, 10) : (context.firmId || 1);
+    const firmId = req.params.firmId ? parseInt(req.params.firmId, 10) : context.firmId;
+
+    if (!firmId) {
+        throw new ApiError({ statusCode: 400, message: 'firmId is required to create a branch.' });
+    }
     const {
         branchName,
         branchCode,
         gstin,
         phone,
+        phoneNumber,
         email,
         addressLine1,
         addressLine2,
@@ -75,9 +85,19 @@ const createFirmBranch = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 400, message: `Branch code '${branchCode}' already exists for this firm.` });
     }
 
+    // If first branch of this firm, auto-designate as Head Office & Default
+    const branchCount = await countActiveBranches(firmId);
+    const effectiveIsHeadOffice = Boolean(isHeadOffice) || branchCount === 0;
+    const effectiveIsDefault = Boolean(isDefault) || effectiveIsHeadOffice;
+
     // If marked as Head Office, remove is_head_office from other branches of this firm
-    if (isHeadOffice) {
+    if (effectiveIsHeadOffice) {
         await clearHeadOffice(firmId);
+    }
+
+    // If marked as Default, remove is_default from other branches of this firm
+    if (effectiveIsDefault) {
+        await clearDefaultBranch(firmId);
     }
 
     const created = await insertFirmBranch({
@@ -85,21 +105,23 @@ const createFirmBranch = asyncHandler(async (req, res) => {
         branch_name: branchName.trim(),
         branch_code: branchCode.trim().toUpperCase(),
         gstin: gstin ? gstin.trim().toUpperCase() : null,
-        phone: phone || null,
+        phone: phone || phoneNumber || null,
         email: email || null,
         address_line1: addressLine1 || null,
         address_line2: addressLine2 || null,
         city_id: cityId ? parseInt(cityId, 10) : null,
         state_id: stateId ? parseInt(stateId, 10) : null,
         pincode: pincode || null,
-        is_head_office: !!isHeadOffice,
-        is_default: !!isDefault,
+        is_head_office: effectiveIsHeadOffice,
+        is_default: effectiveIsDefault,
         is_active: true
     });
 
+    const fullBranch = await fetchFirmBranchById(created.id);
+
     return res.status(201).json(new ApiResponse({
         statusCode: 201,
-        data: created,
+        data: fullBranch || created,
         message: 'Branch created successfully'
     }));
 });
@@ -112,6 +134,7 @@ const updateFirmBranch = asyncHandler(async (req, res) => {
         branchCode,
         gstin,
         phone,
+        phoneNumber,
         email,
         addressLine1,
         addressLine2,
@@ -143,11 +166,17 @@ const updateFirmBranch = asyncHandler(async (req, res) => {
         await clearHeadOffice(existing.firm_id, branchId);
     }
 
+    // If toggling Default ON, unset other branches of this firm
+    if (isDefault) {
+        await clearDefaultBranch(existing.firm_id, branchId);
+    }
+
     const updatePayload = {};
     if (branchName !== undefined) updatePayload.branch_name = branchName.trim();
     if (branchCode !== undefined) updatePayload.branch_code = branchCode.trim().toUpperCase();
     if (gstin !== undefined) updatePayload.gstin = gstin ? gstin.trim().toUpperCase() : null;
-    if (phone !== undefined) updatePayload.phone = phone;
+    const rawPhone = phone !== undefined ? phone : phoneNumber;
+    if (rawPhone !== undefined) updatePayload.phone = rawPhone;
     if (email !== undefined) updatePayload.email = email;
     if (addressLine1 !== undefined) updatePayload.address_line1 = addressLine1;
     if (addressLine2 !== undefined) updatePayload.address_line2 = addressLine2;
@@ -158,11 +187,12 @@ const updateFirmBranch = asyncHandler(async (req, res) => {
     if (isDefault !== undefined) updatePayload.is_default = !!isDefault;
     if (isActive !== undefined) updatePayload.is_active = !!isActive;
 
-    const updated = await updateFirmBranchRecord(branchId, updatePayload);
+    await updateFirmBranchRecord(branchId, updatePayload);
+    const fullBranch = await fetchFirmBranchById(branchId);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
-        data: updated,
+        data: fullBranch,
         message: 'Branch updated successfully'
     }));
 });

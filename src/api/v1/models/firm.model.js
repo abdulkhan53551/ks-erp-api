@@ -5,8 +5,7 @@ const { getContext } = require("../helpers/requestContext");
 // Fetch all firms with their addresses and bank accounts
 const fetchAllFirm = async (query) => {
     const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
-    const { userId = 0, isSuperAdmin = false, roleId = null, role = '' } = getContext();
-    const isGlobalSuperAdmin = isSuperAdmin || roleId === 1 || (role || '').toLowerCase() === 'super-admin';
+    const { userId = 0, isSuperAdmin = false } = getContext();
     const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
@@ -43,7 +42,7 @@ const fetchAllFirm = async (query) => {
         .where('F.is_active', !showTrash);
 
     // If not super admin, restrict to firms created by the user or assigned in user_firm_branches
-    if (!isGlobalSuperAdmin) {
+    if (!isSuperAdmin) {
         baseQuery.andWhere(function () {
             this.where('F.created_by', userId)
                 .orWhereIn('F.id', db('user_firm_branches').select('firm_id').where({ user_id: userId, is_active: true }));
@@ -72,8 +71,7 @@ const fetchAllFirm = async (query) => {
 // Fetch firm meta data for pagination
 const fetchFirmMeta = async (query) => {
     const { page = 1, pageSize = 10, search = '', isTrash = false, trash = false } = query;
-    const { userId = 0, isSuperAdmin = false, roleId = null, role = '' } = getContext();
-    const isGlobalSuperAdmin = isSuperAdmin || roleId === 1 || (role || '').toLowerCase() === 'super-admin';
+    const { userId = 0, isSuperAdmin = false } = getContext();
     const showTrash = isTrash === 'true' || isTrash === true || trash === 'true' || trash === true;
 
     const baseQuery = db('firms AS F')
@@ -87,7 +85,7 @@ const fetchFirmMeta = async (query) => {
         .where('F.is_active', !showTrash);
 
     // If not super admin, restrict to firms created by the user or assigned in user_firm_branches
-    if (!isGlobalSuperAdmin) {
+    if (!isSuperAdmin) {
         baseQuery.andWhere(function () {
             this.where('F.created_by', userId)
                 .orWhereIn('F.id', db('user_firm_branches').select('firm_id').where({ user_id: userId, is_active: true }));

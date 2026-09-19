@@ -38,9 +38,9 @@ const REFRESH_TOKEN_EXPIRY_IN_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 10
 /**
  * Helper to fetch permission strings for a user role, using the in-memory LRU cache
  */
-const getUserPermissions = async (roleSlug, roleId, firmId = 1) => {
-    if (roleSlug === 'super-admin' || roleId === 1) return ['*'];
-    if (!roleId) return [];
+const getUserPermissions = async (roleSlug, roleId, firmId = null) => {
+    if ((roleSlug || '').toLowerCase() === 'super-admin') return ['*'];
+    if (!roleId || !firmId) return [];
     try {
         const permSet = await getFirmRolePermissions(firmId, roleId);
         return Array.from(permSet);
@@ -56,7 +56,7 @@ const getUserPermissions = async (roleSlug, roleId, firmId = 1) => {
  * For Standard Users, returns mappings from user_firm_branches with assigned roles.
  */
 const getUserFirmsAndBranches = async (user) => {
-    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin' || user.role_id === 1;
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
 
     let availableFirms = [];
     if (isSuperAdmin) {
@@ -74,9 +74,9 @@ const getUserFirmsAndBranches = async (user) => {
 
             availableFirms.push({
                 ...f,
-                role: 'super-admin',
-                roleId: 1,
-                roleName: 'Super Administrator',
+                role: user.role_slug || 'super-admin',
+                roleId: user.role_id || null,
+                roleName: user.role_name || 'Super Administrator',
                 branches
             });
         }
@@ -104,6 +104,7 @@ const getUserFirmsAndBranches = async (user) => {
                 'r.id as role_id',
                 'r.name as role_name',
                 'r.slug as role_slug',
+                'ufb.data_scope as data_scope',
                 'ufb.is_default as is_default'
             )
             .orderBy('f.id', 'asc');
@@ -120,6 +121,7 @@ const getUserFirmsAndBranches = async (user) => {
                     role: m.role_slug,
                     roleId: m.role_id,
                     roleName: m.role_name,
+                    dataScope: m.data_scope || (m.branch_id ? 'BRANCH' : 'FIRM'),
                     isDefault: m.is_default,
                     branches: []
                 });
@@ -135,7 +137,8 @@ const getUserFirmsAndBranches = async (user) => {
                     gstin: m.branch_gstin,
                     role: m.role_slug,
                     roleId: m.role_id,
-                    roleName: m.role_name
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'BRANCH'
                 });
             } else {
                 // Wildcard access to all branches of this firm
@@ -149,7 +152,8 @@ const getUserFirmsAndBranches = async (user) => {
                     ...b,
                     role: m.role_slug,
                     roleId: m.role_id,
-                    roleName: m.role_name
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'FIRM'
                 }));
             }
         }
@@ -265,7 +269,7 @@ const loginUser = asyncHandler(async (req, res) => {
     // Fetch user's authorized firms & branches
     const availableFirms = await getUserFirmsAndBranches(user);
 
-    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin' || user.role_id === 1;
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
     if (!isSuperAdmin && availableFirms.length === 0) {
         throw new ApiError({
             statusCode: 403,
@@ -275,13 +279,13 @@ const loginUser = asyncHandler(async (req, res) => {
 
     // Determine default firm and branch
     const defaultFirm = availableFirms.find(f => f.isDefault) || availableFirms[0] || null;
-    const firmId = defaultFirm?.id || 1;
+    const firmId = defaultFirm?.id || null;
     const defaultBranch = defaultFirm?.branches?.find(b => b.isHeadOffice) || defaultFirm?.branches?.[0] || null;
     const branchId = defaultBranch?.id || null;
 
     const roleSlug = defaultFirm?.role || user.role_slug || 'admin';
     const roleName = defaultFirm?.roleName || user.role_name || 'Administrator';
-    const roleId = defaultFirm?.roleId || user.role_id || 1;
+    const roleId = defaultFirm?.roleId || user.role_id;
 
     // Access and refresh token generation
     const tokenData = {
@@ -294,6 +298,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
     const permissions = await getUserPermissions(roleSlug, roleId, firmId);
 
+    const isSuperAdminUser = (roleSlug || user.role_slug || '').toLowerCase() === 'super-admin';
     const userProfile = {
         id: user.id,
         firstName: user.first_name,
@@ -305,6 +310,8 @@ const loginUser = asyncHandler(async (req, res) => {
         roleName,
         firmId,
         branchId,
+        isSuperAdmin: isSuperAdminUser,
+        dataScope: isSuperAdminUser ? 'GLOBAL' : (defaultFirm?.dataScope || 'OWN'),
         permissions
     };
 
@@ -389,16 +396,16 @@ const refreshUserToken = asyncHandler(async (req, res) => {
 const generateAccessAndRefreshTokens = async (tokenData) => {
     try {
         const { user, ip, userAgent, deviceId } = tokenData;
+        const roleSlug = user.role || user.roleSlug || user.role_slug || null;
 
-        // Generate access token
+        // Generate access token (clean identity payload)
         const tokenPayload = {
             id: user.id,
             email: user.email,
             userName: user.user_name || user.userName,
             fullName: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
-            role: user.role || user.role_slug || 'admin',
-            roleId: user.role_id || user.roleId,
-            firmId: user.firmId || 1
+            role: roleSlug,
+            roleId: user.role_id || user.roleId
         };
         const accessToken = generateAccessToken(tokenPayload);
 
@@ -423,20 +430,38 @@ const getCurrentUser = asyncHandler(async (req, res) => {
     }
 
     const availableFirms = await getUserFirmsAndBranches(user);
-    const activeFirmId = req.headers['x-firm-id']
-        ? parseInt(req.headers['x-firm-id'], 10) || 1
-        : (req.user.firmId || 1);
+    const isSuperAdminUser = (user.role_slug || '').toLowerCase() === 'super-admin';
+
+    if (!isSuperAdminUser && availableFirms.length === 0) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Your account is approved, but no firm has been assigned to you yet. Please contact your administrator.'
+        });
+    }
+
+    let activeFirmId = null;
+    if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
+        const parsed = parseInt(req.headers['x-firm-id'], 10);
+        if (!isNaN(parsed) && parsed > 0) activeFirmId = parsed;
+    } else {
+        activeFirmId = req.user?.firmId || (isSuperAdminUser ? null : (availableFirms[0]?.id || null));
+    }
 
     let activeBranchId = null;
     if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== 'all') {
         const parsed = parseInt(req.headers['x-branch-id'], 10);
         if (!isNaN(parsed) && parsed > 0) activeBranchId = parsed;
+    } else {
+        activeBranchId = req.user?.branchId || null;
     }
 
-    const currentFirm = availableFirms.find(f => f.id === activeFirmId) || availableFirms[0];
-    const roleSlug = currentFirm?.role || user.role_slug || req.user.role || 'admin';
-    const roleId = currentFirm?.roleId || user.role_id || req.user.roleId || 1;
-    const roleName = currentFirm?.roleName || user.role_name || 'Administrator';
+    const currentFirm = availableFirms.find(f => f.id === activeFirmId) || availableFirms[0] || null;
+    const currentBranch = activeBranchId ? currentFirm?.branches?.find(b => b.id === activeBranchId) : null;
+
+    const roleSlug = currentBranch?.role || currentFirm?.role || user.role_slug || req.user?.role || 'admin';
+    const roleId = currentBranch?.roleId || currentFirm?.roleId || user.role_id || req.user?.roleId;
+    const roleName = currentBranch?.roleName || currentFirm?.roleName || user.role_name || 'Administrator';
+    const dataScope = isSuperAdminUser ? 'GLOBAL' : (currentBranch?.dataScope || currentFirm?.dataScope || req.user?.dataScope || 'OWN');
 
     const permissions = await getUserPermissions(roleSlug, roleId, activeFirmId);
 
@@ -454,6 +479,8 @@ const getCurrentUser = asyncHandler(async (req, res) => {
                 roleName,
                 firmId: activeFirmId,
                 branchId: activeBranchId,
+                isSuperAdmin: isSuperAdminUser,
+                dataScope,
                 permissions
             },
             firms: availableFirms

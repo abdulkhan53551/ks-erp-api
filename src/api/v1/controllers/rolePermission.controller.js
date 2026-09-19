@@ -35,7 +35,6 @@ const getAllRoles = asyncHandler(async (req, res) => {
         description: r.description,
         parentRoleId: r.parent_role_id,
         parentRoleName: r.parent_role_name || null,
-        dataScope: r.data_scope || 'OWN',
         isIndependent: Boolean(r.is_independent),
         isActive: r.is_active,
         userCount: parseInt(r.user_count || 0, 10),
@@ -89,7 +88,6 @@ const getPermissionMatrix = asyncHandler(async (req, res) => {
                 description: r.description,
                 parentRoleId: r.parent_role_id,
                 parentRoleName: r.parent_role_name || null,
-                dataScope: r.data_scope || 'OWN',
                 isIndependent: Boolean(r.is_independent),
                 userCount: parseInt(r.user_count || 0, 10),
                 isSystem: SYSTEM_ROLE_SLUGS.includes(r.slug)
@@ -105,7 +103,7 @@ const getPermissionMatrix = asyncHandler(async (req, res) => {
  */
 const updateRolePermissions = asyncHandler(async (req, res) => {
     const roleId = parseInt(req.params.id, 10);
-    const { permissionIds, firmId: bodyFirmId, firmIds: bodyFirmIds, parentRoleId, dataScope, isIndependent } = req.body;
+    const { permissionIds, firmId: bodyFirmId, firmIds: bodyFirmIds, parentRoleId, isIndependent } = req.body;
 
     let targetFirmIds = [];
     if (Array.isArray(bodyFirmIds) && bodyFirmIds.length > 0) {
@@ -125,22 +123,15 @@ const updateRolePermissions = asyncHandler(async (req, res) => {
     }
 
     // Super Admin is system protected and retains universal access
-    if (role.slug === 'super-admin') {
+    if ((role.slug || '').toLowerCase() === 'super-admin') {
         throw new ApiError({
             statusCode: 400,
             message: 'Super Admin has universal system access and cannot be modified.'
         });
     }
 
-    // If hierarchy or scope fields were provided in the same payload, validate and update role metadata
+    // If hierarchy or independence fields were provided in the same payload, update role metadata
     const roleUpdates = {};
-    if (dataScope !== undefined) {
-        const validScopes = ['GLOBAL', 'FIRM', 'BRANCH', 'DESCENDANTS', 'OWN'];
-        if (!validScopes.includes(dataScope)) {
-            throw new ApiError({ statusCode: 400, message: `Invalid dataScope. Allowed: ${validScopes.join(', ')}` });
-        }
-        roleUpdates.data_scope = dataScope;
-    }
 
     if (isIndependent !== undefined) {
         roleUpdates.is_independent = Boolean(isIndependent);
@@ -201,7 +192,7 @@ const updateRolePermissions = asyncHandler(async (req, res) => {
  */
 const updateRoleDetails = asyncHandler(async (req, res) => {
     const roleId = parseInt(req.params.id, 10);
-    const { name, description, parentRoleId, dataScope, isIndependent } = req.body;
+    const { name, description, parentRoleId, isIndependent } = req.body;
 
     const role = await findRoleById(roleId);
     if (!role) {
@@ -220,18 +211,10 @@ const updateRoleDetails = asyncHandler(async (req, res) => {
     }
 
     // System role protection
-    if (role.slug === 'super-admin') {
+    if ((role.slug || '').toLowerCase() === 'super-admin') {
         updates.parent_role_id = null;
-        updates.data_scope = 'GLOBAL';
         updates.is_independent = false;
     } else {
-        if (dataScope !== undefined) {
-            const validScopes = ['GLOBAL', 'FIRM', 'BRANCH', 'DESCENDANTS', 'OWN'];
-            if (!validScopes.includes(dataScope)) {
-                throw new ApiError({ statusCode: 400, message: `Invalid dataScope. Allowed: ${validScopes.join(', ')}` });
-            }
-            updates.data_scope = dataScope;
-        }
 
         if (isIndependent !== undefined) {
             updates.is_independent = Boolean(isIndependent);
@@ -262,7 +245,7 @@ const updateRoleDetails = asyncHandler(async (req, res) => {
 
     await updateRoleDetailsRecord(roleId, updates, req.user?.id);
 
-    invalidateFirmPermissionCache(req.user?.firmId || 1, roleId);
+    invalidateFirmPermissionCache(req.user?.firmId || null, roleId);
 
     const updatedRole = await fetchRoleWithParentById(roleId);
 
@@ -277,7 +260,7 @@ const updateRoleDetails = asyncHandler(async (req, res) => {
  * Create a new custom role with hierarchy and scope
  */
 const createCustomRole = asyncHandler(async (req, res) => {
-    const { name, description, parentRoleId, dataScope, isIndependent } = req.body;
+    const { name, description, parentRoleId, isIndependent } = req.body;
 
     if (!name || !name.trim()) {
         throw new ApiError({ statusCode: 400, message: 'Role name is required' });
@@ -303,21 +286,17 @@ const createCustomRole = asyncHandler(async (req, res) => {
         parentRoleName = parentRole.name;
     }
 
-    const validScopes = ['GLOBAL', 'FIRM', 'BRANCH', 'DESCENDANTS', 'OWN'];
-    const resolvedScope = validScopes.includes(dataScope) ? dataScope : 'OWN';
-
     const newRole = await insertCustomRole({
         name: trimmedName,
         slug,
         description,
         parentRoleId: pId,
-        dataScope: resolvedScope,
         isIndependent,
         userId: req.user?.id
     });
 
     // Invalidate hierarchy cache
-    invalidateFirmPermissionCache(req.user?.firmId || 1);
+    invalidateFirmPermissionCache(req.user?.firmId || null);
 
     return res.status(201).json(new ApiResponse({
         statusCode: 201,
@@ -328,7 +307,6 @@ const createCustomRole = asyncHandler(async (req, res) => {
             description: newRole.description,
             parentRoleId: newRole.parent_role_id,
             parentRoleName,
-            dataScope: newRole.data_scope,
             isIndependent: Boolean(newRole.is_independent),
             isActive: newRole.is_active,
             userCount: 0,

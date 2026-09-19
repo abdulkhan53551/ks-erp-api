@@ -56,18 +56,20 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
     try {
         const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
 
-        if (req.tenantAccessDenied) {
+        const isSuperAdmin = Boolean(req.user?.isSuperAdmin) ||
+            (decoded?.role || '').toLowerCase() === 'super-admin';
+
+        if (req.tenantAccessDenied && !isSuperAdmin) {
             throw new ApiError({ statusCode: 403, message: 'Access denied: You do not have access to this firm or branch.' });
         }
 
         if (!req.user) {
-            const isSuperAdmin = (decoded.role || '').toLowerCase() === 'super-admin' || decoded.roleId === 1;
             let firmId = null;
             if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
                 const parsed = parseInt(req.headers['x-firm-id'], 10);
                 if (!isNaN(parsed) && parsed > 0) firmId = parsed;
             } else if (!isSuperAdmin) {
-                firmId = decoded.firmId || 1;
+                firmId = null;
             }
 
             req.user = {
@@ -78,7 +80,8 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
                 role: decoded.role,
                 roleId: decoded.roleId,
                 firmId,
-                isSuperAdmin
+                isSuperAdmin,
+                dataScope: isSuperAdmin ? 'GLOBAL' : 'OWN'
             };
         }
         next();
@@ -107,7 +110,7 @@ const authorizeAccess = asyncHandler(async (req, res, next) => {
     console.log('sub: ', sub);
     console.log('obj_rule: ', obj_rule);
     console.log('act: ', act);
-    
+
 
     const enforcer = await getEnforcer();
     const allowed = await enforcer.enforce(sub, obj_rule, act);
@@ -121,7 +124,7 @@ const authorizeAccess = asyncHandler(async (req, res, next) => {
 
 // Ensure caller is Super Admin
 const requireSuperAdmin = asyncHandler(async (req, res, next) => {
-    if (!req.user || req.user.role !== 'super-admin') {
+    if (!req.user?.isSuperAdmin) {
         throw new ApiError({ statusCode: 403, message: 'Access denied. Super Admin privileges required.' });
     }
     next();

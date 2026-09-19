@@ -22,9 +22,12 @@ const {
     getHashedPassword,
     completePasswordReset,
     fetchUserAssignments,
-    saveUserAssignments
+    saveUserAssignments,
+    fetchUserCountsByFirm
 } = require('../models/user.model.js');
 const { deleteRefreshTokenByUserID } = require('../models/auth.model.js');
+const { getContext } = require('../helpers/requestContext.js');
+const { getUserAllowedFirms, invalidateUserTenantCache } = require('../services/firmPermissionCache.js');
 const { hashToken, generateToken } = require('../helpers/token.js');
 const { uploadOnCloudinary } = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
@@ -461,15 +464,27 @@ const getUserAssignments = asyncHandler(async (req, res) => {
 const updateUserAssignments = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const targetUserId = parseInt(id, 10);
-    const { assignments = [] } = req.body;
-
-    if (!Array.isArray(assignments)) {
-        throw new ApiError({ statusCode: 400, message: 'assignments must be an array.' });
-    }
+    const { isSuperAdmin = false, assignments = [] } = req.body;
 
     const user = await findUserById(targetUserId);
     if (!user) {
         throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    if (isSuperAdmin) {
+        // Promote to Super Admin
+        await saveUserAssignments(targetUserId, { isSuperAdmin: true, assignments: [] });
+        invalidateUserTenantCache(targetUserId);
+
+        return res.status(200).json(new ApiResponse({
+            statusCode: 200,
+            data: { userId: targetUserId, isSuperAdmin: true, assignmentCount: 0 },
+            message: 'User promoted to Global Super Administrator successfully.'
+        }));
+    }
+
+    if (!Array.isArray(assignments)) {
+        throw new ApiError({ statusCode: 400, message: 'assignments must be an array.' });
     }
 
     // Validate uniqueness of firm + branch scope
@@ -507,12 +522,33 @@ const updateUserAssignments = asyncHandler(async (req, res) => {
         }));
     }
 
-    await saveUserAssignments(targetUserId, normalizedAssignments);
+    await saveUserAssignments(targetUserId, { isSuperAdmin: false, assignments: normalizedAssignments });
+    invalidateUserTenantCache(targetUserId);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
-        data: { userId: targetUserId, assignmentCount: normalizedAssignments.length },
+        data: { userId: targetUserId, isSuperAdmin: false, assignmentCount: normalizedAssignments.length },
         message: 'User entity assignments updated successfully.'
+    }));
+});
+
+// Get user counts by firm
+const getUserCountsByFirmController = asyncHandler(async (req, res) => {
+    const context = getContext();
+    const isSuperAdmin = Boolean(context.isSuperAdmin);
+
+    let allowedFirmIds = null;
+    if (!isSuperAdmin && context.userId) {
+        const { allowedFirmIds: userFirms } = await getUserAllowedFirms(context.userId);
+        allowedFirmIds = Array.from(userFirms || []);
+    }
+
+    const counts = await fetchUserCountsByFirm(allowedFirmIds);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: counts,
+        message: 'User counts by firm retrieved successfully.'
     }));
 });
 
@@ -524,6 +560,7 @@ module.exports = {
     updateUserAvatar,
     getAllUsers,
     getUsersMeta,
+    getUserCountsByFirmController,
     deleteUser,
     restoreUserController,
     bulkDeleteUsersController,

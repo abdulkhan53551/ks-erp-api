@@ -5,6 +5,7 @@ const {
     updateAccountDetail,
     getAllUsers,
     getUsersMeta,
+    getUserCountsByFirmController,
     deleteUser,
     restoreUserController,
     bulkDeleteUsersController,
@@ -36,14 +37,15 @@ router.get('/current-user', verifyAccessToken, getCurrentUser);
 router.patch('/update-account-detail', verifyAccessToken, updateAccountDetail);
 router.patch('/update-avatar', verifyAccessToken, updateAccountDetail);
 
-// ========== Super Admin: User Directory & Recycle Bin ==========
+// ========== User Directory & Firm Counts ==========
 // Static paths must precede parameter routes /:id
-router.get('/meta', verifyAccessToken, requireSuperAdmin, getUsersMeta);
+router.get('/meta', verifyAccessToken, getUsersMeta);
+router.get('/firm-counts', verifyAccessToken, getUserCountsByFirmController);
 router.post('/bulk-delete', verifyAccessToken, requireSuperAdmin, bulkDeleteUsersController);
 router.post('/bulk-restore', verifyAccessToken, requireSuperAdmin, bulkRestoreUsersController);
 
-router.get('/', verifyAccessToken, requireSuperAdmin, getAllUsers);
-router.get('/:id/assignments', verifyAccessToken, requireSuperAdmin, getUserAssignments);
+router.get('/', verifyAccessToken, getAllUsers);
+router.get('/:id/assignments', verifyAccessToken, getUserAssignments);
 router.put('/:id/assignments', verifyAccessToken, requireSuperAdmin, updateUserAssignments);
 router.delete('/:id', verifyAccessToken, requireSuperAdmin, deleteUser);
 router.patch('/:id/restore', verifyAccessToken, requireSuperAdmin, restoreUserController);

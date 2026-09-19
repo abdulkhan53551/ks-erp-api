@@ -1,8 +1,8 @@
-// middleware/setUserContext.js
 const jwt = require('jsonwebtoken');
 const { runWithContext } = require('../helpers/requestContext');
 const { JWT } = require('../../../config/config');
 const { db } = require('../database');
+const firmPermissionCache = require('../services/firmPermissionCache');
 
 module.exports = async (req, res, next) => {
     let token = null;
@@ -49,76 +49,57 @@ module.exports = async (req, res, next) => {
             role = decoded?.role || null;
             roleId = decoded?.roleId || null;
 
-            isSuperAdmin = (role || '').toLowerCase() === 'super-admin' || roleId === 1;
+            isSuperAdmin = (role || '').toLowerCase() === 'super-admin';
 
             if (isSuperAdmin) {
-                effectiveRole = role || 'super-admin';
-                effectiveRoleId = roleId || 1;
+                effectiveRole = 'super-admin';
+                effectiveRoleId = roleId;
                 dataScope = 'GLOBAL';
                 parentRoleId = null;
                 isIndependent = false;
                 tenantAccessDenied = false;
             } else if (userId) {
                 // Standard User:
-                // If standard user didn't specify firmId or sent 'all', resolve their default assigned firm
-                if (!firmId) {
-                    if (decoded?.firmId) {
-                        firmId = decoded.firmId;
-                    } else {
-                        try {
-                            const firstAssignment = await db('user_firm_branches as ufb')
-                                .where({ 'ufb.user_id': userId, 'ufb.is_active': true })
-                                .orderBy('ufb.id', 'asc')
-                                .first();
-                            firmId = firstAssignment?.firm_id || 1;
-                        } catch (e) {
-                            firmId = 1;
-                        }
-                    }
+                // Validate tenant access via in-memory LRU cache (< 0.005 ms)
+                const { allowedFirmIds, assignments, defaultFirmId } = await firmPermissionCache.getUserAllowedFirms(userId);
+
+                if (!allowedFirmIds || allowedFirmIds.size === 0) {
+                    // User is not assigned to any active firm
+                    tenantAccessDenied = true;
+                    firmId = null;
+                } else if (!requestedFirmId) {
+                    // No firm specified by client: default strictly to user's primary assigned firm from DB
+                    firmId = defaultFirmId;
+                } else if (!allowedFirmIds.has(requestedFirmId)) {
+                    // Client requested a firm that this user is not assigned to
+                    tenantAccessDenied = true;
+                    firmId = null;
+                } else {
+                    // Client requested a valid assigned firm
+                    firmId = requestedFirmId;
                 }
 
-                // Standard User: Resolve effective role from user_firm_branches
-                try {
-                    const assignments = await db('user_firm_branches as ufb')
-                        .join('roles as r', 'ufb.role_id', 'r.id')
-                        .where({
-                            'ufb.user_id': userId,
-                            'ufb.firm_id': firmId,
-                            'ufb.is_active': true
-                        })
-                        .select(
-                            'ufb.role_id',
-                            'r.slug as role_slug',
-                            'r.name as role_name',
-                            'r.parent_role_id',
-                            'r.data_scope',
-                            'r.is_independent',
-                            'ufb.firm_branch_id'
-                        );
+                if (firmId && !tenantAccessDenied) {
+                    // Find assignments for this specific active firm
+                    const firmAssignments = (assignments || []).filter(a => a.firm_id === firmId);
 
-                    if (!assignments || assignments.length === 0) {
-                        tenantAccessDenied = true;
+                    let match = null;
+                    if (branchId) {
+                        match = firmAssignments.find(a => a.firm_branch_id === branchId) ||
+                                firmAssignments.find(a => a.firm_branch_id === null);
                     } else {
-                        let match = null;
-                        if (branchId) {
-                            match = assignments.find(a => a.firm_branch_id === branchId) ||
-                                    assignments.find(a => a.firm_branch_id === null);
-                        } else {
-                            match = assignments.find(a => a.firm_branch_id === null) || assignments[0];
-                        }
-
-                        if (match) {
-                            effectiveRoleId = match.role_id;
-                            effectiveRole = match.role_slug || role;
-                            dataScope = match.data_scope || 'OWN';
-                            parentRoleId = match.parent_role_id || null;
-                            isIndependent = Boolean(match.is_independent);
-                        } else {
-                            tenantAccessDenied = true;
-                        }
+                        match = firmAssignments.find(a => a.firm_branch_id === null) || firmAssignments[0];
                     }
-                } catch (dbErr) {
-                    console.error('[setUserContext] Error resolving firm branch role:', dbErr);
+
+                    if (match) {
+                        effectiveRoleId = match.role_id;
+                        effectiveRole = match.role_slug || role;
+                        dataScope = match.data_scope || (match.firm_branch_id ? 'BRANCH' : 'FIRM');
+                        parentRoleId = match.parent_role_id || null;
+                        isIndependent = Boolean(match.is_independent);
+                    } else {
+                        tenantAccessDenied = true;
+                    }
                 }
             }
 

@@ -105,6 +105,20 @@ const clearHeadOffice = async (firmId, excludeBranchId = null) => {
 };
 
 /**
+ * Clear default flag from other branches of a firm
+ */
+const clearDefaultBranch = async (firmId, excludeBranchId = null) => {
+    const query = db('firm_branches')
+        .where({ firm_id: firmId });
+
+    if (excludeBranchId) {
+        query.whereNot({ id: excludeBranchId });
+    }
+
+    return query.update({ is_default: false });
+};
+
+/**
  * Insert new firm branch
  */
 const insertFirmBranch = async (branchData) => {
@@ -162,6 +176,7 @@ module.exports = {
     findBranchById,
     findBranchByCode,
     clearHeadOffice,
+    clearDefaultBranch,
     insertFirmBranch,
     updateFirmBranchRecord,
     countActiveBranches,

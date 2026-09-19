@@ -1,9 +1,9 @@
-const { 
-    getFirmRolePermissions, 
-    hasPermission, 
-    isAncestorRole, 
-    getDescendantRoleIds, 
-    getRoleMetadata 
+const {
+    getFirmRolePermissions,
+    hasPermission,
+    isAncestorRole,
+    getDescendantRoleIds,
+    getRoleMetadata
 } = require('../services/firmPermissionCache');
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require('../services/asyncHandler');
@@ -30,7 +30,7 @@ const checkPermission = (module, action) => {
         const roleId = req.user.roleId;
 
         // Universal fast-path bypass for Super Admin
-        if (userRoleSlug === 'super-admin' || roleId === 1 || req.user.isSuperAdmin) {
+        if (req.user?.isSuperAdmin) {
             return next();
         }
 
@@ -40,7 +40,11 @@ const checkPermission = (module, action) => {
 
         // Determine tenant/firm ID from user or request context
         const context = getContext();
-        const firmId = req.user.firmId || context.firmId || 1;
+        const firmId = req.user.firmId || context.firmId;
+
+        if (!firmId) {
+            throw new ApiError({ statusCode: 403, message: 'Tenant firm context required before permission check.' });
+        }
 
         // Evaluate from high-speed in-memory tenant LRU cache (< 0.005 ms)
         const permSet = await getFirmRolePermissions(firmId, roleId);
@@ -74,7 +78,7 @@ async function canModifyRecord(currentUser, record, explicitCreatorRoleId = null
     if (!currentUser || !record) return false;
 
     // 1. Super Admin universal fast-path
-    if (currentUser.isSuperAdmin || currentUser.roleId === 1) {
+    if (currentUser?.isSuperAdmin) {
         return true;
     }
 
@@ -91,7 +95,7 @@ async function canModifyRecord(currentUser, record, explicitCreatorRoleId = null
             const assignment = await db('user_firm_branches')
                 .where({
                     user_id: recordCreatorId,
-                    firm_id: record.firm_id || currentUser.firmId || 1,
+                    firm_id: record.firm_id || currentUser.firmId,
                     is_active: true
                 })
                 .first();
@@ -161,16 +165,18 @@ async function applyDataScopeToQuery(query, currentUser, options = {}) {
 
     if (!currentUser) return query;
 
-    // Super Admin: Consolidated cross-firm or single-firm filtered
-    if (currentUser.isSuperAdmin || currentUser.roleId === 1) {
+    // Super Admin: Consolidated cross-firm or single-firm filtered (GLOBAL data scope)
+    if (currentUser?.isSuperAdmin || currentUser?.dataScope === 'GLOBAL') {
         if (currentUser.firmId && currentUser.firmId !== 'all') {
             query.where(firmCol, currentUser.firmId);
         }
         return query;
     }
 
-    const firmId = currentUser.firmId || 1;
-    query.where(firmCol, firmId);
+    const firmId = currentUser.firmId;
+    if (firmId) {
+        query.where(firmCol, firmId);
+    }
 
     const dataScope = currentUser.dataScope || 'OWN';
 
@@ -219,7 +225,7 @@ async function applyDataScopeToQuery(query, currentUser, options = {}) {
     return query;
 }
 
-module.exports = { 
+module.exports = {
     checkPermission,
     canModifyRecord,
     applyDataScopeToQuery

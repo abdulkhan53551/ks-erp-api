@@ -5,6 +5,8 @@ const { ApiError } = require('../services/ApiError')
 const { db } = require('../database')
 const { getEnforcer } = require('../services/casbin')
 const { fetchPageData, buildPagination } = require('../../../utils/pagination')
+const { getContext } = require('../helpers/requestContext')
+const { getUserAllowedFirms } = require('../services/firmPermissionCache')
 
 //  Is user exist
 const isUserExist = async (username = '', email = '') => {
@@ -108,15 +110,16 @@ const generateToken = (data) => {
     //     fullName: 'Abdul Khan'
     // }
 
+    const roleSlug = data.role || data.role_slug || 'admin';
+
     return jwt.sign(
         {
             id: data.id,
             email: data.email,
             userName: data.userName || data.user_name,
             fullName: data.fullName || `${data.first_name || ''} ${data.last_name || ''}`.trim(),
-            role: data.role || data.role_slug || 'admin',
-            roleId: data.roleId || data.role_id,
-            firmId: data.firmId || 1
+            role: roleSlug,
+            roleId: data.roleId || data.role_id
         },
         JWT.ACCESS_TOKEN_SECRET,
         {
@@ -238,11 +241,21 @@ const getAllRoles = async () => {
         .orderBy('id', 'asc');
 };
 
+// ========== DYNAMIC ROLE HELPERS ==========
+const getSuperAdminRoleId = async () => {
+    const role = await db('roles')
+        .whereRaw('LOWER(slug) = ?', ['super-admin'])
+        .first();
+    return role ? role.id : null;
+};
+
 // ========== USER DIRECTORY & RECYCLE BIN ==========
 const fetchAllUsers = async (query = {}) => {
     try {
-        const { page = 1, pageSize = 10, search = '', status = '', roleId = null, trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', roleId = null, firmId = null, trash = false } = query;
         const isTrash = trash === true || trash === 'true';
+        const context = getContext();
+        const isSuperAdmin = Boolean(context.isSuperAdmin);
 
         const baseQuery = db('users as u')
             .leftJoin('roles as r', 'u.role_id', 'r.id')
@@ -270,6 +283,31 @@ const fetchAllUsers = async (query = {}) => {
             baseQuery.whereNull('u.deleted_at');
         }
 
+        // Multi-tenant Scoping: If not super admin, restrict to users in requester's allowed firms
+        if (!isSuperAdmin && context.userId) {
+            const { allowedFirmIds } = await getUserAllowedFirms(context.userId);
+            const firmIds = Array.from(allowedFirmIds || []);
+            if (firmIds.length === 0) {
+                return [];
+            }
+            baseQuery.whereIn('u.id', function () {
+                this.select('user_id')
+                    .from('user_firm_branches')
+                    .whereIn('firm_id', firmIds)
+                    .where('is_active', true);
+            });
+        }
+
+        // Explicit firm filter if passed
+        if (firmId && firmId !== 'all') {
+            const targetFirmId = parseInt(firmId, 10);
+            baseQuery.whereIn('u.id', function () {
+                this.select('user_id')
+                    .from('user_firm_branches')
+                    .where({ firm_id: targetFirmId, is_active: true });
+            });
+        }
+
         if (status) {
             if (status === 'APPROVED') {
                 baseQuery.where('u.approval_status', 'APPROVED').where('u.is_active', true);
@@ -283,7 +321,16 @@ const fetchAllUsers = async (query = {}) => {
         }
 
         if (roleId) {
-            baseQuery.where('u.role_id', roleId);
+            baseQuery.where(function () {
+                this.where('u.role_id', roleId)
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('user_firm_branches as ufb_filter')
+                            .whereRaw('ufb_filter.user_id = u.id')
+                            .where('ufb_filter.role_id', roleId)
+                            .where('ufb_filter.is_active', true);
+                    });
+            });
         }
 
         if (search) {
@@ -311,7 +358,65 @@ const fetchAllUsers = async (query = {}) => {
 
         baseQuery.orderBy(sortColumn, direction);
 
-        return await fetchPageData({ baseQuery, page, pageSize });
+        const users = await fetchPageData({ baseQuery, page, pageSize });
+        if (!users || users.length === 0) return [];
+
+        // Batch fetch firm & branch assignments for retrieved users
+        const userIds = users.map(u => u.id);
+        const assignments = await db('user_firm_branches as ufb')
+            .join('firms as f', 'ufb.firm_id', 'f.id')
+            .leftJoin('firm_branches as fb', 'ufb.firm_branch_id', 'fb.id')
+            .join('roles as r', 'ufb.role_id', 'r.id')
+            .whereIn('ufb.user_id', userIds)
+            .where('ufb.is_active', true)
+            .where('f.is_active', true)
+            .select(
+                'ufb.user_id',
+                'ufb.firm_id',
+                'ufb.firm_id as firmId',
+                'f.firm_name',
+                'f.firm_name as firmName',
+                'ufb.firm_branch_id',
+                'ufb.firm_branch_id as firmBranchId',
+                'fb.branch_name',
+                'fb.branch_name as branchName',
+                'fb.branch_code',
+                'fb.branch_code as branchCode',
+                'ufb.role_id',
+                'ufb.role_id as roleId',
+                'r.name as role_name',
+                'r.name as roleName',
+                'r.slug as role_slug',
+                'r.slug as roleSlug',
+                'ufb.data_scope',
+                'ufb.data_scope as dataScope',
+                'ufb.is_default',
+                'ufb.is_default as isDefault'
+            )
+            .orderBy('ufb.is_default', 'desc');
+
+        const assignmentMap = new Map();
+        for (const a of assignments) {
+            if (!assignmentMap.has(a.user_id)) {
+                assignmentMap.set(a.user_id, []);
+            }
+            assignmentMap.get(a.user_id).push(a);
+        }
+
+        return users.map(u => {
+            const uAssignments = assignmentMap.get(u.id) || [];
+            const defaultAssignment = uAssignments.find(a => a.is_default) || uAssignments[0] || null;
+            const isUserSuperAdmin = (u.role_slug || '').toLowerCase() === 'super-admin';
+
+            return {
+                ...u,
+                role_name: isUserSuperAdmin ? 'Super Admin' : (defaultAssignment?.role_name || u.role_name),
+                role_slug: isUserSuperAdmin ? 'super-admin' : (defaultAssignment?.role_slug || u.role_slug),
+                role_id: isUserSuperAdmin ? u.role_id : (defaultAssignment?.role_id || u.role_id),
+                assignments: uAssignments,
+                is_super_admin: isUserSuperAdmin
+            };
+        });
     } catch (error) {
         throw new ApiError({
             statusCode: 500,
@@ -322,8 +427,10 @@ const fetchAllUsers = async (query = {}) => {
 
 const fetchUsersMeta = async (query = {}) => {
     try {
-        const { page = 1, pageSize = 10, search = '', status = '', roleId = null, trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', roleId = null, firmId = null, trash = false } = query;
         const isTrash = trash === true || trash === 'true';
+        const context = getContext();
+        const isSuperAdmin = Boolean(context.isSuperAdmin);
 
         const baseQuery = db('users as u');
 
@@ -331,6 +438,35 @@ const fetchUsersMeta = async (query = {}) => {
             baseQuery.whereNotNull('u.deleted_at');
         } else {
             baseQuery.whereNull('u.deleted_at');
+        }
+
+        // Multi-tenant Scoping: If not super admin, restrict to users in requester's allowed firms
+        if (!isSuperAdmin && context.userId) {
+            const { allowedFirmIds } = await getUserAllowedFirms(context.userId);
+            const firmIds = Array.from(allowedFirmIds || []);
+            if (firmIds.length === 0) {
+                return {
+                    pagination: { total: 0, page, pageSize, totalPages: 1, offset: 0, hasNextPage: false, hasPrevPage: false },
+                    activeCount: 0,
+                    trashCount: 0
+                };
+            }
+            baseQuery.whereIn('u.id', function () {
+                this.select('user_id')
+                    .from('user_firm_branches')
+                    .whereIn('firm_id', firmIds)
+                    .where('is_active', true);
+            });
+        }
+
+        // Explicit firm filter if passed
+        if (firmId && firmId !== 'all') {
+            const targetFirmId = parseInt(firmId, 10);
+            baseQuery.whereIn('u.id', function () {
+                this.select('user_id')
+                    .from('user_firm_branches')
+                    .where({ firm_id: targetFirmId, is_active: true });
+            });
         }
 
         if (status) {
@@ -346,7 +482,16 @@ const fetchUsersMeta = async (query = {}) => {
         }
 
         if (roleId) {
-            baseQuery.where('u.role_id', roleId);
+            baseQuery.where(function () {
+                this.where('u.role_id', roleId)
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('user_firm_branches as ufb_filter')
+                            .whereRaw('ufb_filter.user_id = u.id')
+                            .where('ufb_filter.role_id', roleId)
+                            .where('ufb_filter.is_active', true);
+                    });
+            });
         }
 
         if (search) {
@@ -464,28 +609,113 @@ const fetchUserAssignments = async (userId) => {
             'ufb.role_id as roleId',
             'r.name as roleName',
             'r.slug as roleSlug',
+            'ufb.data_scope as dataScope',
             'ufb.is_default as isDefault',
             'ufb.is_active as isActive'
         )
         .orderBy('ufb.firm_id', 'asc');
 };
 
+// Fetch user counts by firm
+const fetchUserCountsByFirm = async (allowedFirmIds = null) => {
+    let query = db('user_firm_branches as ufb')
+        .join('firms as f', 'ufb.firm_id', 'f.id')
+        .join('users as u', 'ufb.user_id', 'u.id')
+        .where('ufb.is_active', true)
+        .where('u.is_active', true)
+        .where('f.is_active', true)
+        .whereNull('u.deleted_at')
+        .groupBy('ufb.firm_id', 'f.firm_name')
+        .select('ufb.firm_id as firm_id', 'f.firm_name as firm_name')
+        .countDistinct('ufb.user_id as user_count');
+
+    if (allowedFirmIds && Array.isArray(allowedFirmIds) && allowedFirmIds.length > 0) {
+        query = query.whereIn('ufb.firm_id', allowedFirmIds);
+    }
+
+    return await query;
+};
+
 // Save user firm and branch assignments in a transaction
-const saveUserAssignments = async (userId, assignments = []) => {
+const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments = [] } = {}) => {
     return db.transaction(async (trx) => {
         await trx('user_firm_branches').where({ user_id: userId }).del();
 
-        if (assignments.length > 0) {
-            const rowsToInsert = assignments.map(a => ({
-                user_id: userId,
-                firm_id: parseInt(a.firmId, 10),
-                firm_branch_id: a.firmBranchId ? parseInt(a.firmBranchId, 10) : null,
-                role_id: parseInt(a.roleId, 10),
-                is_default: !!a.isDefault,
-                is_active: a.isActive !== undefined ? !!a.isActive : true
-            }));
+        if (isSuperAdmin) {
+            const superAdminRole = await trx('roles')
+                .whereRaw('LOWER(slug) = ?', ['super-admin'])
+                .first();
+            if (superAdminRole) {
+                await trx('users').where({ id: userId }).update({
+                    role_id: superAdminRole.id,
+                    updated_at: new Date()
+                });
+            }
+        } else {
+            if (assignments.length > 0) {
+                const validScopes = ['FIRM', 'BRANCH', 'DESCENDANTS', 'OWN'];
 
-            await trx('user_firm_branches').insert(rowsToInsert);
+                for (const a of assignments) {
+                    const firmBranchId = (a.firmBranchId || a.firm_branch_id) ? parseInt(a.firmBranchId || a.firm_branch_id, 10) : null;
+                    const scope = a.dataScope || a.data_scope || (firmBranchId ? 'BRANCH' : 'FIRM');
+
+                    if (!validScopes.includes(scope)) {
+                        throw new ApiError({
+                            statusCode: 400,
+                            message: `Invalid data scope '${scope}'. Allowed scopes: ${validScopes.join(', ')}`
+                        });
+                    }
+
+                    if (firmBranchId && scope === 'FIRM') {
+                        throw new ApiError({
+                            statusCode: 400,
+                            message: 'Firm-wide data scope (FIRM) cannot be assigned to a specific branch. Either select "All Branches" or set data scope to BRANCH, DESCENDANTS, or OWN.'
+                        });
+                    }
+
+                    if (!firmBranchId && scope === 'BRANCH') {
+                        throw new ApiError({
+                            statusCode: 400,
+                            message: 'Branch-only data scope (BRANCH) requires a specific branch assignment. Either select a specific branch or set data scope to FIRM, DESCENDANTS, or OWN.'
+                        });
+                    }
+                }
+
+                const rowsToInsert = assignments.map(a => {
+                    const firmBranchId = (a.firmBranchId || a.firm_branch_id) ? parseInt(a.firmBranchId || a.firm_branch_id, 10) : null;
+                    return {
+                        user_id: userId,
+                        firm_id: parseInt(a.firmId || a.firm_id, 10),
+                        firm_branch_id: firmBranchId,
+                        role_id: parseInt(a.roleId || a.role_id, 10),
+                        data_scope: a.dataScope || a.data_scope || (firmBranchId ? 'BRANCH' : 'FIRM'),
+                        is_default: !!(a.isDefault || a.is_default),
+                        is_active: a.isActive !== undefined ? !!a.isActive : (a.is_active !== undefined ? !!a.is_active : true)
+                    };
+                });
+
+                await trx('user_firm_branches').insert(rowsToInsert);
+
+                // Synchronize users.role_id with the default assignment's role
+                const defaultAssignment = rowsToInsert.find(r => r.is_default) || rowsToInsert[0];
+                if (defaultAssignment && defaultAssignment.role_id) {
+                    await trx('users').where({ id: userId }).update({
+                        role_id: defaultAssignment.role_id,
+                        updated_at: new Date()
+                    });
+                }
+            } else {
+                // Fallback role if all firm assignments removed (e.g. employee)
+                const defaultRole = await trx('roles')
+                    .whereRaw('LOWER(slug) = ?', ['employee'])
+                    .first();
+                if (defaultRole) {
+                    await trx('users').where({ id: userId }).update({
+                        role_id: defaultRole.id,
+                        updated_at: new Date()
+                    });
+                }
+            }
         }
     });
 };
@@ -510,8 +740,10 @@ module.exports = {
     findUserByResetToken,
     completePasswordReset,
     getAllRoles,
+    getSuperAdminRoleId,
     fetchAllUsers,
     fetchUsersMeta,
+    fetchUserCountsByFirm,
     softDeleteUser,
     restoreUser,
     permanentDeleteUser,

@@ -32,11 +32,23 @@ const resolveTargetFirmId = async (rawFirmId, userFirmId) => {
  * Fetch all roles with active assigned user counts, parent role names, and operational data scopes
  */
 const fetchAllRolesWithDetails = async () => {
-    return db('roles as r')
-        .leftJoin('users as u', function () {
-            this.on('u.role_id', '=', 'r.id')
-                .andOnNull('u.deleted_at');
+    const activeUserRolesSubquery = db('users as u')
+        .whereNull('u.deleted_at')
+        .where('u.is_active', true)
+        .whereNotNull('u.role_id')
+        .select('u.id as user_id', 'u.role_id')
+        .union(function () {
+            this.select('ufb.user_id', 'ufb.role_id')
+                .from('user_firm_branches as ufb')
+                .join('users as u2', 'ufb.user_id', 'u2.id')
+                .whereNull('u2.deleted_at')
+                .where('u2.is_active', true)
+                .where('ufb.is_active', true);
         })
+        .as('aur');
+
+    return db('roles as r')
+        .leftJoin(activeUserRolesSubquery, 'aur.role_id', 'r.id')
         .leftJoin('roles as pr', 'r.parent_role_id', 'pr.id')
         .select(
             'r.id',
@@ -45,11 +57,10 @@ const fetchAllRolesWithDetails = async () => {
             'r.description',
             'r.parent_role_id',
             'pr.name as parent_role_name',
-            'r.data_scope',
             'r.is_independent',
             'r.is_active'
         )
-        .count('u.id as user_count')
+        .countDistinct('aur.user_id as user_count')
         .groupBy('r.id', 'pr.name')
         .orderBy('r.id', 'asc');
 };
@@ -109,7 +120,6 @@ const fetchRoleWithParentById = async (roleId) => {
             'r.description',
             'r.parent_role_id as parentRoleId',
             'pr.name as parentRoleName',
-            'r.data_scope as dataScope',
             'r.is_independent as isIndependent',
             'r.is_active as isActive'
         )
@@ -170,32 +180,39 @@ const updateRoleDetailsRecord = async (roleId, updates, userId) => {
 /**
  * Insert a new custom role record
  */
-const insertCustomRole = async ({ name, slug, description, parentRoleId, dataScope, isIndependent, userId }) => {
+const insertCustomRole = async ({ name, slug, description, parentRoleId, isIndependent, userId }) => {
     const [newRole] = await db('roles')
         .insert({
             name,
             slug,
             description: description ? description.trim() : null,
             parent_role_id: parentRoleId || null,
-            data_scope: dataScope,
             is_independent: Boolean(isIndependent),
             is_active: true,
             created_by: userId || null
         })
-        .returning(['id', 'name', 'slug', 'description', 'parent_role_id', 'data_scope', 'is_independent', 'is_active']);
+        .returning(['id', 'name', 'slug', 'description', 'parent_role_id', 'is_independent', 'is_active']);
     return newRole;
 };
 
 /**
- * Count active assigned users for a given role
+ * Count active assigned users for a given role (from both users and firm/branch assignments)
  */
 const countActiveUsersByRoleId = async (roleId) => {
-    const activeUsers = await db('users')
-        .where({ role_id: roleId })
-        .whereNull('deleted_at')
-        .count('id as count')
-        .first();
-    return parseInt(activeUsers?.count || 0, 10);
+    const directUsers = db('users as u')
+        .where({ 'u.role_id': roleId, 'u.is_active': true })
+        .whereNull('u.deleted_at')
+        .select('u.id as user_id');
+
+    const mappedUsers = db('user_firm_branches as ufb')
+        .join('users as u', 'ufb.user_id', 'u.id')
+        .where({ 'ufb.role_id': roleId, 'ufb.is_active': true, 'u.is_active': true })
+        .whereNull('u.deleted_at')
+        .select('ufb.user_id as user_id');
+
+    const combined = db.union([directUsers, mappedUsers]).as('all_users');
+    const result = await db.from(combined).countDistinct('user_id as count').first();
+    return parseInt(result?.count || 0, 10);
 };
 
 /**
