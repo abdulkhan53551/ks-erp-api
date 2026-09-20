@@ -1,6 +1,6 @@
 const { MODULES_REGISTRY } = require('../config/modules.registry');
 const { syncPoliciesTable } = require('../services/permissionBootstrapper');
-const { invalidateFirmPermissionCache, isAncestorRole } = require('../services/firmPermissionCache');
+const { invalidateFirmPermissionCache, isAncestorRole, getUserAllowedFirms } = require('../services/firmPermissionCache');
 const { ApiResponse } = require('../services/ApiResponse');
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require('../services/asyncHandler');
@@ -27,8 +27,9 @@ const SYSTEM_ROLE_SLUGS = ['super-admin', 'administrator'];
  */
 const getAllRoles = asyncHandler(async (req, res) => {
     const roles = await fetchAllRolesWithDetails();
+    const isSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
-    const formattedRoles = roles.map(r => ({
+    let formattedRoles = roles.map(r => ({
         id: r.id,
         name: r.name,
         slug: r.slug,
@@ -41,6 +42,10 @@ const getAllRoles = asyncHandler(async (req, res) => {
         isSystem: SYSTEM_ROLE_SLUGS.includes(r.slug)
     }));
 
+    if (!isSuperAdmin) {
+        formattedRoles = formattedRoles.filter(r => (r.slug || '').toLowerCase() !== 'super-admin');
+    }
+
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
         data: formattedRoles,
@@ -52,13 +57,34 @@ const getAllRoles = asyncHandler(async (req, res) => {
  * Get full permission matrix including module registry, all permissions, and role mapping
  */
 const getPermissionMatrix = asyncHandler(async (req, res) => {
-    const targetFirmId = await resolveTargetFirmId(req.query.firmId, req.user?.firmId);
+    const isSuperAdmin = Boolean(req.user?.isSuperAdmin);
+    let targetFirmId;
+
+    if (isSuperAdmin) {
+        targetFirmId = await resolveTargetFirmId(req.query.firmId, req.user?.firmId);
+    } else {
+        const { allowedFirmIds } = await getUserAllowedFirms(req.user?.id);
+        const requestedFirmId = req.query.firmId && req.query.firmId !== 'all' ? parseInt(req.query.firmId, 10) : null;
+
+        if (requestedFirmId && allowedFirmIds.has(requestedFirmId)) {
+            targetFirmId = requestedFirmId;
+        } else if (req.user?.firmId && allowedFirmIds.has(req.user.firmId)) {
+            targetFirmId = req.user.firmId;
+        } else if (allowedFirmIds.size > 0) {
+            targetFirmId = Array.from(allowedFirmIds)[0];
+        } else {
+            throw new ApiError({ statusCode: 403, message: 'You do not have access to manage permissions for any firm.' });
+        }
+    }
 
     // 1. Fetch all permissions from model
     const allPermissions = await fetchAllActivePermissions();
 
     // 2. Fetch all roles with parent & scope details from model
-    const roles = await fetchAllRolesWithDetails();
+    let roles = await fetchAllRolesWithDetails();
+    if (!isSuperAdmin) {
+        roles = roles.filter(r => (r.slug || '').toLowerCase() !== 'super-admin');
+    }
 
     // 3. Fetch all active role_permissions scoped to targetFirmId from model
     const rolePermissions = await fetchRolePermissionsByFirm(targetFirmId);
@@ -104,18 +130,7 @@ const getPermissionMatrix = asyncHandler(async (req, res) => {
 const updateRolePermissions = asyncHandler(async (req, res) => {
     const roleId = parseInt(req.params.id, 10);
     const { permissionIds, firmId: bodyFirmId, firmIds: bodyFirmIds, parentRoleId, isIndependent } = req.body;
-
-    let targetFirmIds = [];
-    if (Array.isArray(bodyFirmIds) && bodyFirmIds.length > 0) {
-        targetFirmIds = bodyFirmIds
-            .map(id => parseInt(id, 10))
-            .filter(id => !isNaN(id) && id > 0);
-    } else if (bodyFirmId === 'all') {
-        targetFirmIds = await fetchAllActiveFirmIds();
-    } else {
-        const singleFirmId = await resolveTargetFirmId(bodyFirmId, req.user?.firmId);
-        targetFirmIds = [singleFirmId];
-    }
+    const isSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
     const role = await findRoleById(roleId);
     if (!role) {
@@ -128,6 +143,44 @@ const updateRolePermissions = asyncHandler(async (req, res) => {
             statusCode: 400,
             message: 'Super Admin has universal system access and cannot be modified.'
         });
+    }
+
+    let targetFirmIds = [];
+    if (isSuperAdmin) {
+        if (Array.isArray(bodyFirmIds) && bodyFirmIds.length > 0) {
+            targetFirmIds = bodyFirmIds
+                .map(id => parseInt(id, 10))
+                .filter(id => !isNaN(id) && id > 0);
+        } else if (bodyFirmId === 'all') {
+            targetFirmIds = await fetchAllActiveFirmIds();
+        } else {
+            const singleFirmId = await resolveTargetFirmId(bodyFirmId, req.user?.firmId);
+            targetFirmIds = [singleFirmId];
+        }
+    } else {
+        const { allowedFirmIds } = await getUserAllowedFirms(req.user?.id);
+        if (!allowedFirmIds || allowedFirmIds.size === 0) {
+            throw new ApiError({ statusCode: 403, message: 'You do not have access to manage permissions for any firm.' });
+        }
+
+        if (Array.isArray(bodyFirmIds) && bodyFirmIds.length > 0) {
+            targetFirmIds = bodyFirmIds
+                .map(id => parseInt(id, 10))
+                .filter(id => !isNaN(id) && allowedFirmIds.has(id));
+        } else if (bodyFirmId === 'all') {
+            targetFirmIds = Array.from(allowedFirmIds);
+        } else {
+            const parsed = parseInt(bodyFirmId || req.user?.firmId, 10);
+            if (parsed && allowedFirmIds.has(parsed)) {
+                targetFirmIds = [parsed];
+            } else if (req.user?.firmId && allowedFirmIds.has(req.user.firmId)) {
+                targetFirmIds = [req.user.firmId];
+            }
+        }
+
+        if (targetFirmIds.length === 0) {
+            throw new ApiError({ statusCode: 403, message: 'Access denied: You cannot update permissions for firms you do not administer.' });
+        }
     }
 
     // If hierarchy or independence fields were provided in the same payload, update role metadata
@@ -197,6 +250,11 @@ const updateRoleDetails = asyncHandler(async (req, res) => {
     const role = await findRoleById(roleId);
     if (!role) {
         throw new ApiError({ statusCode: 404, message: 'Role not found' });
+    }
+
+    const isSuperAdmin = Boolean(req.user?.isSuperAdmin);
+    if (SYSTEM_ROLE_SLUGS.includes(role.slug) && !isSuperAdmin) {
+        throw new ApiError({ statusCode: 403, message: `System role '${role.name}' can only be modified by a Super Administrator.` });
     }
 
     const updates = {};

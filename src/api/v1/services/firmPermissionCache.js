@@ -189,19 +189,15 @@ async function getFirmRolePermissions(firmId, roleId) {
             return superAdminPerms;
         }
 
-        // Collect self and all descendant role IDs for permission inheritance
-        const descendantIds = await getDescendantRoleIds(roleId);
-        const targetRoleIds = [parseInt(roleId, 10), ...descendantIds];
-
-        // Cache miss: Fetch active permissions for this firm and all inherited roles
+        // Cache miss: Fetch active permissions for this firm and role strictly from the matrix
         const rows = await db('role_permissions as rp')
             .join('permissions as p', 'rp.permission_id', 'p.id')
             .where({
                 'rp.firm_id': firmId,
+                'rp.role_id': parseInt(roleId, 10),
                 'rp.is_active': true,
                 'p.is_active': true
             })
-            .whereIn('rp.role_id', targetRoleIds)
             .select('p.object', 'p.action');
 
         const permSet = new Set(rows.map(r => `${r.object}:${r.action}`));

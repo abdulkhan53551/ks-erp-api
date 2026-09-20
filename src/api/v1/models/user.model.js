@@ -637,9 +637,16 @@ const fetchUserCountsByFirm = async (allowedFirmIds = null) => {
 };
 
 // Save user firm and branch assignments in a transaction
-const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments = [] } = {}) => {
+const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments = [], scopedFirmIds = null } = {}) => {
     return db.transaction(async (trx) => {
-        await trx('user_firm_branches').where({ user_id: userId }).del();
+        if (Array.isArray(scopedFirmIds) && scopedFirmIds.length > 0) {
+            await trx('user_firm_branches')
+                .where({ user_id: userId })
+                .whereIn('firm_id', scopedFirmIds)
+                .del();
+        } else {
+            await trx('user_firm_branches').where({ user_id: userId }).del();
+        }
 
         if (isSuperAdmin) {
             const superAdminRole = await trx('roles')
@@ -695,16 +702,17 @@ const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments =
                 });
 
                 await trx('user_firm_branches').insert(rowsToInsert);
+            }
 
-                // Synchronize users.role_id with the default assignment's role
-                const defaultAssignment = rowsToInsert.find(r => r.is_default) || rowsToInsert[0];
-                if (defaultAssignment && defaultAssignment.role_id) {
-                    await trx('users').where({ id: userId }).update({
-                        role_id: defaultAssignment.role_id,
-                        updated_at: new Date()
-                    });
-                }
-            } else {
+            // Synchronize users.role_id with the user's active default assignment across all firms
+            const allActive = await trx('user_firm_branches').where({ user_id: userId, is_active: true });
+            const defaultAssignment = allActive.find(r => r.is_default) || allActive[0];
+            if (defaultAssignment && defaultAssignment.role_id) {
+                await trx('users').where({ id: userId }).update({
+                    role_id: defaultAssignment.role_id,
+                    updated_at: new Date()
+                });
+            } else if (allActive.length === 0) {
                 // Fallback role if all firm assignments removed (e.g. employee)
                 const defaultRole = await trx('roles')
                     .whereRaw('LOWER(slug) = ?', ['employee'])
@@ -718,6 +726,125 @@ const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments =
             }
         }
     });
+};
+
+/**
+ * Validates if the caller has authority to manage/modify/delete a target user.
+ * - Super Admins can manage any user.
+ * - Non-super-admins cannot manage Super Admin accounts.
+ * - Non-super-admins must belong to at least one firm in common with the target user.
+ */
+const canManageTargetUser = async (targetUserId, caller) => {
+    const isCallerSuperAdmin = Boolean(caller?.isSuperAdmin);
+
+    const targetUser = await findUserById(targetUserId);
+    if (!targetUser) {
+        return { allowed: false, statusCode: 404, message: 'User not found.' };
+    }
+
+    const superAdminRoleId = await getSuperAdminRoleId();
+    const targetIsSuperAdmin = userIsSuperAdmin(targetUser, superAdminRoleId);
+
+    if (targetIsSuperAdmin && !isCallerSuperAdmin) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'Access denied: Super Administrator accounts can only be managed by another Super Administrator.'
+        };
+    }
+
+    if (isCallerSuperAdmin) {
+        return { allowed: true, targetUser };
+    }
+
+    const { allowedFirmIds } = await getUserAllowedFirms(caller?.id);
+    const firmIds = Array.from(allowedFirmIds || []);
+    if (firmIds.length === 0) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'You do not have access to manage users in any firm.'
+        };
+    }
+
+    const hasCommonFirm = await db('user_firm_branches')
+        .where('user_id', targetUserId)
+        .whereIn('firm_id', firmIds)
+        .first();
+
+    if (!hasCommonFirm) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'Access denied: Target user does not belong to any firm administered by you.'
+        };
+    }
+
+    return { allowed: true, targetUser };
+};
+
+const userIsSuperAdmin = (user, superAdminRoleId) => {
+    return Boolean(user && user.role_id && superAdminRoleId && user.role_id === superAdminRoleId);
+};
+
+/**
+ * Validates bulk operations (bulk delete, bulk restore) for caller authority.
+ */
+const validateBulkUserOperation = async (targetUserIds = [], caller, { permanent = false } = {}) => {
+    const isCallerSuperAdmin = Boolean(caller?.isSuperAdmin);
+
+    if (permanent && !isCallerSuperAdmin) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'Access denied: Permanent deletion requires Super Administrator privileges.'
+        };
+    }
+
+    if (isCallerSuperAdmin) {
+        return { allowed: true };
+    }
+
+    const superAdminRoleId = await getSuperAdminRoleId();
+    if (superAdminRoleId) {
+        const superAdmins = await db('users')
+            .whereIn('id', targetUserIds)
+            .where('role_id', superAdminRoleId);
+        if (superAdmins.length > 0) {
+            return {
+                allowed: false,
+                statusCode: 403,
+                message: 'Access denied: Super Administrator accounts cannot be modified or deleted by non-super-admins.'
+            };
+        }
+    }
+
+    const { allowedFirmIds } = await getUserAllowedFirms(caller?.id);
+    const firmIds = Array.from(allowedFirmIds || []);
+    if (firmIds.length === 0) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'You do not have access to manage users in any firm.'
+        };
+    }
+
+    const validUsers = await db('user_firm_branches')
+        .whereIn('user_id', targetUserIds)
+        .whereIn('firm_id', firmIds)
+        .distinct('user_id');
+    const validUserIds = new Set(validUsers.map(u => parseInt(u.user_id, 10)));
+
+    const unauthorizedIds = targetUserIds.filter(id => !validUserIds.has(parseInt(id, 10)));
+    if (unauthorizedIds.length > 0) {
+        return {
+            allowed: false,
+            statusCode: 403,
+            message: 'Access denied: One or more selected users do not belong to any firm administered by you.'
+        };
+    }
+
+    return { allowed: true };
 };
 
 module.exports = {
@@ -753,5 +880,7 @@ module.exports = {
     updateUserActiveStatus,
     updateUserApprovalStatus,
     fetchUserAssignments,
-    saveUserAssignments
+    saveUserAssignments,
+    canManageTargetUser,
+    validateBulkUserOperation
 };
