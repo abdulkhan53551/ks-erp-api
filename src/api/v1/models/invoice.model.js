@@ -31,6 +31,10 @@ const fetchAllInvoice = async (query) => {
                 'I.sgst',
                 'I.igst',
                 'I.total',
+                'I.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code',
+                'F.firm_name AS firm_name',
                 'PS.code AS payment_status_code',
                 'PM.code AS payment_mode_code',
                 db.raw(`(
@@ -50,12 +54,22 @@ const fetchAllInvoice = async (query) => {
                 this.on('I.id', '=', 'EB.invoice_id')
                     .andOn('EB.is_active', '=', db.raw('true'));
             })
+            .leftJoin('firm_branches AS FB', 'I.firm_branch_id', 'FB.id')
+            .leftJoin('firms AS F', 'I.firm_id', 'F.id')
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
             .leftJoin('users AS u', 'I.created_by', 'u.id')
             .leftJoin('users AS du', 'I.deleted_by', 'du.id')
-            .where('I.is_active', !isTrash)
-            .andWhere('I.firm_id', firmId);
+            .where('I.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('I.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -107,8 +121,16 @@ const fetchInvoiceMeta = async (query) => {
             .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
             .leftJoin('payment_modes AS PM', 'I.payment_mode_id', 'PM.id')
             .leftJoin('users AS u', 'I.created_by', 'u.id')
-            .where('I.is_active', !isTrash)
-            .andWhere('I.firm_id', firmId);
+            .where('I.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('I.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -127,6 +149,7 @@ const fetchInvoiceMeta = async (query) => {
             });
         }
 
+        // Fetch pagination metadata using the utility function
         const result = await buildPagination({ baseQuery, page, pageSize });
 
         return result;
@@ -146,7 +169,7 @@ const fetchInvoiceById = async (id) => {
         const { firmId = 0 } = getContext();
 
         // 1. Fetch invoice master
-        const result = await db('invoices AS I')
+        const invQuery = db('invoices AS I')
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
@@ -212,10 +235,14 @@ const fetchInvoiceById = async (id) => {
                 'FBA.bank_name',
                 'FBA.account_number',
                 'FBA.ifsc_code',
-                'FBA.branch_name'
+                'FBA.branch_name',
+                'I.firm_branch_id',
+                'FB.branch_name AS firm_branch_name',
+                'FB.branch_code AS firm_branch_code'
             )
             .leftJoin('invoice_contacts AS ICB', 'I.billing_address_id', 'ICB.id')
             .leftJoin('invoice_contacts AS ICS', 'I.shipping_address_id', 'ICS.id')
+            .leftJoin('firm_branches AS FB', 'I.firm_branch_id', 'FB.id')
             .innerJoin('firms AS F', 'I.firm_id', 'F.id')
             .leftJoin('user_contacts AS UC', function () {
                 this.on('F.id', '=', 'UC.entity_id')
@@ -223,9 +250,13 @@ const fetchInvoiceById = async (id) => {
             })
             .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.firm_id')
             .where('I.is_active', true)
-            .andWhere('I.id', id)
-            .andWhere('I.firm_id', firmId)
-            .first();
+            .andWhere('I.id', id);
+
+        if (firmId) {
+            invQuery.andWhere('I.firm_id', firmId);
+        }
+
+        const result = await invQuery.first();
 
         // printQuery(result)
 
@@ -507,12 +538,13 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
         return db.transaction(async trx => {
             let result;
 
+            const invWhere = firmId ? { id: invoiceId, firm_id: firmId } : { id: invoiceId };
             if (isPermanentDelete) {
                 // HARD DELETE - run in parallel
                 const [contacts, items, invoice] = await Promise.all([
                     trx('invoice_contacts').where({ invoice_id: invoiceId }).del(),
                     trx('invoice_items').where({ invoice_id: invoiceId }).del(),
-                    trx('invoices').where({ id: invoiceId, firm_id: firmId }).del()
+                    trx('invoices').where(invWhere).del()
                 ]);
 
                 result = invoice; // number of affected invoice rows
@@ -524,7 +556,7 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                     trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
                     trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
                     trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
-                    trx('invoices').where({ id: invoiceId, firm_id: firmId }).update({ is_active: false })
+                    trx('invoices').where(invWhere).update({ is_active: false })
                 ]);
 
                 result = invoice;
@@ -550,11 +582,16 @@ const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) =>
         const { firmId = 0 } = getContext();
 
         return db.transaction(async trx => {
+            const invQuery = trx('invoices').whereIn('id', invoiceIds);
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+
             if (isPermanentDelete) {
                 await Promise.all([
                     trx('invoice_contacts').whereIn('invoice_id', invoiceIds).del(),
                     trx('invoice_items').whereIn('invoice_id', invoiceIds).del(),
-                    trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId }).del()
+                    invQuery.del()
                 ]);
                 return invoiceIds.length;
             }
@@ -566,7 +603,7 @@ const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) =>
                 trx('purchase_order_invoices').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
                 trx('invoice_challans').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
                 trx('eway_bills').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
-                trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId }).update({ is_active: false })
+                invQuery.update({ is_active: false })
             ]);
 
             return invoiceIds.length;
@@ -588,9 +625,11 @@ const restoreInvoiceById = async (invoiceId) => {
         const { firmId = 0 } = getContext();
 
         return db.transaction(async trx => {
-            const invoice = await trx('invoices')
-                .where({ id: invoiceId, firm_id: firmId, is_active: false })
-                .first();
+            const invQuery = trx('invoices').where({ id: invoiceId, is_active: false });
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+            const invoice = await invQuery.first();
 
             if (!invoice) {
                 throw new ApiError({
@@ -599,10 +638,15 @@ const restoreInvoiceById = async (invoiceId) => {
                 });
             }
 
+            const restoreQuery = trx('invoices').where({ id: invoiceId });
+            if (firmId) {
+                restoreQuery.andWhere({ firm_id: firmId });
+            }
+
             await Promise.all([
                 trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: true }),
                 trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: true }),
-                trx('invoices').where({ id: invoiceId, firm_id: firmId }).update({ is_active: true })
+                restoreQuery.update({ is_active: true })
             ]);
 
             return 1;
@@ -625,10 +669,15 @@ const bulkRestoreInvoices = async (invoiceIds = []) => {
         const { firmId = 0 } = getContext();
 
         return db.transaction(async trx => {
+            const invQuery = trx('invoices').whereIn('id', invoiceIds).andWhere({ is_active: false });
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+
             await Promise.all([
                 trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
                 trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
-                trx('invoices').whereIn('id', invoiceIds).andWhere({ firm_id: firmId, is_active: false }).update({ is_active: true })
+                invQuery.update({ is_active: true })
             ]);
 
             return invoiceIds.length;

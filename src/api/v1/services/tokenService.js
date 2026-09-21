@@ -55,17 +55,15 @@ async function rotateRefreshToken(oldToken, ip, userAgent, deviceId = null) {
         }
 
         const role = existing.role_slug || 'admin';
-        const firmId = 1;
 
-        // Generate access token
+        // Generate access token (clean identity payload)
         const tokenPayload = {
             id: existing.user_id,
             email: existing.email,
             userName: existing.user_name,
             fullName: `${existing.first_name} ${existing.last_name}`.trim(),
             role,
-            roleId: existing.role_id,
-            firmId
+            roleId: existing.role_id
         };
 
         const accessToken = generateAccessToken(tokenPayload);

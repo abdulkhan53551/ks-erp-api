@@ -38,9 +38,9 @@ const REFRESH_TOKEN_EXPIRY_IN_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 10
 /**
  * Helper to fetch permission strings for a user role, using the in-memory LRU cache
  */
-const getUserPermissions = async (roleSlug, roleId, firmId = 1) => {
-    if (roleSlug === 'super-admin' || roleId === 1) return ['*'];
-    if (!roleId) return [];
+const getUserPermissions = async (roleSlug, roleId, firmId = null) => {
+    if ((roleSlug || '').toLowerCase() === 'super-admin') return ['*'];
+    if (!roleId || !firmId) return [];
     try {
         const permSet = await getFirmRolePermissions(firmId, roleId);
         return Array.from(permSet);
@@ -48,6 +48,119 @@ const getUserPermissions = async (roleSlug, roleId, firmId = 1) => {
         console.error('Error fetching user permissions:', err);
         return [];
     }
+};
+
+/**
+ * Helper to fetch all authorized firms and branches for a user.
+ * For Super Admin, returns all active firms and their active branches.
+ * For Standard Users, returns mappings from user_firm_branches with assigned roles.
+ */
+const getUserFirmsAndBranches = async (user) => {
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
+
+    let availableFirms = [];
+    if (isSuperAdmin) {
+        const firms = await db('firms')
+            .where({ is_active: true })
+            .select('id', 'firm_name as firmName', 'trade_name as tradeName', 'logo_url as logoUrl', 'gstin')
+            .orderBy('id', 'asc');
+
+        for (const f of firms) {
+            const branches = await db('firm_branches')
+                .where({ firm_id: f.id, is_active: true })
+                .select('id', 'branch_name as branchName', 'branch_code as branchCode', 'is_head_office as isHeadOffice', 'gstin')
+                .orderBy('is_head_office', 'desc')
+                .orderBy('id', 'asc');
+
+            availableFirms.push({
+                ...f,
+                role: user.role_slug || 'super-admin',
+                roleId: user.role_id || null,
+                roleName: user.role_name || 'Super Administrator',
+                branches
+            });
+        }
+    } else {
+        const mappings = await db('user_firm_branches as ufb')
+            .join('firms as f', 'ufb.firm_id', 'f.id')
+            .leftJoin('firm_branches as fb', 'ufb.firm_branch_id', 'fb.id')
+            .join('roles as r', 'ufb.role_id', 'r.id')
+            .where({
+                'ufb.user_id': user.id,
+                'ufb.is_active': true,
+                'f.is_active': true
+            })
+            .select(
+                'f.id as firm_id',
+                'f.firm_name as firm_name',
+                'f.trade_name as trade_name',
+                'f.logo_url as logo_url',
+                'f.gstin as firm_gstin',
+                'fb.id as branch_id',
+                'fb.branch_name as branch_name',
+                'fb.branch_code as branch_code',
+                'fb.is_head_office as is_head_office',
+                'fb.gstin as branch_gstin',
+                'r.id as role_id',
+                'r.name as role_name',
+                'r.slug as role_slug',
+                'ufb.data_scope as data_scope',
+                'ufb.is_default as is_default'
+            )
+            .orderBy('f.id', 'asc');
+
+        const firmMap = new Map();
+        for (const m of mappings) {
+            if (!firmMap.has(m.firm_id)) {
+                firmMap.set(m.firm_id, {
+                    id: m.firm_id,
+                    firmName: m.firm_name,
+                    tradeName: m.trade_name,
+                    logoUrl: m.logo_url,
+                    gstin: m.firm_gstin,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || (m.branch_id ? 'BRANCH' : 'FIRM'),
+                    isDefault: m.is_default,
+                    branches: []
+                });
+            }
+
+            const currentFirm = firmMap.get(m.firm_id);
+            if (m.branch_id) {
+                currentFirm.branches.push({
+                    id: m.branch_id,
+                    branchName: m.branch_name,
+                    branchCode: m.branch_code,
+                    isHeadOffice: m.is_head_office,
+                    gstin: m.branch_gstin,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'BRANCH'
+                });
+            } else {
+                // Wildcard access to all branches of this firm
+                const allBranches = await db('firm_branches')
+                    .where({ firm_id: m.firm_id, is_active: true })
+                    .select('id', 'branch_name as branchName', 'branch_code as branchCode', 'is_head_office as isHeadOffice', 'gstin')
+                    .orderBy('is_head_office', 'desc')
+                    .orderBy('id', 'asc');
+
+                currentFirm.branches = allBranches.map(b => ({
+                    ...b,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'FIRM'
+                }));
+            }
+        }
+        availableFirms = Array.from(firmMap.values());
+    }
+
+    return availableFirms;
 };
 
 // Register user
@@ -153,32 +266,52 @@ const loginUser = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 403, message: 'Your account has been deactivated. Please contact administrator.' });
     }
 
-    // Role and tenant firm context
-    const roleSlug = user.role_slug || 'admin';
-    const roleName = user.role_name || 'Administrator';
-    const firmId = 1;
+    // Fetch user's authorized firms & branches
+    const availableFirms = await getUserFirmsAndBranches(user);
+
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
+    if (!isSuperAdmin && availableFirms.length === 0) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Your account is approved, but no firm has been assigned to you yet. Please contact your administrator.'
+        });
+    }
+
+    // Determine default firm and branch
+    const defaultFirm = availableFirms.find(f => f.isDefault) || availableFirms[0] || null;
+    const firmId = defaultFirm?.id || null;
+    const defaultBranch = defaultFirm?.branches?.find(b => b.isHeadOffice) || defaultFirm?.branches?.[0] || null;
+    const branchId = defaultBranch?.id || null;
+
+    const roleSlug = defaultFirm?.role || user.role_slug || 'admin';
+    const roleName = defaultFirm?.roleName || user.role_name || 'Administrator';
+    const roleId = defaultFirm?.roleId || user.role_id;
 
     // Access and refresh token generation
     const tokenData = {
-        user: { ...user, role: roleSlug, firmId },
+        user: { ...user, role: roleSlug, roleId, firmId },
         ip: ipAddress,
         userAgent,
         deviceId: null
     };
     const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData);
 
-    const permissions = await getUserPermissions(roleSlug, user.role_id, firmId);
+    const permissions = await getUserPermissions(roleSlug, roleId, firmId);
 
+    const isSuperAdminUser = (roleSlug || user.role_slug || '').toLowerCase() === 'super-admin';
     const userProfile = {
         id: user.id,
         firstName: user.first_name,
         lastName: user.last_name,
         email: user.email,
         userName: user.user_name,
-        roleId: user.role_id,
+        roleId,
         role: roleSlug,
-        roleName: roleName,
-        firmId: firmId,
+        roleName,
+        firmId,
+        branchId,
+        isSuperAdmin: isSuperAdminUser,
+        dataScope: isSuperAdminUser ? 'GLOBAL' : (defaultFirm?.dataScope || 'OWN'),
         permissions
     };
 
@@ -195,7 +328,12 @@ const loginUser = asyncHandler(async (req, res) => {
         data: {
             accessToken,
             refreshToken,
-            user: userProfile
+            user: userProfile,
+            firms: availableFirms,
+            defaultContext: {
+                firmId,
+                branchId
+            }
         },
         message: 'Successfully logged in'
     };
@@ -258,16 +396,16 @@ const refreshUserToken = asyncHandler(async (req, res) => {
 const generateAccessAndRefreshTokens = async (tokenData) => {
     try {
         const { user, ip, userAgent, deviceId } = tokenData;
+        const roleSlug = user.role || user.roleSlug || user.role_slug || null;
 
-        // Generate access token
+        // Generate access token (clean identity payload)
         const tokenPayload = {
             id: user.id,
             email: user.email,
             userName: user.user_name || user.userName,
             fullName: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
-            role: user.role || user.role_slug || 'admin',
-            roleId: user.role_id || user.roleId,
-            firmId: user.firmId || 1
+            role: roleSlug,
+            roleId: user.role_id || user.roleId
         };
         const accessToken = generateAccessToken(tokenPayload);
 
@@ -291,10 +429,41 @@ const getCurrentUser = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'User not found' });
     }
 
-    const roleSlug = user.role_slug || req.user.role || 'admin';
-    const roleName = user.role_name || 'Administrator';
-    const firmId = req.user.firmId || 1;
-    const permissions = await getUserPermissions(roleSlug, user.role_id || req.user.roleId, firmId);
+    const availableFirms = await getUserFirmsAndBranches(user);
+    const isSuperAdminUser = (user.role_slug || '').toLowerCase() === 'super-admin';
+
+    if (!isSuperAdminUser && availableFirms.length === 0) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Your account is approved, but no firm has been assigned to you yet. Please contact your administrator.'
+        });
+    }
+
+    let activeFirmId = null;
+    if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
+        const parsed = parseInt(req.headers['x-firm-id'], 10);
+        if (!isNaN(parsed) && parsed > 0) activeFirmId = parsed;
+    } else {
+        activeFirmId = req.user?.firmId || (isSuperAdminUser ? null : (availableFirms[0]?.id || null));
+    }
+
+    let activeBranchId = null;
+    if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== 'all') {
+        const parsed = parseInt(req.headers['x-branch-id'], 10);
+        if (!isNaN(parsed) && parsed > 0) activeBranchId = parsed;
+    } else {
+        activeBranchId = req.user?.branchId || null;
+    }
+
+    const currentFirm = availableFirms.find(f => f.id === activeFirmId) || availableFirms[0] || null;
+    const currentBranch = activeBranchId ? currentFirm?.branches?.find(b => b.id === activeBranchId) : null;
+
+    const roleSlug = currentBranch?.role || currentFirm?.role || user.role_slug || req.user?.role || 'admin';
+    const roleId = currentBranch?.roleId || currentFirm?.roleId || user.role_id || req.user?.roleId;
+    const roleName = currentBranch?.roleName || currentFirm?.roleName || user.role_name || 'Administrator';
+    const dataScope = isSuperAdminUser ? 'GLOBAL' : (currentBranch?.dataScope || currentFirm?.dataScope || req.user?.dataScope || 'OWN');
+
+    const permissions = await getUserPermissions(roleSlug, roleId, activeFirmId);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
@@ -305,12 +474,16 @@ const getCurrentUser = asyncHandler(async (req, res) => {
                 lastName: user.last_name,
                 email: user.email,
                 userName: user.user_name,
-                roleId: user.role_id,
+                roleId,
                 role: roleSlug,
-                roleName: roleName,
-                firmId,
+                roleName,
+                firmId: activeFirmId,
+                branchId: activeBranchId,
+                isSuperAdmin: isSuperAdminUser,
+                dataScope,
                 permissions
-            }
+            },
+            firms: availableFirms
         },
         message: 'Current user profile fetched successfully'
     }));

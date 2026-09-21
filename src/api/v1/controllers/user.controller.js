@@ -20,9 +20,17 @@ const {
     updateUserApprovalStatus,
     approvePasswordReset,
     getHashedPassword,
-    completePasswordReset
+    completePasswordReset,
+    fetchUserAssignments,
+    saveUserAssignments,
+    fetchUserCountsByFirm,
+    getSuperAdminRoleId,
+    canManageTargetUser,
+    validateBulkUserOperation
 } = require('../models/user.model.js');
 const { deleteRefreshTokenByUserID } = require('../models/auth.model.js');
+const { getContext } = require('../helpers/requestContext.js');
+const { getUserAllowedFirms, invalidateUserTenantCache } = require('../services/firmPermissionCache.js');
 const { hashToken, generateToken } = require('../helpers/token.js');
 const { uploadOnCloudinary } = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
@@ -201,6 +209,7 @@ const deleteUser = asyncHandler(async (req, res) => {
     const targetUserId = parseInt(id, 10);
     const { permanent } = req.query;
     const isPermanent = permanent === 'true';
+    const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
     if (targetUserId === req.user.id) {
         throw new ApiError({
@@ -209,14 +218,22 @@ const deleteUser = asyncHandler(async (req, res) => {
         });
     }
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    if (isPermanent && !isCallerSuperAdmin) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Access denied: Permanent deletion requires Super Administrator privileges.'
+        });
+    }
+
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
 
     if (isPermanent) {
         await permanentDeleteUser(targetUserId);
         await deleteRefreshTokenByUserID(targetUserId);
+        invalidateUserTenantCache(targetUserId);
         return res.status(200).json(
             new ApiResponse({
                 statusCode: 200,
@@ -227,6 +244,7 @@ const deleteUser = asyncHandler(async (req, res) => {
     } else {
         await softDeleteUser(targetUserId, req.user.id);
         await deleteRefreshTokenByUserID(targetUserId);
+        invalidateUserTenantCache(targetUserId);
         return res.status(200).json(
             new ApiResponse({
                 statusCode: 200,
@@ -241,12 +259,13 @@ const restoreUserController = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const targetUserId = parseInt(id, 10);
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
 
     await restoreUser(targetUserId);
+    invalidateUserTenantCache(targetUserId);
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -268,10 +287,16 @@ const bulkDeleteUsersController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 400, message: 'No valid user IDs to delete (cannot delete own account).' });
     }
 
+    const check = await validateBulkUserOperation(filteredIds, req.user, { permanent });
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
+    }
+
     await bulkDeleteUsers(filteredIds, permanent, req.user.id);
 
     for (const id of filteredIds) {
         await deleteRefreshTokenByUserID(id);
+        invalidateUserTenantCache(id);
     }
 
     return res.status(200).json(
@@ -290,7 +315,17 @@ const bulkRestoreUsersController = asyncHandler(async (req, res) => {
     }
 
     const cleanIds = ids.map(id => parseInt(id, 10));
+
+    const check = await validateBulkUserOperation(cleanIds, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
+    }
+
     await bulkRestoreUsers(cleanIds);
+
+    for (const id of cleanIds) {
+        invalidateUserTenantCache(id);
+    }
 
     return res.status(200).json(
         new ApiResponse({
@@ -305,6 +340,7 @@ const changeUserRole = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const targetUserId = parseInt(id, 10);
     const { roleId } = req.body;
+    const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
     if (!roleId) {
         throw new ApiError({ statusCode: 400, message: 'Role ID is required.' });
@@ -317,12 +353,21 @@ const changeUserRole = asyncHandler(async (req, res) => {
         });
     }
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    const superAdminRoleId = await getSuperAdminRoleId();
+    if (!isCallerSuperAdmin && superAdminRoleId && parseInt(roleId, 10) === superAdminRoleId) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Access denied: Only Super Administrators can assign the Super Administrator role.'
+        });
+    }
+
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
 
     await updateUserRole(targetUserId, roleId);
+    invalidateUserTenantCache(targetUserId);
 
     return res.status(200).json(
         new ApiResponse({
@@ -349,9 +394,9 @@ const toggleUserStatus = asyncHandler(async (req, res) => {
         });
     }
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
 
     await updateUserActiveStatus(targetUserId, isActive);
@@ -359,6 +404,7 @@ const toggleUserStatus = asyncHandler(async (req, res) => {
     if (!isActive) {
         await deleteRefreshTokenByUserID(targetUserId);
     }
+    invalidateUserTenantCache(targetUserId);
 
     return res.status(200).json(
         new ApiResponse({
@@ -373,10 +419,11 @@ const adminGenerateResetLink = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const targetUserId = parseInt(id, 10);
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
+    const user = check.targetUser;
 
     const cryptoToken = generateToken(32);
     const tokenHash = hashToken(cryptoToken);
@@ -417,14 +464,16 @@ const adminDirectSetPassword = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 400, message: 'New password is required and must be at least 6 characters long.' });
     }
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
+    const user = check.targetUser;
 
     const hashedPassword = await getHashedPassword(newPassword.trim());
     await completePasswordReset(targetUserId, hashedPassword);
     await deleteRefreshTokenByUserID(targetUserId);
+    invalidateUserTenantCache(targetUserId);
 
     return res.status(200).json(
         new ApiResponse({
@@ -438,6 +487,161 @@ const adminDirectSetPassword = asyncHandler(async (req, res) => {
     );
 });
 
+const getUserAssignments = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
+    }
+
+    const assignments = await fetchUserAssignments(targetUserId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: assignments,
+        message: 'User assignments fetched successfully'
+    }));
+});
+
+const updateUserAssignments = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const targetUserId = parseInt(id, 10);
+    const { isSuperAdmin = false, assignments = [] } = req.body;
+    const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
+
+    const user = await findUserById(targetUserId);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    }
+
+    const superAdminRoleId = await getSuperAdminRoleId();
+    const targetIsSuperAdmin = user.role_id && user.role_id === superAdminRoleId;
+
+    // A non-super-admin cannot edit or modify a Super Administrator account
+    if (targetIsSuperAdmin && !isCallerSuperAdmin) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Access denied: Super Administrator accounts can only be managed by another Super Administrator.'
+        });
+    }
+
+    if (isSuperAdmin) {
+        if (!isCallerSuperAdmin) {
+            throw new ApiError({
+                statusCode: 403,
+                message: 'Access denied: Only Super Administrators can grant Super Admin privileges.'
+            });
+        }
+
+        // Promote to Super Admin
+        await saveUserAssignments(targetUserId, { isSuperAdmin: true, assignments: [] });
+        invalidateUserTenantCache(targetUserId);
+
+        return res.status(200).json(new ApiResponse({
+            statusCode: 200,
+            data: { userId: targetUserId, isSuperAdmin: true, assignmentCount: 0 },
+            message: 'User promoted to Global Super Administrator successfully.'
+        }));
+    }
+
+    if (!Array.isArray(assignments)) {
+        throw new ApiError({ statusCode: 400, message: 'assignments must be an array.' });
+    }
+
+    let scopedFirmIds = null;
+    if (!isCallerSuperAdmin) {
+        const { allowedFirmIds } = await getUserAllowedFirms(req.user?.id);
+        if (!allowedFirmIds || allowedFirmIds.size === 0) {
+            throw new ApiError({ statusCode: 403, message: 'You do not have access to manage users in any firm.' });
+        }
+        scopedFirmIds = Array.from(allowedFirmIds);
+
+        // Verify that every assignment's firmId is within caller's allowed firms
+        // and cannot assign super-admin role
+        for (const a of assignments) {
+            const firmId = parseInt(a.firmId, 10);
+            if (!allowedFirmIds.has(firmId)) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: `Access denied: You cannot assign users to firm #${firmId} as you do not administer it.`
+                });
+            }
+            if (superAdminRoleId && parseInt(a.roleId, 10) === superAdminRoleId) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: 'Access denied: The Super Administrator role cannot be assigned at firm or branch level.'
+                });
+            }
+        }
+    }
+
+    // Validate uniqueness of firm + branch scope
+    const seenScopes = new Set();
+    let defaultCount = 0;
+
+    for (const a of assignments) {
+        if (!a.firmId || !a.roleId) {
+            throw new ApiError({ statusCode: 400, message: 'Every assignment must have a valid firm and role selected.' });
+        }
+        const firmId = parseInt(a.firmId, 10);
+        const firmBranchId = a.firmBranchId ? parseInt(a.firmBranchId, 10) : 'all';
+        const scopeKey = `${firmId}:${firmBranchId}`;
+
+        if (seenScopes.has(scopeKey)) {
+            const scopeLabel = firmBranchId === 'all' ? 'All Branches (Firm-Wide)' : `Branch #${firmBranchId}`;
+            throw new ApiError({
+                statusCode: 400,
+                message: `Duplicate assignment detected: Firm #${firmId} with ${scopeLabel} is assigned more than once. A user can only hold one role per branch scope.`
+            });
+        }
+        seenScopes.add(scopeKey);
+
+        if (a.isDefault) {
+            defaultCount++;
+        }
+    }
+
+    // Ensure exactly one default when assignments exist
+    let normalizedAssignments = [...assignments];
+    if (normalizedAssignments.length > 0 && defaultCount !== 1) {
+        normalizedAssignments = normalizedAssignments.map((a, idx) => ({
+            ...a,
+            isDefault: idx === 0
+        }));
+    }
+
+    await saveUserAssignments(targetUserId, { isSuperAdmin: false, assignments: normalizedAssignments, scopedFirmIds });
+    invalidateUserTenantCache(targetUserId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: { userId: targetUserId, isSuperAdmin: false, assignmentCount: normalizedAssignments.length },
+        message: 'User entity assignments updated successfully.'
+    }));
+});
+
+// Get user counts by firm
+const getUserCountsByFirmController = asyncHandler(async (req, res) => {
+    const context = getContext();
+    const isSuperAdmin = Boolean(context.isSuperAdmin);
+
+    let allowedFirmIds = null;
+    if (!isSuperAdmin && context.userId) {
+        const { allowedFirmIds: userFirms } = await getUserAllowedFirms(context.userId);
+        allowedFirmIds = Array.from(userFirms || []);
+    }
+
+    const counts = await fetchUserCountsByFirm(allowedFirmIds);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: counts,
+        message: 'User counts by firm retrieved successfully.'
+    }));
+});
+
 module.exports = {
     registerUser,
     changeCurrentPassword,
@@ -446,6 +650,7 @@ module.exports = {
     updateUserAvatar,
     getAllUsers,
     getUsersMeta,
+    getUserCountsByFirmController,
     deleteUser,
     restoreUserController,
     bulkDeleteUsersController,
@@ -453,5 +658,7 @@ module.exports = {
     changeUserRole,
     toggleUserStatus,
     adminGenerateResetLink,
-    adminDirectSetPassword
+    adminDirectSetPassword,
+    getUserAssignments,
+    updateUserAssignments
 };

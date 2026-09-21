@@ -7,6 +7,7 @@ const createVendorBillSchema = {
             'number.base': 'Vendor party ID must be a valid number.'
         }),
         branchId: Joi.number().integer().positive().allow(null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         billNo: Joi.string().trim().max(100).required().messages({
             'any.required': 'Vendor bill number is required.',
             'string.empty': 'Vendor bill number cannot be empty.'
@@ -36,6 +37,7 @@ const updateVendorBillSchema = {
     }),
     body: Joi.object({
         branchId: Joi.number().integer().positive().allow(null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         billNo: Joi.string().trim().max(100).optional(),
         billDate: Joi.date().iso().optional(),
         dueDays: Joi.number().integer().min(0).allow(null).optional(),

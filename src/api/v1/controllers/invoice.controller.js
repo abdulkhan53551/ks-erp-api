@@ -15,6 +15,7 @@ const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/master
 const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
 const { getContext } = require("../helpers/requestContext");
 const { getPaymentStatusIds } = require("../models/payment.model");
+const { db } = require("../database");
 const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
@@ -62,9 +63,24 @@ const getInvoiceById = asyncHandler(async (req, res) => {
 
 // Create a new invoice
 const createInvoice = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const invoice = req.body;
     const { items, billingAddress, shippingAddress } = invoice;
+
+    const effectiveFirmId = invoice.firmId ? Number(invoice.firmId) : (firmId || null);
+    if (!effectiveFirmId) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Firm context is required to create an invoice. Please select an issuing firm.'
+        });
+    }
+
+    // Resolve internal firm branch
+    let resolvedFirmBranchId = invoice.firmBranchId ? Number(invoice.firmBranchId) : (branchId ? Number(branchId) : null);
+    if (!resolvedFirmBranchId && effectiveFirmId) {
+        const defaultBranch = await db('firm_branches').where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+        if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
+    }
 
     // 2. Compare with frontend values
     const mismatches = await validateInvoiceTotals({ items, invoice })
@@ -91,6 +107,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         customer_name: invoice.customerName,
         party_id: invoice.partyId ? Number(invoice.partyId) : null,
         branch_id: invoice.branchId ? Number(invoice.branchId) : null,
+        firm_branch_id: resolvedFirmBranchId,
         has_gst: invoice.hasGst,
         gst_number: invoice.gstNumber,
         has_challan: invoice.hasChallan,
@@ -111,7 +128,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         payment_status_id: invoice.paymentStatusId,
         payment_mode_id: invoice.paymentModeId,
         status: 'Final',
-        firm_id: firmId
+        firm_id: effectiveFirmId
     };
 
     // Prepare invoice items
@@ -266,6 +283,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         customer_name: invoice.customerName,
         party_id: invoice.partyId !== undefined ? (invoice.partyId ? Number(invoice.partyId) : null) : undefined,
         branch_id: invoice.branchId !== undefined ? (invoice.branchId ? Number(invoice.branchId) : null) : undefined,
+        firm_branch_id: invoice.firmBranchId !== undefined ? (invoice.firmBranchId ? Number(invoice.firmBranchId) : null) : undefined,
         has_gst: invoice.hasGst,
         gst_number: invoice.gstNumber,
         has_challan: invoice.hasChallan,

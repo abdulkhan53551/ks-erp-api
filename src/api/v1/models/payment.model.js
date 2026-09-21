@@ -52,8 +52,9 @@ const generateNextReceiptNumber = async (firmId, trx = null) => {
  */
 const createReceiptTransaction = async (receiptData) => {
     const { firmId = 0 } = getContext();
-    if (!firmId) {
-        throw new ApiError({ statusCode: 400, message: 'Firm context is required.' });
+    const effectiveFirmId = receiptData.firmId ? Number(receiptData.firmId) : (firmId || null);
+    if (!effectiveFirmId) {
+        throw new ApiError({ statusCode: 400, message: 'Firm context is required. Please select a firm.' });
     }
 
     const {
@@ -99,7 +100,7 @@ const createReceiptTransaction = async (receiptData) => {
 
             // 2. Lock invoice row and verify balance
             const invoice = await trx('invoices')
-                .where({ id: item.invoiceId, firm_id: firmId, is_active: true })
+                .where({ id: item.invoiceId, firm_id: effectiveFirmId, is_active: true })
                 .forUpdate()
                 .first();
 
@@ -145,11 +146,25 @@ const createReceiptTransaction = async (receiptData) => {
         const unallocatedAmountDec = totalAmountDec.minus(allocatedSum);
 
         // 3. Generate sequential receipt number
-        const paymentNo = await generateNextPaymentNumber(firmId, 'INWARD', trx);
+        const paymentNo = await generateNextPaymentNumber(effectiveFirmId, 'INWARD', trx);
+
+        // Resolve internal issuing branch ID
+        let resolvedFirmBranchId = receiptData.firmBranchId ? Number(receiptData.firmBranchId) : null;
+        if (!resolvedFirmBranchId) {
+            const { branchId = null } = getContext();
+            resolvedFirmBranchId = branchId;
+        }
+        if (!resolvedFirmBranchId) {
+            const ho = await trx('firm_branches')
+                .where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true })
+                .first();
+            if (ho) resolvedFirmBranchId = ho.id;
+        }
 
         // 4. Insert payment record
         const [payment] = await trx('payments').insert({
-            firm_id: firmId,
+            firm_id: effectiveFirmId,
+            firm_branch_id: resolvedFirmBranchId,
             payment_no: paymentNo,
             payment_type: 'INWARD',
             payment_date: paymentDate,
@@ -207,8 +222,9 @@ const createReceiptTransaction = async (receiptData) => {
  */
 const createVendorPaymentTransaction = async (paymentData) => {
     const { firmId = 0 } = getContext();
-    if (!firmId) {
-        throw new ApiError({ statusCode: 400, message: 'Firm context is required.' });
+    const effectiveFirmId = paymentData.firmId ? Number(paymentData.firmId) : (firmId || null);
+    if (!effectiveFirmId) {
+        throw new ApiError({ statusCode: 400, message: 'Firm context is required. Please select a firm.' });
     }
 
     const {
@@ -229,7 +245,7 @@ const createVendorPaymentTransaction = async (paymentData) => {
     }
 
     // Verify vendor exists
-    const party = await db('parties').where({ id: partyId, firm_id: firmId, is_active: true }).first();
+    const party = await db('parties').where({ id: partyId, firm_id: effectiveFirmId, is_active: true }).first();
     if (!party) {
         throw new ApiError({ statusCode: 404, message: 'Vendor party not found or inactive.' });
     }
@@ -259,7 +275,7 @@ const createVendorPaymentTransaction = async (paymentData) => {
 
             // Lock vendor bill row and verify balance
             const bill = await trx('vendor_bills')
-                .where({ id: item.vendorBillId, firm_id: firmId, party_id: partyId, is_active: true })
+                .where({ id: item.vendorBillId, firm_id: effectiveFirmId, party_id: partyId, is_active: true })
                 .forUpdate()
                 .first();
 
@@ -305,11 +321,25 @@ const createVendorPaymentTransaction = async (paymentData) => {
         const unallocatedAmountDec = totalAmountDec.minus(allocatedSum);
 
         // Generate sequential payment number (PAY-0001)
-        const paymentNo = await generateNextPaymentNumber(firmId, 'OUTWARD', trx);
+        const paymentNo = await generateNextPaymentNumber(effectiveFirmId, 'OUTWARD', trx);
+
+        // Resolve internal issuing branch ID
+        let resolvedFirmBranchId = paymentData.firmBranchId ? Number(paymentData.firmBranchId) : null;
+        if (!resolvedFirmBranchId) {
+            const { branchId = null } = getContext();
+            resolvedFirmBranchId = branchId;
+        }
+        if (!resolvedFirmBranchId) {
+            const ho = await trx('firm_branches')
+                .where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true })
+                .first();
+            if (ho) resolvedFirmBranchId = ho.id;
+        }
 
         // Insert payment record
         const [payment] = await trx('payments').insert({
-            firm_id: firmId,
+            firm_id: effectiveFirmId,
+            firm_branch_id: resolvedFirmBranchId,
             payment_no: paymentNo,
             payment_type: 'OUTWARD',
             payment_date: paymentDate,
@@ -657,10 +687,10 @@ const cancelReceiptTransaction = async (paymentId) => {
 };
 
 /**
- * Fetch all customer receipts with pagination, search, and filters (INWARD)
+ * Fetch receipts (INWARD customer payments) with pagination, search, and filters
  */
 const fetchAllReceipts = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -681,6 +711,10 @@ const fetchAllReceipts = async (query = {}) => {
             'p.payment_type as paymentType',
             'p.payment_date as paymentDate',
             'p.party_id as partyId',
+            'p.firm_branch_id as firmBranchId',
+            'fb.branch_name as firmBranchName',
+            'fb.branch_code as firmBranchCode',
+            'f.firm_name as firmName',
             db.raw('COALESCE(pt.display_name, pt.legal_name) as "customerName"'),
             'p.total_amount as totalAmount',
             'p.allocated_amount as allocatedAmount',
@@ -697,11 +731,14 @@ const fetchAllReceipts = async (query = {}) => {
         )
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
+        .leftJoin('firm_branches as fb', 'p.firm_branch_id', 'fb.id')
+        .leftJoin('firms as f', 'p.firm_id', 'f.id')
         .leftJoin('users as u', 'p.created_by', 'u.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'INWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -736,7 +773,7 @@ const fetchAllReceipts = async (query = {}) => {
  * Fetch receipts pagination metadata (INWARD)
  */
 const fetchReceiptsMeta = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -750,10 +787,11 @@ const fetchReceiptsMeta = async (query = {}) => {
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'INWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -776,7 +814,7 @@ const fetchReceiptsMeta = async (query = {}) => {
  * Fetch summary metrics across receipts (INWARD)
  */
 const fetchReceiptsSummary = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         search = '',
         partyId,
@@ -788,10 +826,11 @@ const fetchReceiptsSummary = async (query = {}) => {
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'INWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -834,7 +873,7 @@ const fetchReceiptsSummary = async (query = {}) => {
  * Fetch all outward vendor payments with pagination, search, and filters (OUTWARD)
  */
 const fetchAllVendorPayments = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -855,6 +894,10 @@ const fetchAllVendorPayments = async (query = {}) => {
             'p.payment_type as paymentType',
             'p.payment_date as paymentDate',
             'p.party_id as partyId',
+            'p.firm_branch_id as firmBranchId',
+            'fb.branch_name as firmBranchName',
+            'fb.branch_code as firmBranchCode',
+            'f.firm_name as firmName',
             db.raw('COALESCE(pt.display_name, pt.legal_name) as "vendorName"'),
             'pt.gstin as vendorGstin',
             'p.total_amount as totalAmount',
@@ -872,11 +915,14 @@ const fetchAllVendorPayments = async (query = {}) => {
         )
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
+        .leftJoin('firm_branches as fb', 'p.firm_branch_id', 'fb.id')
+        .leftJoin('firms as f', 'p.firm_id', 'f.id')
         .leftJoin('users as u', 'p.created_by', 'u.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'OUTWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -911,7 +957,7 @@ const fetchAllVendorPayments = async (query = {}) => {
  * Fetch vendor payments pagination metadata (OUTWARD)
  */
 const fetchVendorPaymentsMeta = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         page = 1,
         pageSize = 10,
@@ -925,10 +971,11 @@ const fetchVendorPaymentsMeta = async (query = {}) => {
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'OUTWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -951,7 +998,7 @@ const fetchVendorPaymentsMeta = async (query = {}) => {
  * Fetch summary metrics for vendor payments (OUTWARD)
  */
 const fetchVendorPaymentsSummary = async (query = {}) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const {
         search = '',
         partyId,
@@ -963,10 +1010,12 @@ const fetchVendorPaymentsSummary = async (query = {}) => {
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
-        .where('p.firm_id', firmId)
         .where('p.payment_type', 'OUTWARD')
         .where('p.is_active', true);
 
+    if (firmId) baseQuery.where('p.firm_id', firmId);
+
+    if (branchId) baseQuery.where('p.firm_branch_id', branchId);
     if (partyId) baseQuery.where('p.party_id', partyId);
     if (paymentModeId) baseQuery.where('p.payment_mode_id', paymentModeId);
     if (status) baseQuery.where('p.status', status);
@@ -1011,10 +1060,14 @@ const fetchVendorPaymentsSummary = async (query = {}) => {
 const fetchPaymentById = async (id) => {
     const { firmId = 0 } = getContext();
 
-    const payment = await db('payments as p')
+    const payQuery = db('payments as p')
         .select(
             'p.id',
             'p.firm_id as firmId',
+            'p.firm_branch_id as firmBranchId',
+            'fb.branch_name as firmBranchName',
+            'fb.branch_code as firmBranchCode',
+            'f.firm_name as firmName',
             'p.payment_no as paymentNo',
             'p.payment_type as paymentType',
             'p.payment_date as paymentDate',
@@ -1038,9 +1091,16 @@ const fetchPaymentById = async (id) => {
         )
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
+        .leftJoin('firm_branches as fb', 'p.firm_branch_id', 'fb.id')
+        .leftJoin('firms as f', 'p.firm_id', 'f.id')
         .leftJoin('users as u', 'p.created_by', 'u.id')
-        .where({ 'p.id': id, 'p.firm_id': firmId, 'p.is_active': true })
-        .first();
+        .where({ 'p.id': id, 'p.is_active': true });
+
+    if (firmId) {
+        payQuery.andWhere({ 'p.firm_id': firmId });
+    }
+
+    const payment = await payQuery.first();
 
     if (!payment) {
         return null;

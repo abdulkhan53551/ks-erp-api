@@ -32,6 +32,7 @@ const {
     getRoles
 } = require('../controllers/auth.controller.js')
 const { verifyAccessToken, authorizeAccess, requireSuperAdmin } = require('../middlewares/auth.middleware.js')
+const { checkPermission } = require('../middlewares/authorize.middleware.js')
 const validate = require('../middlewares/validate.js')
 const { addRolePermissionValidationSchema, removeRolePermissionValidationSchema, updateRolePermissionValidationSchema, createPolicyValidationSchema, deletePolicyValidationSchema, updatePolicyValidateSchema } = require('../validation/auth.validation.js')
 const router = Router()
@@ -52,7 +53,7 @@ router.get('/validate-reset-token', validateResetToken)
 router.post('/reset-password', resetPassword)
 
 // Super Admin Approval Workflows
-router.get('/admin/roles', verifyAccessToken, requireSuperAdmin, getRoles)
+router.get('/admin/roles', verifyAccessToken, checkPermission('users', 'read'), getRoles)
 router.get('/admin/approvals/registrations', verifyAccessToken, requireSuperAdmin, getPendingRegistrationsList)
 router.get('/admin/approvals/rejected-registrations', verifyAccessToken, requireSuperAdmin, getRejectedRegistrationsList)
 router.patch('/admin/approvals/registrations/:id/approve', verifyAccessToken, requireSuperAdmin, approveRegistration)

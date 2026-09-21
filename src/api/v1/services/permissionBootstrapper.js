@@ -138,12 +138,25 @@ async function syncPoliciesTable() {
     await db('policies').truncate();
 
     const casbinRows = [
-        // Universal rules for Super Admin (by slug and by role ID 1)
-        { ptype: 'p', v0: 'role:super-admin', v1: '*', v2: '*' },
-        { ptype: 'p', v0: 'role:1', v1: '*', v2: '*' }
+        // Universal rule for Super Admin by slug
+        { ptype: 'p', v0: 'role:super-admin', v1: '*', v2: '*' }
     ];
 
-    const ruleSet = new Set(['role:super-admin:*:*', 'role:1:*:*']);
+    const ruleSet = new Set(['role:super-admin:*:*']);
+
+    // Dynamically grant wildcard to any role whose slug is super-admin
+    const superAdminRoles = await db('roles')
+        .where('is_active', true)
+        .whereRaw("LOWER(slug) = 'super-admin'")
+        .select('id');
+
+    for (const sar of superAdminRoles) {
+        const key = `role:${sar.id}:*:*`;
+        if (!ruleSet.has(key)) {
+            ruleSet.add(key);
+            casbinRows.push({ ptype: 'p', v0: `role:${sar.id}`, v1: '*', v2: '*' });
+        }
+    }
 
     for (const rule of activeRules) {
         // ID-based subject: role:<role_id> (e.g. role:35, role:36)
