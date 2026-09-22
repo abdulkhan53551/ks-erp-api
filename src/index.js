@@ -21,23 +21,24 @@ const { PORT } = require('./config');
 //     }
 // });
 
-connectDB()
-    // .then(() => {
-    //     return connectRedis(); // Ensure Redis is connected
-    // })
-    // .then((redisClient) => {
-    //     return initCasbin(redisClient)
-    // })
-    .then(() => {
-        app.listen(PORT, () => console.log('✅ Server listing on port ' + PORT));
-    })
-    .catch((err) => {
-        if (err.message.includes('Casbin')) {
-            console.error('Error initializing Casbin:', err);
-        } else if (err.message.includes('Redis')) {
-            console.error('Redis connection FAILED!!!', err);
-        } else {
-            console.log('POSTGRESQL connection FAILED!!!', err);
+const startDatabaseConnection = async (retries = 3, delay = 4000) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            await connectDB();
+            return;
+        } catch (err) {
+            console.error(`⚠️ DB connection attempt ${attempt}/${retries} failed (Neon might be auto-resuming):`, err.message);
+            if (attempt < retries) {
+                console.log(`⏳ Retrying DB connection in ${delay / 1000}s...`);
+                await new Promise((res) => setTimeout(res, delay));
+            } else {
+                console.error('❌ Could not connect to PostgreSQL after multiple attempts:', err);
+            }
         }
-        process.exit(1);
-    });
+    }
+};
+
+app.listen(PORT, () => {
+    console.log(`✅ Server listening on port ${PORT}`);
+    startDatabaseConnection();
+});

@@ -23,7 +23,12 @@ const knexConfig = {
     migrations: {
         directory: path.resolve(ROOT_DIR, 'migrations'),
     },
-    pool: { min: 2, max: 10 },
+    pool: {
+        min: 0, // Serverless-safe: avoid dead sockets to sleeping Neon instances
+        max: 10,
+        acquireTimeoutMillis: 60000, // Allow up to 60s for Neon to wake up from auto-suspend
+        idleTimeoutMillis: 120000,
+    },
 };
 
 const db = knex(knexConfig);
