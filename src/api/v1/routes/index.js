@@ -16,6 +16,11 @@ const productRoutes = require('./product.routes');
 const paymentRoutes = require('./payment.routes');
 const vendorBillRoutes = require('./vendorBill.routes');
 const rolePermissionRoutes = require('./rolePermission.routes');
+const employeeRoutes = require('./employee.routes');
+const shiftRoutes = require('./shift.routes');
+const attendanceRoutes = require('./attendance.routes');
+const leaveRoutes = require('./leave.routes');
+const payrollRoutes = require('./payroll.routes');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
 
@@ -51,6 +56,11 @@ router.use('/attachments', attachmentRoutes);
 router.use('/payments', paymentRoutes);
 router.use('/vendor-bills', vendorBillRoutes);
 router.use('/admin', rolePermissionRoutes);
+router.use('/employees', employeeRoutes);
+router.use('/shifts', shiftRoutes);
+router.use('/attendance', attendanceRoutes);
+router.use('/leaves', leaveRoutes);
+router.use('/payroll', payrollRoutes);
 
 module.exports = router;
 // exports.products = productRoutes;
