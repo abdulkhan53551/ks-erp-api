@@ -18,13 +18,22 @@ const {
     fetchPayrollReport
 } = require('../models/payroll.model');
 
+const getEffectiveFirmId = (req) => {
+    const context = getContext();
+    if (req.query.firmId !== undefined) {
+        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
+        const parsed = parseInt(req.query.firmId, 10);
+        return isNaN(parsed) ? null : parsed;
+    }
+    return context.firmId || null;
+};
+
 // --- Firm Payroll Settings ---
 const getPayrollSettingsController = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
 
     if (!firmId) {
-        throw new ApiError({ statusCode: 400, message: 'Firm ID is required.' });
+        throw new ApiError({ statusCode: 400, message: 'Please select a specific firm to configure payroll settings.' });
     }
 
     const settings = await fetchPayrollSettings(firmId);
@@ -59,8 +68,7 @@ const updatePayrollSettingsController = asyncHandler(async (req, res) => {
 
 // --- Salary Templates ---
 const getSalaryTemplatesController = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
 
     const templates = await fetchSalaryTemplates(firmId);
 
@@ -149,8 +157,7 @@ const deleteSalaryTemplateController = asyncHandler(async (req, res) => {
 
 // --- Salary Slips & Payroll Run ---
 const getSalarySlipsController = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
 
     const result = await fetchSalarySlips({ ...req.query, firmId });
 

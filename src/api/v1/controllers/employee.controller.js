@@ -12,12 +12,22 @@ const {
     softDeleteEmployee,
     restoreEmployee,
     permanentDeleteEmployee,
-    fetchEmployeesDropdown
+    fetchEmployeesDropdown,
+    fetchNextEmployeeCode
 } = require('../models/employee.model');
 
-const getEmployees = asyncHandler(async (req, res) => {
+const getEffectiveFirmId = (req) => {
     const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    if (req.query.firmId !== undefined) {
+        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
+        const parsed = parseInt(req.query.firmId, 10);
+        return isNaN(parsed) ? null : parsed;
+    }
+    return context.firmId || null;
+};
+
+const getEmployees = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
 
     const result = await fetchEmployees({
         ...req.query,
@@ -34,8 +44,7 @@ const getEmployees = asyncHandler(async (req, res) => {
 });
 
 const getEmployeesMeta = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
     const branchId = req.query.branchId;
 
     const meta = await fetchEmployeesMeta({ firmId, branchId });
@@ -157,8 +166,7 @@ const restoreEmployeeController = asyncHandler(async (req, res) => {
 });
 
 const getEmployeesDropdown = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
     const branchId = req.query.branchId;
 
     const list = await fetchEmployeesDropdown(firmId, branchId);
@@ -172,6 +180,19 @@ const getEmployeesDropdown = asyncHandler(async (req, res) => {
     );
 });
 
+const getNextEmployeeCodeController = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
+    const nextEmpCode = await fetchNextEmployeeCode(firmId);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { nextEmpCode, nextCode: nextEmpCode },
+            message: 'Next employee code generated successfully.'
+        })
+    );
+});
+
 module.exports = {
     getEmployees,
     getEmployeesMeta,
@@ -180,5 +201,6 @@ module.exports = {
     updateEmployeeController,
     deleteEmployeeController,
     restoreEmployeeController,
-    getEmployeesDropdown
+    getEmployeesDropdown,
+    getNextEmployeeCodeController
 };

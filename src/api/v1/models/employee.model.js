@@ -348,40 +348,40 @@ const updateEmployee = async (id, employeeData, shiftId = null) => {
     return db.transaction(async (trx) => {
         const updatePayload = {};
 
-        if (employeeData.branchId !== undefined) updatePayload.branch_id = employeeData.branchId;
-        if (employeeData.userId !== undefined) updatePayload.user_id = employeeData.userId;
+        if (employeeData.branchId !== undefined) updatePayload.branch_id = employeeData.branchId ? parseInt(employeeData.branchId, 10) : null;
+        if (employeeData.userId !== undefined) updatePayload.user_id = employeeData.userId ? parseInt(employeeData.userId, 10) : null;
         if (employeeData.empCode !== undefined) updatePayload.emp_code = employeeData.empCode;
         if (employeeData.firstName !== undefined) updatePayload.first_name = employeeData.firstName;
-        if (employeeData.lastName !== undefined) updatePayload.last_name = employeeData.lastName;
-        if (employeeData.email !== undefined) updatePayload.email = employeeData.email;
-        if (employeeData.phone !== undefined) updatePayload.phone = employeeData.phone;
-        if (employeeData.photoUrl !== undefined) updatePayload.photo_url = employeeData.photoUrl;
-        if (employeeData.photoPublicId !== undefined) updatePayload.photo_public_id = employeeData.photoPublicId;
-        if (employeeData.dateOfBirth !== undefined) updatePayload.date_of_birth = employeeData.dateOfBirth;
-        if (employeeData.gender !== undefined) updatePayload.gender = employeeData.gender;
-        if (employeeData.bloodGroup !== undefined) updatePayload.blood_group = employeeData.bloodGroup;
-        if (employeeData.address !== undefined) updatePayload.address = employeeData.address;
-        if (employeeData.cityId !== undefined) updatePayload.city_id = employeeData.cityId;
-        if (employeeData.stateId !== undefined) updatePayload.state_id = employeeData.stateId;
-        if (employeeData.pincode !== undefined) updatePayload.pincode = employeeData.pincode;
-        if (employeeData.emergencyContactName !== undefined) updatePayload.emergency_contact_name = employeeData.emergencyContactName;
-        if (employeeData.emergencyContactPhone !== undefined) updatePayload.emergency_contact_phone = employeeData.emergencyContactPhone;
-        if (employeeData.dateOfJoining !== undefined) updatePayload.date_of_joining = employeeData.dateOfJoining;
-        if (employeeData.dateOfExit !== undefined) updatePayload.date_of_exit = employeeData.dateOfExit;
-        if (employeeData.department !== undefined) updatePayload.department = employeeData.department;
-        if (employeeData.designation !== undefined) updatePayload.designation = employeeData.designation;
+        if (employeeData.lastName !== undefined) updatePayload.last_name = employeeData.lastName || null;
+        if (employeeData.email !== undefined) updatePayload.email = employeeData.email || null;
+        if (employeeData.phone !== undefined) updatePayload.phone = employeeData.phone || null;
+        if (employeeData.photoUrl !== undefined) updatePayload.photo_url = employeeData.photoUrl || null;
+        if (employeeData.photoPublicId !== undefined) updatePayload.photo_public_id = employeeData.photoPublicId || null;
+        if (employeeData.dateOfBirth !== undefined) updatePayload.date_of_birth = employeeData.dateOfBirth ? employeeData.dateOfBirth : null;
+        if (employeeData.gender !== undefined) updatePayload.gender = employeeData.gender || null;
+        if (employeeData.bloodGroup !== undefined) updatePayload.blood_group = employeeData.bloodGroup || null;
+        if (employeeData.address !== undefined) updatePayload.address = employeeData.address || null;
+        if (employeeData.cityId !== undefined) updatePayload.city_id = employeeData.cityId ? parseInt(employeeData.cityId, 10) : null;
+        if (employeeData.stateId !== undefined) updatePayload.state_id = employeeData.stateId ? parseInt(employeeData.stateId, 10) : null;
+        if (employeeData.pincode !== undefined) updatePayload.pincode = employeeData.pincode || null;
+        if (employeeData.emergencyContactName !== undefined) updatePayload.emergency_contact_name = employeeData.emergencyContactName || null;
+        if (employeeData.emergencyContactPhone !== undefined) updatePayload.emergency_contact_phone = employeeData.emergencyContactPhone || null;
+        if (employeeData.dateOfJoining !== undefined) updatePayload.date_of_joining = employeeData.dateOfJoining ? employeeData.dateOfJoining : null;
+        if (employeeData.dateOfExit !== undefined) updatePayload.date_of_exit = employeeData.dateOfExit ? employeeData.dateOfExit : null;
+        if (employeeData.department !== undefined) updatePayload.department = employeeData.department || null;
+        if (employeeData.designation !== undefined) updatePayload.designation = employeeData.designation || null;
         if (employeeData.employmentType !== undefined) updatePayload.employment_type = employeeData.employmentType;
         if (employeeData.status !== undefined) updatePayload.status = employeeData.status;
         if (employeeData.salaryType !== undefined) updatePayload.salary_type = employeeData.salaryType;
-        if (employeeData.baseSalary !== undefined) updatePayload.base_salary = employeeData.baseSalary;
-        if (employeeData.salaryTemplateId !== undefined) updatePayload.salary_template_id = employeeData.salaryTemplateId;
-        if (employeeData.bankName !== undefined) updatePayload.bank_name = employeeData.bankName;
-        if (employeeData.accountNumber !== undefined) updatePayload.account_number = employeeData.accountNumber;
-        if (employeeData.ifscCode !== undefined) updatePayload.ifsc_code = employeeData.ifscCode;
-        if (employeeData.panNumber !== undefined) updatePayload.pan_number = employeeData.panNumber;
-        if (employeeData.aadharNumber !== undefined) updatePayload.aadhar_number = employeeData.aadharNumber;
-        if (employeeData.uanNumber !== undefined) updatePayload.uan_number = employeeData.uanNumber;
-        if (employeeData.esiNumber !== undefined) updatePayload.esi_number = employeeData.esiNumber;
+        if (employeeData.baseSalary !== undefined) updatePayload.base_salary = employeeData.baseSalary !== '' ? employeeData.baseSalary : 0;
+        if (employeeData.salaryTemplateId !== undefined) updatePayload.salary_template_id = employeeData.salaryTemplateId ? parseInt(employeeData.salaryTemplateId, 10) : null;
+        if (employeeData.bankName !== undefined) updatePayload.bank_name = employeeData.bankName || null;
+        if (employeeData.accountNumber !== undefined) updatePayload.account_number = employeeData.accountNumber || null;
+        if (employeeData.ifscCode !== undefined) updatePayload.ifsc_code = employeeData.ifscCode || null;
+        if (employeeData.panNumber !== undefined) updatePayload.pan_number = employeeData.panNumber || null;
+        if (employeeData.aadharNumber !== undefined) updatePayload.aadhar_number = employeeData.aadharNumber || null;
+        if (employeeData.uanNumber !== undefined) updatePayload.uan_number = employeeData.uanNumber || null;
+        if (employeeData.esiNumber !== undefined) updatePayload.esi_number = employeeData.esiNumber || null;
 
         const [updatedEmployee] = await trx('employees')
             .where({ id })
@@ -479,6 +479,37 @@ const fetchEmployeesDropdown = async (firmId, branchId = null) => {
     return query;
 };
 
+/**
+ * Auto-generate next employee code based on highest existing code in the firm
+ */
+const fetchNextEmployeeCode = async (firmId = null) => {
+    let query = db('employees').select('emp_code').whereNull('deleted_at');
+    if (firmId && firmId !== 'all') {
+        query = query.where({ firm_id: firmId });
+    }
+    const employees = await query.orderBy('id', 'desc');
+
+    let maxNum = 0;
+    let detectedPrefix = 'KS-EMP-';
+
+    for (const emp of employees) {
+        const code = (emp.emp_code || '').trim();
+        const match = code.match(/^(.*?)(\d+)$/);
+        if (match) {
+            const prefix = match[1];
+            const num = parseInt(match[2], 10);
+            if (!isNaN(num) && num > maxNum) {
+                maxNum = num;
+                detectedPrefix = prefix;
+            }
+        }
+    }
+
+    const nextNum = maxNum + 1;
+    const padded = String(nextNum).padStart(3, '0');
+    return `${detectedPrefix}${padded}`;
+};
+
 module.exports = {
     fetchEmployees,
     fetchEmployeesMeta,
@@ -489,5 +520,6 @@ module.exports = {
     softDeleteEmployee,
     restoreEmployee,
     permanentDeleteEmployee,
-    fetchEmployeesDropdown
+    fetchEmployeesDropdown,
+    fetchNextEmployeeCode
 };

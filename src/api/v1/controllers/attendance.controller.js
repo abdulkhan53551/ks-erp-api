@@ -10,9 +10,18 @@ const {
     fetchAttendanceSummary
 } = require('../models/attendance.model');
 
-const getAttendance = asyncHandler(async (req, res) => {
+const getEffectiveFirmId = (req) => {
     const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    if (req.query.firmId !== undefined) {
+        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
+        const parsed = parseInt(req.query.firmId, 10);
+        return isNaN(parsed) ? null : parsed;
+    }
+    return context.firmId || null;
+};
+
+const getAttendance = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
 
     const records = await fetchAttendance({
         ...req.query,
@@ -88,8 +97,7 @@ const markDateStatusController = asyncHandler(async (req, res) => {
 });
 
 const getAttendanceSummaryController = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
     const { month, year, branchId } = req.query;
 
     const summary = await fetchAttendanceSummary({ firmId, month, year, branchId });

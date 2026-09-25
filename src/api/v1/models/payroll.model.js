@@ -364,9 +364,10 @@ const fetchSalarySlipById = async (id) => {
             'e.uan_number as uanNumber',
             'e.esi_number as esiNumber',
             'f.firm_name as firmName',
+            'f.trade_name as tradeName',
             'f.gstin as firmGstin',
-            'f.email as firmEmail',
-            'f.phone as firmPhone',
+            'fb.email as firmEmail',
+            'fb.phone as firmPhone',
             'fb.branch_name as branchName',
             'ug.user_name as generatedByUserName',
             'ua.user_name as approvedByUserName'

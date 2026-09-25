@@ -13,9 +13,18 @@ const {
     fetchShiftAssignments
 } = require('../models/shift.model');
 
-const getShifts = asyncHandler(async (req, res) => {
+const getEffectiveFirmId = (req) => {
     const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    if (req.query.firmId !== undefined) {
+        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
+        const parsed = parseInt(req.query.firmId, 10);
+        return isNaN(parsed) ? null : parsed;
+    }
+    return context.firmId || null;
+};
+
+const getShifts = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
     const { search } = req.query;
 
     const shifts = await fetchShifts(firmId, search);
@@ -133,8 +142,7 @@ const assignShiftController = asyncHandler(async (req, res) => {
 });
 
 const getShiftAssignmentsController = asyncHandler(async (req, res) => {
-    const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = getEffectiveFirmId(req);
     const { shiftId, employeeId } = req.query;
 
     const assignments = await fetchShiftAssignments({ firmId, shiftId, employeeId });

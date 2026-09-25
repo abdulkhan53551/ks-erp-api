@@ -136,53 +136,53 @@ const markSingleAttendance = async (data, markedBy = null) => {
 
 /**
  * Bulk mark attendance for multiple employees on a single date
+ * Uses single multi-row batch upsert: INSERT INTO ... VALUES (...), (...) ON CONFLICT DO UPDATE
  */
 const bulkMarkAttendance = async (firmId, attendanceDate, records = [], markedBy = null) => {
+    if (!records.length) return { savedCount: 0 };
+
     return db.transaction(async (trx) => {
-        let savedCount = 0;
+        const rows = records.map(record => ({
+            employee_id: record.employeeId,
+            firm_id: firmId,
+            branch_id: record.branchId || null,
+            shift_id: record.shiftId || null,
+            attendance_date: attendanceDate,
+            status: record.status,
+            check_in: record.checkIn || null,
+            check_out: record.checkOut || null,
+            total_hours: record.totalHours || 0,
+            overtime_hours: record.overtimeHours || 0,
+            overtime_type: record.overtimeType || 'NORMAL',
+            remarks: record.remarks || null,
+            marked_by: markedBy,
+            updated_at: new Date()
+        }));
 
-        for (const record of records) {
-            await trx.raw(`
-                INSERT INTO employee_attendance 
-                    (employee_id, firm_id, branch_id, shift_id, attendance_date, status, check_in, check_out, total_hours, overtime_hours, overtime_type, remarks, marked_by, updated_at)
-                VALUES 
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (employee_id, attendance_date)
-                DO UPDATE SET
-                    status = EXCLUDED.status,
-                    check_in = EXCLUDED.check_in,
-                    check_out = EXCLUDED.check_out,
-                    total_hours = EXCLUDED.total_hours,
-                    overtime_hours = EXCLUDED.overtime_hours,
-                    overtime_type = EXCLUDED.overtime_type,
-                    remarks = EXCLUDED.remarks,
-                    marked_by = EXCLUDED.marked_by,
-                    updated_at = NOW();
-            `, [
-                record.employeeId,
-                firmId,
-                record.branchId || null,
-                record.shiftId || null,
-                attendanceDate,
-                record.status,
-                record.checkIn || null,
-                record.checkOut || null,
-                record.totalHours || 0,
-                record.overtimeHours || 0,
-                record.overtimeType || 'NORMAL',
-                record.remarks || null,
-                markedBy,
-                new Date()
+        await trx('employee_attendance')
+            .insert(rows)
+            .onConflict(['employee_id', 'attendance_date'])
+            .merge([
+                'branch_id',
+                'shift_id',
+                'status',
+                'check_in',
+                'check_out',
+                'total_hours',
+                'overtime_hours',
+                'overtime_type',
+                'remarks',
+                'marked_by',
+                'updated_at'
             ]);
-            savedCount++;
-        }
 
-        return { savedCount };
+        return { savedCount: rows.length };
     });
 };
 
 /**
  * Mark date status (HOLIDAY or WEEKLY_OFF) for all active employees of a firm
+ * Uses single multi-row batch upsert
  */
 const markDateStatus = async (firmId, branchId = null, attendanceDate, status, remarks = null, markedBy = null) => {
     return db.transaction(async (trx) => {
@@ -196,29 +196,30 @@ const markDateStatus = async (firmId, branchId = null, attendanceDate, status, r
 
         const activeEmployees = await empQuery.select('id', 'branch_id');
 
-        for (const emp of activeEmployees) {
-            await trx.raw(`
-                INSERT INTO employee_attendance 
-                    (employee_id, firm_id, branch_id, attendance_date, status, remarks, marked_by, updated_at)
-                VALUES 
-                    (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT (employee_id, attendance_date)
-                DO UPDATE SET
-                    status = EXCLUDED.status,
-                    remarks = EXCLUDED.remarks,
-                    marked_by = EXCLUDED.marked_by,
-                    updated_at = NOW();
-            `, [
-                emp.id,
-                firmId,
-                emp.branch_id || branchId || null,
-                attendanceDate,
-                status,
-                remarks || (status === 'HOLIDAY' ? 'Firm Holiday' : 'Weekly Off'),
-                markedBy,
-                new Date()
-            ]);
+        if (activeEmployees.length === 0) {
+            return { affectedEmployees: 0, status, attendanceDate };
         }
+
+        const rows = activeEmployees.map(emp => ({
+            employee_id: emp.id,
+            firm_id: firmId,
+            branch_id: emp.branch_id || branchId || null,
+            attendance_date: attendanceDate,
+            status,
+            remarks: remarks || (status === 'HOLIDAY' ? 'Firm Holiday' : 'Weekly Off'),
+            marked_by: markedBy,
+            updated_at: new Date()
+        }));
+
+        await trx('employee_attendance')
+            .insert(rows)
+            .onConflict(['employee_id', 'attendance_date'])
+            .merge([
+                'status',
+                'remarks',
+                'marked_by',
+                'updated_at'
+            ]);
 
         return { affectedEmployees: activeEmployees.length, status, attendanceDate };
     });

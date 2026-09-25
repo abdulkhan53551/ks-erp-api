@@ -21,6 +21,35 @@ const globalErrorHandler = (err, req, res, next) => {
             message = safeError.message || 'Something went wrong';
         }
 
+        // Sanitize raw SQL/Knex database error messages so queries never leak to the client
+        const isRawSqlOrDbError = (msg) => {
+            if (!msg || typeof msg !== 'string') return false;
+            const lower = msg.toLowerCase();
+            return (
+                lower.startsWith('select ') ||
+                lower.startsWith('insert into ') ||
+                lower.startsWith('update ') ||
+                lower.startsWith('delete from ') ||
+                lower.includes('column "') ||
+                lower.includes('relation "') ||
+                lower.includes('syntax error at or near') ||
+                lower.includes('violates foreign key constraint') ||
+                lower.includes('violates unique constraint')
+            );
+        };
+
+        if (isRawSqlOrDbError(message)) {
+            if (message.includes('violates unique constraint')) {
+                message = 'A record with this unique information already exists.';
+                if (statusCode === 500) statusCode = 409;
+            } else if (message.includes('violates foreign key constraint')) {
+                message = 'Referenced entity was not found or is currently in use.';
+                if (statusCode === 500) statusCode = 400;
+            } else {
+                message = 'An internal database error occurred while processing the request. Please try again or contact support.';
+            }
+        }
+
         // Construct the error response
         const errorResponse = {
             success: false,

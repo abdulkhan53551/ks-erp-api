@@ -7,7 +7,8 @@ const {
     updateEmployeeController,
     deleteEmployeeController,
     restoreEmployeeController,
-    getEmployeesDropdown
+    getEmployeesDropdown,
+    getNextEmployeeCodeController
 } = require('../controllers/employee.controller');
 const validate = require('../middlewares/validate');
 const {
@@ -23,6 +24,7 @@ const router = Router();
 // Static routes before /:id
 router.get('/meta', checkPermission('employees', 'read'), getEmployeesMeta);
 router.get('/dropdown', checkPermission('employees', 'read'), getEmployeesDropdown);
+router.get('/next-code', checkPermission('employees', 'read'), getNextEmployeeCodeController);
 
 // Main collection routes
 router.get('/', checkPermission('employees', 'read'), validate(queryEmployeesSchema), getEmployees);
