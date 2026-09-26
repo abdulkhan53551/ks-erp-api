@@ -68,6 +68,12 @@ app.get('/test-pdf', async (req, res, next) => {
       res.send(pdfBuffer);
 })
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
+
+// Lightweight health check (zero DB overhead for Render and React wakeup)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
 app.use(express.json({ limit: '16kb' }));
 app.use(setUserContext);
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));

@@ -4,40 +4,49 @@ const { initCasbin } = require("./api/v1/services/casbin");
 const { app } = require('./app')
 const { PORT } = require('./config');
 
-// Listen for the SIGINT signal (e.g., Ctrl + C in the terminal)
-// process.on('SIGINT', async () => {
-//     try {
-//         const redisClient = getRedisClient()
-//         console.log('Closing database connection...');
-//         await db.destroy();
+// Graceful shutdown handling (SIGINT, SIGTERM)
+const shutdown = async (signal) => {
+    console.log(`\n🛑 Received ${signal}. Closing connections...`);
+    try {
+        console.log('Closing database connection pool...');
+        await db.destroy();
 
-//         console.log('Closing Redis connection...');
-//         await redisClient.disconnect(); // Optional if Redis needs cleanup
+        // try {
+        //     const redisClient = getRedisClient();
+        //     if (redisClient) {
+        //         console.log('Closing Redis connection...');
+        //         await redisClient.disconnect();
+        //     }
+        // } catch (_) {}
 
-//         process.exit(0);
-//     } catch (error) {
-//         console.error('Error during shutdown:', error);
-//         process.exit(1);
-//     }
-// });
-
-connectDB()
-    // .then(() => {
-    //     return connectRedis(); // Ensure Redis is connected
-    // })
-    // .then((redisClient) => {
-    //     return initCasbin(redisClient)
-    // })
-    .then(() => {
-        app.listen(PORT, () => console.log('✅ Server listing on port ' + PORT));
-    })
-    .catch((err) => {
-        if (err.message.includes('Casbin')) {
-            console.error('Error initializing Casbin:', err);
-        } else if (err.message.includes('Redis')) {
-            console.error('Redis connection FAILED!!!', err);
-        } else {
-            console.log('POSTGRESQL connection FAILED!!!', err);
-        }
+        console.log('✅ Connections closed. Exiting cleanly.');
+        process.exit(0);
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
         process.exit(1);
-    });
+    }
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+/**
+ * Bootstrap function: connect to DB first, then start listening for HTTP traffic
+ */
+const startServer = async () => {
+    try {
+        // 1. Connect to PostgreSQL
+        // Knex pool automatically waits up to acquireTimeoutMillis (60s) for Neon to wake up
+        await connectDB();
+
+        // 2. Start HTTP server only AFTER database connection is verified
+        app.listen(PORT, () => {
+            console.log(`✅ Server listening on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error('❌ POSTGRESQL connection FAILED:', err);
+        process.exit(1); // Fail-fast so process managers (Docker/PM2/Render) know startup failed
+    }
+};
+
+startServer();
