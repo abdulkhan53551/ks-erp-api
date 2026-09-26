@@ -4,41 +4,49 @@ const { initCasbin } = require("./api/v1/services/casbin");
 const { app } = require('./app')
 const { PORT } = require('./config');
 
-// Listen for the SIGINT signal (e.g., Ctrl + C in the terminal)
-// process.on('SIGINT', async () => {
-//     try {
-//         const redisClient = getRedisClient()
-//         console.log('Closing database connection...');
-//         await db.destroy();
+// Graceful shutdown handling (SIGINT, SIGTERM)
+const shutdown = async (signal) => {
+    console.log(`\n🛑 Received ${signal}. Closing connections...`);
+    try {
+        console.log('Closing database connection pool...');
+        await db.destroy();
 
-//         console.log('Closing Redis connection...');
-//         await redisClient.disconnect(); // Optional if Redis needs cleanup
+        // try {
+        //     const redisClient = getRedisClient();
+        //     if (redisClient) {
+        //         console.log('Closing Redis connection...');
+        //         await redisClient.disconnect();
+        //     }
+        // } catch (_) {}
 
-//         process.exit(0);
-//     } catch (error) {
-//         console.error('Error during shutdown:', error);
-//         process.exit(1);
-//     }
-// });
-
-const startDatabaseConnection = async (retries = 3, delay = 4000) => {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            await connectDB();
-            return;
-        } catch (err) {
-            console.error(`⚠️ DB connection attempt ${attempt}/${retries} failed (Neon might be auto-resuming):`, err.message);
-            if (attempt < retries) {
-                console.log(`⏳ Retrying DB connection in ${delay / 1000}s...`);
-                await new Promise((res) => setTimeout(res, delay));
-            } else {
-                console.error('❌ Could not connect to PostgreSQL after multiple attempts:', err);
-            }
-        }
+        console.log('✅ Connections closed. Exiting cleanly.');
+        process.exit(0);
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+        process.exit(1);
     }
 };
 
-app.listen(PORT, () => {
-    console.log(`✅ Server listening on port ${PORT}`);
-    startDatabaseConnection();
-});
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+/**
+ * Bootstrap function: connect to DB first, then start listening for HTTP traffic
+ */
+const startServer = async () => {
+    try {
+        // 1. Connect to PostgreSQL
+        // Knex pool automatically waits up to acquireTimeoutMillis (60s) for Neon to wake up
+        await connectDB();
+
+        // 2. Start HTTP server only AFTER database connection is verified
+        app.listen(PORT, () => {
+            console.log(`✅ Server listening on port ${PORT}`);
+        });
+    } catch (err) {
+        console.error('❌ POSTGRESQL connection FAILED:', err);
+        process.exit(1); // Fail-fast so process managers (Docker/PM2/Render) know startup failed
+    }
+};
+
+startServer();

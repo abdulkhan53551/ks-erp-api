@@ -36,17 +36,14 @@ const db = knex(knexConfig);
 patchKnex(db); // ← This line applies the patch globally
 
 // Function to check the database connection
-const connectDB = () => {
-    return new Promise(async (resolve, reject) => {
-        try {
-            await db.raw('SELECT 1+1 AS result');
-            console.log('✅ Database connected successfully!');
-            resolve();
-        } catch (error) {
-            console.error('❌ Error connecting to the database:', error);
-            reject(error);
-        }
-    });
+const connectDB = async () => {
+    try {
+        await db.raw('SELECT 1+1 AS result');
+        console.log('✅ Database connected successfully!');
+    } catch (error) {
+        console.error('❌ Error connecting to the database:', error);
+        throw error;
+    }
 };
 
 // Function to connect to Redis
