@@ -4,7 +4,8 @@ const {
     markAttendanceController,
     bulkMarkAttendanceController,
     markDateStatusController,
-    getAttendanceSummaryController
+    getAttendanceSummaryController,
+    exportAttendanceMusterController
 } = require('../controllers/attendance.controller');
 const validate = require('../middlewares/validate');
 const {
@@ -18,6 +19,7 @@ const { checkPermission } = require('../middlewares/authorize.middleware');
 
 const router = Router();
 
+router.get('/muster/export', checkPermission('attendance', 'read'), exportAttendanceMusterController);
 router.get('/summary', checkPermission('attendance', 'read'), validate(attendanceSummarySchema), getAttendanceSummaryController);
 router.post('/bulk-mark', checkPermission('attendance', 'create'), validate(bulkMarkAttendanceSchema), bulkMarkAttendanceController);
 router.post('/mark-date-status', checkPermission('attendance', 'create'), validate(markDateStatusSchema), markDateStatusController);

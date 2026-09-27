@@ -243,7 +243,9 @@ const fetchSalarySlips = async (filters = {}) => {
         year,
         status,
         employeeId,
-        search
+        search,
+        sortBy = 'id',
+        sortOrder = 'desc'
     } = filters;
 
     const offset = (page - 1) * pageSize;
@@ -283,6 +285,28 @@ const fetchSalarySlips = async (filters = {}) => {
     const countResult = await query.clone().count('ess.id as total').first();
     const total = parseInt(countResult?.total || 0, 10);
 
+    const validSortColumns = {
+        id: 'ess.id',
+        created_at: 'ess.created_at',
+        first_name: 'e.first_name',
+        name: 'e.first_name',
+        employee: 'e.first_name',
+        emp_code: 'e.emp_code',
+        department: 'e.department',
+        gross_earnings: 'ess.gross_earnings',
+        grossEarnings: 'ess.gross_earnings',
+        total_deductions: 'ess.total_deductions',
+        totalDeductions: 'ess.total_deductions',
+        overtime_pay: 'ess.overtime_pay',
+        overtimePay: 'ess.overtime_pay',
+        net_salary: 'ess.net_salary',
+        netSalary: 'ess.net_salary',
+        status: 'ess.status',
+        present_days: 'ess.present_days'
+    };
+    const sortCol = validSortColumns[sortBy] || 'ess.id';
+    const sortDir = (sortOrder && String(sortOrder).toLowerCase() === 'asc') ? 'asc' : 'desc';
+
     const slips = await query
         .select(
             'ess.id',
@@ -318,7 +342,7 @@ const fetchSalarySlips = async (filters = {}) => {
             'ess.approved_at as approvedAt',
             'ess.created_at as createdAt'
         )
-        .orderBy('ess.id', 'desc')
+        .orderBy(sortCol, sortDir)
         .limit(pageSize)
         .offset(offset);
 

@@ -9,7 +9,10 @@ const queryLeavesSchema = {
         status: Joi.string().valid('PENDING', 'APPROVED', 'REJECTED', 'CANCELLED', 'ALL', '').allow(null).optional(),
         leaveType: Joi.string().valid('CASUAL', 'SICK', 'EARNED', 'UNPAID', 'COMP_OFF', 'ALL', '').allow(null).optional(),
         startDate: Joi.date().iso().allow(null, '').optional(),
-        endDate: Joi.date().iso().allow(null, '').optional()
+        endDate: Joi.date().iso().allow(null, '').optional(),
+        search: Joi.string().allow('', null).optional(),
+        sortBy: Joi.string().allow('', null).optional(),
+        sortOrder: Joi.string().valid('asc', 'desc', 'ASC', 'DESC', '').allow(null).optional()
     }).unknown(true)
 };
 
@@ -29,7 +32,7 @@ const applyLeaveSchema = {
         totalDays: Joi.number().positive().required().label('Total Days'),
         halfDayOn: Joi.string().valid('FROM', 'TO', '').allow(null).optional().label('Half Day On'),
         reason: Joi.string().trim().max(500).allow('', null).optional().label('Reason')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const reviewLeaveSchema = {
@@ -39,7 +42,7 @@ const reviewLeaveSchema = {
     body: Joi.object({
         status: Joi.string().valid('APPROVED', 'REJECTED').required().label('Status'),
         rejectionReason: Joi.string().trim().max(500).allow('', null).optional().label('Rejection Reason')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 module.exports = {

@@ -9,7 +9,9 @@ const querySlipsSchema = {
         year: Joi.number().integer().min(2000).max(2100).allow(null, '').optional(),
         status: Joi.string().valid('DRAFT', 'GENERATED', 'APPROVED', 'PAID', 'ALL', '').allow(null).optional(),
         employeeId: Joi.number().integer().positive().allow(null, '').optional(),
-        search: Joi.string().allow('', null).optional()
+        search: Joi.string().allow('', null).optional(),
+        sortBy: Joi.string().allow('', null).optional(),
+        sortOrder: Joi.string().valid('asc', 'desc', 'ASC', 'DESC', '').allow(null).optional()
     }).unknown(true)
 };
 
@@ -25,7 +27,7 @@ const generatePayrollSchema = {
         month: Joi.number().integer().min(1).max(12).required().label('Month'),
         year: Joi.number().integer().min(2000).max(2100).required().label('Year'),
         employeeIds: Joi.array().items(Joi.number().integer().positive()).allow(null).optional().label('Employee IDs')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const bulkPaySlipsSchema = {
@@ -35,7 +37,7 @@ const bulkPaySlipsSchema = {
         paymentMode: Joi.string().valid('BANK_TRANSFER', 'CASH', 'UPI', 'CHEQUE').required().label('Payment Mode'),
         paymentReference: Joi.string().trim().max(150).allow('', null).optional().label('Payment Reference'),
         remarks: Joi.string().allow('', null).optional().label('Remarks')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const updatePayrollSettingsSchema = {
@@ -61,7 +63,7 @@ const updatePayrollSettingsSchema = {
 
         ptEnabled: Joi.boolean().default(false).label('PT Enabled'),
         ptMonthlyAmount: Joi.number().min(0).default(200).label('PT Monthly Amount')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const salaryTemplateSchema = {
@@ -81,7 +83,7 @@ const salaryTemplateSchema = {
                 sortOrder: Joi.number().integer().default(0)
             })
         ).default([]).label('Components')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 module.exports = {

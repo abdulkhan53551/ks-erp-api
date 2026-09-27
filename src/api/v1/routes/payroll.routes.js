@@ -9,10 +9,12 @@ const {
     deleteSalaryTemplateController,
     getSalarySlipsController,
     getSalarySlipDetail,
+    getSalarySlipPdfController,
     generatePayrollController,
     approveSalarySlipController,
     bulkPaySlipsController,
-    getPayrollReportController
+    getPayrollReportController,
+    exportSalaryMusterController
 } = require('../controllers/payroll.controller');
 const validate = require('../middlewares/validate');
 const {
@@ -39,10 +41,12 @@ router.put('/templates/:id', checkPermission('salary-templates', 'update'), vali
 router.delete('/templates/:id', checkPermission('salary-templates', 'delete'), deleteSalaryTemplateController);
 
 // Payroll Run & Slips
+router.get('/muster/export', checkPermission('payroll', 'read'), exportSalaryMusterController);
 router.get('/report', checkPermission('payroll', 'read'), getPayrollReportController);
 router.post('/generate', checkPermission('payroll', 'create'), validate(generatePayrollSchema), generatePayrollController);
 router.patch('/bulk-pay', checkPermission('payroll', 'update'), validate(bulkPaySlipsSchema), bulkPaySlipsController);
 router.get('/slips', checkPermission('payroll', 'read'), validate(querySlipsSchema), getSalarySlipsController);
+router.get('/slips/:id/pdf', checkPermission('payroll', 'read'), validate(slipIdParamSchema), getSalarySlipPdfController);
 router.get('/slips/:id', checkPermission('payroll', 'read'), validate(slipIdParamSchema), getSalarySlipDetail);
 router.patch('/slips/:id/approve', checkPermission('payroll', 'approve'), validate(slipIdParamSchema), approveSalarySlipController);
 

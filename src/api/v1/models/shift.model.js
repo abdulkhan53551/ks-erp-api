@@ -3,7 +3,7 @@ const { db } = require('../database');
 /**
  * Fetch all shifts for a firm
  */
-const fetchShifts = async (firmId, search = '') => {
+const fetchShifts = async (firmId, search = '', sortBy = 'is_default', sortOrder = 'desc') => {
     let query = db('shifts')
         .whereNull('deleted_at')
         .where('is_active', true)
@@ -17,9 +17,7 @@ const fetchShifts = async (firmId, search = '') => {
             'break_minutes as breakMinutes',
             'is_default as isDefault',
             'created_at as createdAt'
-        )
-        .orderBy('is_default', 'desc')
-        .orderBy('shift_name', 'asc');
+        );
 
     if (firmId && firmId !== 'all') {
         query = query.where('firm_id', firmId);
@@ -31,6 +29,27 @@ const fetchShifts = async (firmId, search = '') => {
             builder.whereILike('shift_name', term)
                 .orWhereILike('shift_code', term);
         });
+    }
+
+    const validSortColumns = {
+        shift_name: 'shift_name',
+        shiftName: 'shift_name',
+        shift_code: 'shift_code',
+        shiftCode: 'shift_code',
+        start_time: 'start_time',
+        startTime: 'start_time',
+        break_minutes: 'break_minutes',
+        breakMinutes: 'break_minutes',
+        is_default: 'is_default',
+        isDefault: 'is_default',
+        created_at: 'created_at'
+    };
+    const sortCol = validSortColumns[sortBy] || 'is_default';
+    const sortDir = (sortOrder && String(sortOrder).toLowerCase() === 'asc') ? 'asc' : 'desc';
+
+    query = query.orderBy(sortCol, sortDir);
+    if (sortCol !== 'shift_name') {
+        query = query.orderBy('shift_name', 'asc');
     }
 
     return query;
@@ -204,6 +223,16 @@ const fetchShiftAssignments = async (filters = {}) => {
     }
     if (employeeId) {
         query = query.where('esa.employee_id', employeeId);
+    }
+    if (filters.search && filters.search.trim() !== '') {
+        const term = `%${filters.search.trim()}%`;
+        query = query.where(builder => {
+            builder.whereILike('e.first_name', term)
+                .orWhereILike('e.last_name', term)
+                .orWhereILike('e.emp_code', term)
+                .orWhereILike('e.department', term)
+                .orWhereILike('sh.shift_name', term);
+        });
     }
 
     return query;

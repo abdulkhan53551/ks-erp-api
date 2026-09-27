@@ -27,7 +27,7 @@ const markAttendanceSchema = {
         overtimeHours: Joi.number().min(0).max(24).default(0).label('Overtime Hours'),
         overtimeType: Joi.string().valid('NORMAL', 'HOLIDAY', 'WEEKEND').default('NORMAL').label('Overtime Type'),
         remarks: Joi.string().allow('', null).optional().label('Remarks')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const bulkMarkAttendanceSchema = {
@@ -46,7 +46,7 @@ const bulkMarkAttendanceSchema = {
                 remarks: Joi.string().allow('', null).optional()
             })
         ).min(1).required().label('Attendance Records')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const markDateStatusSchema = {
@@ -56,7 +56,7 @@ const markDateStatusSchema = {
         attendanceDate: Joi.date().iso().required().label('Attendance Date'),
         status: Joi.string().valid('HOLIDAY', 'WEEKLY_OFF').required().label('Status'),
         remarks: Joi.string().allow('', null).optional().label('Remarks')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const attendanceSummarySchema = {

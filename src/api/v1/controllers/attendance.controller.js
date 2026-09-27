@@ -111,10 +111,54 @@ const getAttendanceSummaryController = asyncHandler(async (req, res) => {
     );
 });
 
+const {
+    generateAttendanceMusterExcel,
+    generateAttendanceMusterPdf
+} = require('../services/musterExport.service');
+
+const exportAttendanceMusterController = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
+    const { month, year, branchId, includeOt, format = 'xlsx' } = req.query;
+
+    if (!month || !year) {
+        throw new ApiError({ statusCode: 400, message: 'Month and year are required to export attendance muster.' });
+    }
+
+    if (format === 'pdf') {
+        const buffer = await generateAttendanceMusterPdf({
+            firmId,
+            branchId,
+            month,
+            year,
+            options: { includeOt }
+        });
+        const fileName = `AttendanceMuster-${month}-${year}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        return res.send(buffer);
+    } else {
+        const buffer = await generateAttendanceMusterExcel({
+            firmId,
+            branchId,
+            month,
+            year,
+            options: { includeOt }
+        });
+        const fileName = `AttendanceMuster-${month}-${year}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        return res.send(buffer);
+    }
+});
+
 module.exports = {
     getAttendance,
     markAttendanceController,
     bulkMarkAttendanceController,
     markDateStatusController,
-    getAttendanceSummaryController
+    getAttendanceSummaryController,
+    exportAttendanceMusterController
 };
+

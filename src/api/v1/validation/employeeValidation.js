@@ -69,7 +69,7 @@ const createEmployeeSchema = {
 
         // Initial Shift Assignment (Optional)
         shiftId: Joi.number().integer().positive().allow(null, '').optional().label('Shift ID')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const updateEmployeeSchema = {
@@ -118,7 +118,7 @@ const updateEmployeeSchema = {
         esiNumber: Joi.string().trim().max(30).allow('', null).optional().label('ESI Number'),
 
         shiftId: Joi.number().integer().positive().allow(null, '').optional().label('Shift ID')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 module.exports = {

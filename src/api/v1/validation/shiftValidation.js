@@ -3,7 +3,9 @@ const Joi = require("joi");
 const queryShiftsSchema = {
     query: Joi.object({
         firmId: Joi.alternatives().try(Joi.number().integer().positive(), Joi.string().valid('all', '')).allow(null).optional(),
-        search: Joi.string().allow('', null).optional()
+        search: Joi.string().allow('', null).optional(),
+        sortBy: Joi.string().allow('', null).optional(),
+        sortOrder: Joi.string().valid('asc', 'desc', 'ASC', 'DESC', '').allow(null).optional()
     }).unknown(true)
 };
 
@@ -22,7 +24,7 @@ const createShiftSchema = {
         endTime: Joi.string().regex(/^([01]\d|2[0-3]):?([0-5]\d)(:?([0-5]\d))?$/).required().label('End Time'),
         breakMinutes: Joi.number().integer().min(0).default(60).label('Break Minutes'),
         isDefault: Joi.boolean().default(false).label('Is Default')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const updateShiftSchema = {
@@ -36,7 +38,7 @@ const updateShiftSchema = {
         endTime: Joi.string().regex(/^([01]\d|2[0-3]):?([0-5]\d)(:?([0-5]\d))?$/).optional().label('End Time'),
         breakMinutes: Joi.number().integer().min(0).optional().label('Break Minutes'),
         isDefault: Joi.boolean().optional().label('Is Default')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 const assignShiftSchema = {
@@ -45,7 +47,7 @@ const assignShiftSchema = {
         shiftId: Joi.number().integer().positive().required().label('Shift ID'),
         effectiveFrom: Joi.date().iso().required().label('Effective From'),
         effectiveTo: Joi.date().iso().allow(null, '').optional().label('Effective To')
-    }).unknown(true)
+    }).options({ stripUnknown: true })
 };
 
 module.exports = {

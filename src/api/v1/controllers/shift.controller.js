@@ -25,9 +25,9 @@ const getEffectiveFirmId = (req) => {
 
 const getShifts = asyncHandler(async (req, res) => {
     const firmId = getEffectiveFirmId(req);
-    const { search } = req.query;
+    const { search, sortBy, sortOrder } = req.query;
 
-    const shifts = await fetchShifts(firmId, search);
+    const shifts = await fetchShifts(firmId, search, sortBy, sortOrder);
 
     return res.status(200).json(
         new ApiResponse({
@@ -143,9 +143,9 @@ const assignShiftController = asyncHandler(async (req, res) => {
 
 const getShiftAssignmentsController = asyncHandler(async (req, res) => {
     const firmId = getEffectiveFirmId(req);
-    const { shiftId, employeeId } = req.query;
+    const { shiftId, employeeId, search } = req.query;
 
-    const assignments = await fetchShiftAssignments({ firmId, shiftId, employeeId });
+    const assignments = await fetchShiftAssignments({ firmId, shiftId, employeeId, search });
 
     return res.status(200).json(
         new ApiResponse({

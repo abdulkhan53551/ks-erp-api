@@ -1,3 +1,9 @@
+const path = require('path');
+const ejs = require('ejs');
+const puppeteer = require('puppeteer');
+const { projectPaths } = require('../../../config/constants');
+const { getBrowser } = require('./invoice.controller');
+const { amountToWords } = require('../services/conversion');
 const { asyncHandler } = require('../services/asyncHandler');
 const { ApiError } = require('../services/ApiError');
 const { ApiResponse } = require('../services/ApiResponse');
@@ -260,6 +266,109 @@ const getPayrollReportController = asyncHandler(async (req, res) => {
     );
 });
 
+const getSalarySlipPdfController = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const slip = await fetchSalarySlipById(id);
+
+    if (!slip) {
+        throw new ApiError({ statusCode: 404, message: 'Salary slip not found.' });
+    }
+
+    const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    const monthName = `${monthNames[(slip.month || 1) - 1]} ${slip.year}`;
+
+    const netSalaryVal = parseFloat(slip.net_salary || slip.netSalary || 0);
+    const netSalaryInWords = amountToWords(netSalaryVal);
+    const generatedAt = new Date().toLocaleString('en-IN', {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+    });
+
+    const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/payroll/`, 'salary-slip-template.ejs');
+    const filledHtml = await ejs.renderFile(templatePath, {
+        slip,
+        monthName,
+        netSalaryInWords,
+        generatedAt
+    });
+
+    const browser = await getBrowser(puppeteer);
+    let page;
+
+    try {
+        page = await browser.newPage();
+        await page.setContent(filledHtml, { waitUntil: 'load' });
+
+        const pdf = await page.pdf({
+            format: 'A4',
+            printBackground: true,
+            margin: {
+                top: '10mm',
+                bottom: '10mm',
+                left: '10mm',
+                right: '10mm'
+            }
+        });
+
+        const safeEmpCode = (slip.empCode || 'EMP').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const fileName = `SalarySlip-${safeEmpCode}-${slip.month}-${slip.year}.pdf`;
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        return res.send(Buffer.from(pdf));
+    } finally {
+        if (page) {
+            await page.close().catch(() => {});
+        }
+    }
+});
+
+const {
+    generateSalaryMusterExcel,
+    generateSalaryMusterPdf
+} = require('../services/musterExport.service');
+
+const exportSalaryMusterController = asyncHandler(async (req, res) => {
+    const firmId = getEffectiveFirmId(req);
+    const { month, year, type = 'full', format = 'xlsx' } = req.query;
+
+    if (!month || !year) {
+        throw new ApiError({ statusCode: 400, message: 'Month and year are required to export wage muster.' });
+    }
+
+    if (format === 'pdf') {
+        const buffer = await generateSalaryMusterPdf({
+            firmId,
+            month,
+            year
+        });
+        const fileName = `SalaryWageMuster-${month}-${year}.pdf`;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        return res.send(buffer);
+    } else {
+        const buffer = await generateSalaryMusterExcel({
+            firmId,
+            month,
+            year,
+            type
+        });
+
+        const prefix = type === 'bank' ? 'BankTransfer-NEFT' : 'SalaryWageMuster';
+        const fileName = `${prefix}-${month}-${year}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+        return res.send(buffer);
+    }
+});
+
 module.exports = {
     getPayrollSettingsController,
     updatePayrollSettingsController,
@@ -270,8 +379,12 @@ module.exports = {
     deleteSalaryTemplateController,
     getSalarySlipsController,
     getSalarySlipDetail,
+    getSalarySlipPdfController,
     generatePayrollController,
     approveSalarySlipController,
     bulkPaySlipsController,
-    getPayrollReportController
+    getPayrollReportController,
+    exportSalaryMusterController
 };
+
+

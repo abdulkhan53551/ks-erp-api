@@ -12,7 +12,10 @@ const fetchLeaves = async (filters = {}) => {
         status,
         leaveType,
         startDate,
-        endDate
+        endDate,
+        search = '',
+        sortBy = 'created_at',
+        sortOrder = 'desc'
     } = filters;
 
     const offset = (page - 1) * pageSize;
@@ -42,8 +45,34 @@ const fetchLeaves = async (filters = {}) => {
         query = query.where('el.from_date', '<=', endDate);
     }
 
+    // Search across employee name, code, department
+    if (search && search.trim() !== '') {
+        const term = `%${search.trim()}%`;
+        query = query.where(builder => {
+            builder.whereILike('e.first_name', term)
+                .orWhereILike('e.last_name', term)
+                .orWhereILike('e.emp_code', term)
+                .orWhereILike('e.department', term);
+        });
+    }
+
     const countResult = await query.clone().count('el.id as total').first();
     const total = parseInt(countResult?.total || 0, 10);
+
+    const validSortColumns = {
+        created_at: 'el.created_at',
+        from_date: 'el.from_date',
+        to_date: 'el.to_date',
+        total_days: 'el.total_days',
+        status: 'el.status',
+        leave_type: 'el.leave_type',
+        first_name: 'e.first_name',
+        employee_name: 'e.first_name',
+        emp_code: 'e.emp_code',
+        department: 'e.department'
+    };
+    const sortCol = validSortColumns[sortBy] || 'el.created_at';
+    const sortDir = (sortOrder && String(sortOrder).toLowerCase() === 'asc') ? 'asc' : 'desc';
 
     const leaves = await query
         .select(
@@ -67,7 +96,7 @@ const fetchLeaves = async (filters = {}) => {
             'el.rejection_reason as rejectionReason',
             'el.created_at as createdAt'
         )
-        .orderBy('el.created_at', 'desc')
+        .orderBy(sortCol, sortDir)
         .limit(pageSize)
         .offset(offset);
 
