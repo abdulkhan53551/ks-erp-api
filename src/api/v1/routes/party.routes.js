@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const validate = require('../middlewares/validate');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const { getStates, getCityByState, getPyamentModes, getPyamentStatuses, getGstSlabs, getProductUnits } = require('../controllers/masters.controller');
 const { getCityByStateIdValidationSchema } = require('../validation/masters.validation');
 const { 
@@ -25,6 +25,9 @@ const {
 } = require('../controllers/parties.controller');
 
 const router = Router();
+
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
 
 // Party Roles
 router.get('/party-roles/pagination', checkPermission('parties', 'read'), getPartyRolesMeta);

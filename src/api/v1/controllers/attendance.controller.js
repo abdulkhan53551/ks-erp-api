@@ -71,7 +71,7 @@ const bulkMarkAttendanceController = asyncHandler(async (req, res) => {
         new ApiResponse({
             statusCode: 200,
             data: result,
-            message: `Attendance marked for ${result.savedCount} employees on ${attendanceDate}.`
+            message: `Attendance saved for ${result.savedCount} records successfully.`
         })
     );
 });

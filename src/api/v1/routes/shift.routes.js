@@ -16,19 +16,19 @@ const {
     updateShiftSchema,
     assignShiftSchema
 } = require('../validation/shiftValidation');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 
 const router = Router();
 
 // Shift assignments
 router.get('/assignments', checkPermission('shifts', 'read'), getShiftAssignmentsController);
-router.post('/assign', checkPermission('shifts', 'update'), validate(assignShiftSchema), assignShiftController);
+router.post('/assign', requireFirmContext, checkPermission('shifts', 'update'), validate(assignShiftSchema), assignShiftController);
 
 // Shifts CRUD
 router.get('/', checkPermission('shifts', 'read'), validate(queryShiftsSchema), getShifts);
-router.post('/', checkPermission('shifts', 'create'), validate(createShiftSchema), createShiftController);
+router.post('/', requireFirmContext, checkPermission('shifts', 'create'), validate(createShiftSchema), createShiftController);
 router.get('/:id', checkPermission('shifts', 'read'), validate(shiftIdParamSchema), getShiftDetail);
-router.put('/:id', checkPermission('shifts', 'update'), validate(updateShiftSchema), updateShiftController);
-router.delete('/:id', checkPermission('shifts', 'delete'), validate(shiftIdParamSchema), deleteShiftController);
+router.put('/:id', requireFirmContext, checkPermission('shifts', 'update'), validate(updateShiftSchema), updateShiftController);
+router.delete('/:id', requireFirmContext, checkPermission('shifts', 'delete'), validate(shiftIdParamSchema), deleteShiftController);
 
 module.exports = router;

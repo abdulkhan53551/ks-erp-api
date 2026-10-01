@@ -2,6 +2,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiError } = require('../services/ApiError');
 const { ApiResponse } = require('../services/ApiResponse');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     fetchEmployees,
     fetchEmployeesMeta,
@@ -108,6 +109,8 @@ const updateEmployeeController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Employee not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Employee');
+
     // If empCode changed, check duplicate
     if (req.body.empCode && req.body.empCode !== existing.emp_code) {
         const duplicate = await findEmployeeByEmpCode(existing.firm_id, req.body.empCode, id);
@@ -137,6 +140,8 @@ const deleteEmployeeController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Employee not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Employee');
+
     if (String(permanent) === 'true') {
         await permanentDeleteEmployee(id);
     } else {
@@ -154,6 +159,11 @@ const deleteEmployeeController = asyncHandler(async (req, res) => {
 
 const restoreEmployeeController = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const existing = await fetchEmployeeById(id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Employee not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Employee');
     await restoreEmployee(id);
 
     return res.status(200).json(

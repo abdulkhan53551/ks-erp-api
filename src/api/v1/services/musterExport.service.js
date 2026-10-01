@@ -144,7 +144,7 @@ const generateAttendanceMusterExcel = async ({ firmId, branchId, month, year, op
         .whereRaw('EXTRACT(YEAR FROM ea.attendance_date) = ?', [y])
         .select(
             'ea.employee_id as employeeId',
-            'ea.attendance_date as attendanceDate',
+            db.raw("TO_CHAR(ea.attendance_date, 'YYYY-MM-DD') as \"attendanceDate\""),
             'ea.status',
             'ea.total_hours as totalHours',
             'ea.overtime_hours as overtimeHours'
@@ -156,7 +156,7 @@ const generateAttendanceMusterExcel = async ({ firmId, branchId, month, year, op
     const matrix = {};
     for (const log of logs) {
         const empId = log.employeeId;
-        const d = new Date(log.attendanceDate).getDate();
+        const d = parseInt(String(log.attendanceDate).split('-')[2], 10);
         if (!matrix[empId]) matrix[empId] = {};
         matrix[empId][d] = {
             status: log.status,
@@ -584,7 +584,12 @@ const generateAttendanceMusterPdf = async ({ firmId, branchId, month, year, opti
         .where('ea.is_active', true)
         .whereRaw('EXTRACT(MONTH FROM ea.attendance_date) = ?', [m])
         .whereRaw('EXTRACT(YEAR FROM ea.attendance_date) = ?', [y])
-        .select('ea.employee_id as employeeId', 'ea.attendance_date as attendanceDate', 'ea.status', 'ea.overtime_hours as overtimeHours');
+        .select(
+            'ea.employee_id as employeeId',
+            db.raw("TO_CHAR(ea.attendance_date, 'YYYY-MM-DD') as \"attendanceDate\""),
+            'ea.status',
+            'ea.overtime_hours as overtimeHours'
+        );
 
     if (firmId && firmId !== 'all') attQuery = attQuery.where('ea.firm_id', firmId);
     const logs = await attQuery;
@@ -598,7 +603,7 @@ const generateAttendanceMusterPdf = async ({ firmId, branchId, month, year, opti
 
     for (const log of logs) {
         const empId = log.employeeId;
-        const d = new Date(log.attendanceDate).getDate();
+        const d = parseInt(String(log.attendanceDate).split('-')[2], 10);
         if (!matrix[empId]) matrix[empId] = {};
         matrix[empId][d] = { status: log.status, ot: parseFloat(log.overtimeHours || 0) };
 

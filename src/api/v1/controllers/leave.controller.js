@@ -2,6 +2,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiError } = require('../services/ApiError');
 const { ApiResponse } = require('../services/ApiResponse');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     fetchLeaves,
     fetchLeaveById,
@@ -82,6 +83,8 @@ const reviewLeaveController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Leave record not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Leave');
+
     if (existing.status !== 'PENDING') {
         throw new ApiError({ statusCode: 400, message: `Leave is already ${existing.status.toLowerCase()}.` });
     }
@@ -100,10 +103,11 @@ const reviewLeaveController = asyncHandler(async (req, res) => {
 const cancelLeaveController = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const existing = await fetchLeaveById(id);
-
     if (!existing) {
         throw new ApiError({ statusCode: 404, message: 'Leave record not found.' });
     }
+
+    verifyRecordOwnership(req.user, existing, 'Leave');
 
     await cancelLeave(id, req.user?.id);
 

@@ -54,7 +54,7 @@ const updatePayrollSettingsSchema = {
         pfEnabled: Joi.boolean().default(false).label('PF Enabled'),
         pfEmployerPercent: Joi.number().min(0).max(100).default(12.00).label('PF Employer %'),
         pfEmployeePercent: Joi.number().min(0).max(100).default(12.00).label('PF Employee %'),
-        pfWageCeiling: Joi.number().min(0).default(15000).label('PF Wage Ceiling'),
+        pfWageCeiling: Joi.number().min(0).default(25000).label('PF Wage Ceiling'),
 
         esiEnabled: Joi.boolean().default(false).label('ESI Enabled'),
         esiEmployerPercent: Joi.number().min(0).max(100).default(3.25).label('ESI Employer %'),

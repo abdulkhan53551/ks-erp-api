@@ -14,6 +14,7 @@ const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
 const { formatAmount, amountToWords, toTitleCase } = require("../services/conversion");
 const { getContext } = require("../helpers/requestContext");
+const { verifyRecordOwnership } = require("../middlewares/authorize.middleware");
 const { getPaymentStatusIds } = require("../models/payment.model");
 const { db } = require("../database");
 const TOLERANCE = 0.01; // ₹0.01 = 1 paise
@@ -232,6 +233,8 @@ const updateInvoice = asyncHandler(async (req, res) => {
     if (!existingInvoice) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
     }
+
+    verifyRecordOwnership(req.user, existingInvoice, 'Invoice');
 
     const paidAmount = new Decimal(existingInvoice.paid_amount || 0);
     const newTotal = new Decimal(invoice.total || 0);
@@ -517,6 +520,8 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     if (!invoice) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
     }
+
+    verifyRecordOwnership(req.user, invoice, 'Invoice');
 
     if (Number(invoice.paid_amount || 0) > 0) {
         throw new ApiError({

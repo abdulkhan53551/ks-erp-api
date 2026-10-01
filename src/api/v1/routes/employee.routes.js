@@ -17,7 +17,7 @@ const {
     createEmployeeSchema,
     updateEmployeeSchema
 } = require('../validation/employeeValidation');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 
 const router = Router();
 
@@ -28,12 +28,12 @@ router.get('/next-code', checkPermission('employees', 'read'), getNextEmployeeCo
 
 // Main collection routes
 router.get('/', checkPermission('employees', 'read'), validate(queryEmployeesSchema), getEmployees);
-router.post('/', checkPermission('employees', 'create'), validate(createEmployeeSchema), createEmployeeController);
+router.post('/', requireFirmContext, checkPermission('employees', 'create'), validate(createEmployeeSchema), createEmployeeController);
 
 // Single resource routes
 router.get('/:id', checkPermission('employees', 'read'), validate(employeeIdParamSchema), getEmployeeDetail);
-router.put('/:id', checkPermission('employees', 'update'), validate(updateEmployeeSchema), updateEmployeeController);
-router.delete('/:id', checkPermission('employees', 'delete'), validate(employeeIdParamSchema), deleteEmployeeController);
-router.patch('/:id/restore', checkPermission('employees', 'update'), validate(employeeIdParamSchema), restoreEmployeeController);
+router.put('/:id', requireFirmContext, checkPermission('employees', 'update'), validate(updateEmployeeSchema), updateEmployeeController);
+router.delete('/:id', requireFirmContext, checkPermission('employees', 'delete'), validate(employeeIdParamSchema), deleteEmployeeController);
+router.patch('/:id/restore', requireFirmContext, checkPermission('employees', 'update'), validate(employeeIdParamSchema), restoreEmployeeController);
 
 module.exports = router;

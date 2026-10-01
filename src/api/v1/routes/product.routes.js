@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const validate = require('../middlewares/validate');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const {
     createProductSchema,
     updateProductSchema,
@@ -24,6 +24,9 @@ const {
 } = require('../controllers/product.controller');
 
 const router = Router();
+
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
 
 // Pagination metadata & Autocomplete Search
 router.get('/pagination', checkPermission('products', 'read'), validate(queryProductsSchema), getProductsMeta);

@@ -33,7 +33,7 @@ const fetchAttendance = async (filters = {}) => {
             'ea.branch_id as branchId',
             'ea.shift_id as shiftId',
             'sh.shift_name as shiftName',
-            'ea.attendance_date as attendanceDate',
+            db.raw("TO_CHAR(ea.attendance_date, 'YYYY-MM-DD') as \"attendanceDate\""),
             'ea.status',
             'ea.check_in as checkIn',
             'ea.check_out as checkOut',
@@ -131,38 +131,55 @@ const markSingleAttendance = async (data, markedBy = null) => {
     ]);
 
     const result = await query;
-    return result.rows[0];
+    const row = result.rows[0];
+    if (row && row.attendance_date) {
+        row.attendanceDate = typeof row.attendance_date === 'string'
+            ? row.attendance_date.substring(0, 10)
+            : new Date(row.attendance_date).toLocaleDateString('en-CA');
+    }
+    return row;
 };
 
 /**
  * Bulk mark attendance for multiple employees on a single date
  * Uses single multi-row batch upsert: INSERT INTO ... VALUES (...), (...) ON CONFLICT DO UPDATE
  */
-const bulkMarkAttendance = async (firmId, attendanceDate, records = [], markedBy = null) => {
+const bulkMarkAttendance = async (firmId, attendanceDate = null, records = [], markedBy = null) => {
     if (!records.length) return { savedCount: 0 };
 
     return db.transaction(async (trx) => {
-        const rows = records.map(record => ({
-            employee_id: record.employeeId,
-            firm_id: firmId,
-            branch_id: record.branchId || null,
-            shift_id: record.shiftId || null,
-            attendance_date: attendanceDate,
-            status: record.status,
-            check_in: record.checkIn || null,
-            check_out: record.checkOut || null,
-            total_hours: record.totalHours || 0,
-            overtime_hours: record.overtimeHours || 0,
-            overtime_type: record.overtimeType || 'NORMAL',
-            remarks: record.remarks || null,
-            marked_by: markedBy,
-            updated_at: new Date()
-        }));
+        const rows = records.map(record => {
+            const rawDate = record.attendanceDate || attendanceDate;
+            if (!rawDate) {
+                throw new Error('Attendance date is required either globally or per record.');
+            }
+            const dateStr = typeof rawDate === 'string'
+                ? rawDate.substring(0, 10)
+                : new Date(rawDate).toISOString().split('T')[0];
+
+            return {
+                employee_id: record.employeeId,
+                firm_id: firmId,
+                branch_id: record.branchId || null,
+                shift_id: record.shiftId || null,
+                attendance_date: dateStr,
+                status: record.status,
+                check_in: record.checkIn || null,
+                check_out: record.checkOut || null,
+                total_hours: record.totalHours !== undefined && record.totalHours !== null ? parseFloat(record.totalHours) : 0,
+                overtime_hours: record.overtimeHours !== undefined && record.overtimeHours !== null ? parseFloat(record.overtimeHours) : 0,
+                overtime_type: record.overtimeType || 'NORMAL',
+                remarks: record.remarks || null,
+                marked_by: markedBy,
+                updated_at: new Date()
+            };
+        });
 
         await trx('employee_attendance')
             .insert(rows)
             .onConflict(['employee_id', 'attendance_date'])
             .merge([
+                'firm_id',
                 'branch_id',
                 'shift_id',
                 'status',

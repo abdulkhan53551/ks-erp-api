@@ -40,7 +40,7 @@ const checkPermission = (module, action) => {
 
         // Determine tenant/firm ID from user or request context
         const context = getContext();
-        const firmId = req.user.firmId || context.firmId;
+        const firmId = req.query?.firmId || req.body?.firmId || req.user.firmId || context.firmId;
 
         if (!firmId) {
             throw new ApiError({ statusCode: 403, message: 'Tenant firm context required before permission check.' });
@@ -225,8 +225,106 @@ async function applyDataScopeToQuery(query, currentUser, options = {}) {
     return query;
 }
 
+/**
+ * Middleware to enforce that a specific firm is selected before any mutation.
+ * When the header is 'all' and no firmId is in the body, it rejects with 400.
+ * Super admins MUST still pick a firm for writes (they can't insert into "all firms").
+ * 
+ * GET requests pass through (consolidated view is allowed for reads).
+ * 
+ * Usage in routes:
+ *   router.post('/', requireFirmContext, checkPermission('employees', 'create'), createController);
+ */
+const requireFirmContext = asyncHandler(async (req, res, next) => {
+    // Read methods are fine without a specific firm (consolidated view)
+    if (req.method === 'GET') return next();
+
+    // Resolve firmId from body first, then from query, then from user context (set by setUserContext middleware)
+    const rawFirmId = req.body?.firmId || req.body?.firm_id || req.query?.firmId || req.query?.firm_id || req.user?.firmId;
+
+    if (!rawFirmId || rawFirmId === 'all') {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'A specific firm must be selected before performing this operation. '
+                   + 'Please select a firm from the header selector.'
+        });
+    }
+
+    const resolvedFirmId = parseInt(rawFirmId, 10);
+    if (isNaN(resolvedFirmId) || resolvedFirmId <= 0) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Invalid firm ID provided. Please select a valid firm.'
+        });
+    }
+
+    // If user is not super admin, ensure they cannot specify a firm they don't have access to
+    if (!req.user?.isSuperAdmin && req.user?.firmId && resolvedFirmId !== parseInt(req.user.firmId, 10)) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Access denied: You do not have permission to perform operations on this firm.'
+        });
+    }
+
+    // Stamp the resolved firmId onto req for downstream controllers
+    req.effectiveFirmId = resolvedFirmId;
+    if (req.user) {
+        req.user.firmId = resolvedFirmId;
+    }
+    const context = getContext();
+    if (context) {
+        context.firmId = resolvedFirmId;
+    }
+
+    next();
+});
+
+
+/**
+ * Verifies that a record belongs to the user's active firm and branch.
+ * Throws 403 if the record's firm_id doesn't match the user's authorized firm.
+ * This prevents IDOR / BOLA attacks where a user fetches a record by ID
+ * that belongs to a different firm.
+ * 
+ * Super admin without a firm filter (firmId = null) can operate on any record.
+ * 
+ * @param {object} currentUser - req.user from the authentication middleware
+ * @param {object} record - The fetched DB record (must have firm_id column)
+ * @param {string} entityName - Human-readable entity name for error messages (e.g. 'Employee', 'Shift')
+ */
+function verifyRecordOwnership(currentUser, record, entityName = 'Record') {
+    if (!record || !currentUser) return;
+
+    // Super admin without a specific firm filter can operate on any record
+    if (currentUser.isSuperAdmin && !currentUser.firmId) return;
+
+    const userFirmId = currentUser.firmId;
+    const recordFirmId = record.firm_id;
+
+    // Firm-level check
+    if (userFirmId && recordFirmId && Number(userFirmId) !== Number(recordFirmId)) {
+        throw new ApiError({
+            statusCode: 403,
+            message: `Access denied: This ${entityName} belongs to a different firm.`
+        });
+    }
+
+    // Branch-level check (if applicable and user has branch scope)
+    const dataScope = currentUser.dataScope || 'OWN';
+    if (dataScope === 'BRANCH' && currentUser.branchId && record.firm_branch_id) {
+        if (Number(currentUser.branchId) !== Number(record.firm_branch_id)) {
+            throw new ApiError({
+                statusCode: 403,
+                message: `Access denied: This ${entityName} belongs to a different branch.`
+            });
+        }
+    }
+}
+
 module.exports = {
     checkPermission,
+    requireFirmContext,
+    verifyRecordOwnership,
     canModifyRecord,
     applyDataScopeToQuery
 };

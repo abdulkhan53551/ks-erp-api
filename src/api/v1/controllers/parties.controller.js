@@ -3,6 +3,7 @@ const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
 const { checkPartyRoleCodeExists, updatePartyRoleMaster, fetchPartyRoleById, deletePartyRoleMaster, bulkDeletePartyRoles: bulkDeletePartyRolesModel, restorePartyRoleById, bulkRestorePartyRoles: bulkRestorePartyRolesModel, insertParty, updatePartyMaster, fetchAllParties, fetchPartyById, fetchPartyMeta, deletePartyMaster, bulkDeleteParties: bulkDeletePartiesModel, restorePartyMaster, bulkRestoreParties: bulkRestorePartiesModel, insertPartyContact, updatePartyContactById, getAllPartyContactsModel, getPartyContactByIdModel, deletePartyContactById, insertPartyBankAccount, updatePartyBankAccountById, getAllPartyBankAccountsModel, getPartyBankAccountByIdModel, deletePartyBankAccountById, fetchAllPartyRoles, fetchPartyRolesMeta, insertPartyRole, insertPartyRoleMappings, fetchPartyRolesByPartyId, fetchPartiesByName, fetchPartyDetails, fetchAllPartyBranches, fetchPartyBranchById, insertPartyBranch, updatePartyBranchById, deletePartyBranchById, setDefaultPartyBranch } = require("../models/parties.model");
 const { getContext } = require("../helpers/requestContext");
+const { verifyRecordOwnership } = require("../middlewares/authorize.middleware");
 const { deleteFromCloudinary } = require("../services/cloudinary");
 
 // Fetch all party roles
@@ -353,6 +354,15 @@ const updateParty = asyncHandler(async (req, res) => {
 
     // Check if logo is being replaced or removed and clean up previous Cloudinary asset
     const existingParty = await fetchPartyById(id, firmId);
+    if (!existingParty) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Party not found or update failed'
+        });
+    }
+
+    verifyRecordOwnership(req.user, existingParty, 'Party');
+
     if (existingParty && existingParty.logoPublicId) {
         const isLogoReplaced = logoPublicId !== undefined && logoPublicId !== existingParty.logoPublicId;
         const isLogoCleared = (logoUrl === '' || logoUrl === null) && !logoPublicId;
@@ -386,6 +396,16 @@ const deleteParty = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const existingParty = await fetchPartyById(id);
+    if (!existingParty) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Party not found or delete failed'
+        });
+    }
+
+    verifyRecordOwnership(req.user, existingParty, 'Party');
 
     const affectedRows = await deletePartyMaster(id, permanent);
 

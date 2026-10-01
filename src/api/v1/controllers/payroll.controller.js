@@ -8,6 +8,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiError } = require('../services/ApiError');
 const { ApiResponse } = require('../services/ApiResponse');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     fetchPayrollSettings,
     updatePayrollSettings,
@@ -31,12 +32,20 @@ const getEffectiveFirmId = (req) => {
         const parsed = parseInt(req.query.firmId, 10);
         return isNaN(parsed) ? null : parsed;
     }
-    return context.firmId || null;
+    return context.firmId || req.user?.firmId || null;
 };
 
 // --- Firm Payroll Settings ---
 const getPayrollSettingsController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    let firmId = getEffectiveFirmId(req);
+
+    if (!firmId) {
+        const { db } = require('../database');
+        const firstFirm = await db('firms').whereNull('deleted_at').orderBy('id', 'asc').first();
+        if (firstFirm) {
+            firmId = firstFirm.id;
+        }
+    }
 
     if (!firmId) {
         throw new ApiError({ statusCode: 400, message: 'Please select a specific firm to configure payroll settings.' });
@@ -131,6 +140,8 @@ const updateSalaryTemplateController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Salary template not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Salary Template');
+
     const updated = await updateSalaryTemplate(id, req.body);
 
     return res.status(200).json(
@@ -149,6 +160,8 @@ const deleteSalaryTemplateController = asyncHandler(async (req, res) => {
     if (!existing) {
         throw new ApiError({ statusCode: 404, message: 'Salary template not found.' });
     }
+
+    verifyRecordOwnership(req.user, existing, 'Salary Template');
 
     await deleteSalaryTemplate(id, req.user?.id);
 
@@ -220,6 +233,8 @@ const approveSalarySlipController = asyncHandler(async (req, res) => {
     if (!existing) {
         throw new ApiError({ statusCode: 404, message: 'Salary slip not found.' });
     }
+
+    verifyRecordOwnership(req.user, existing, 'Salary Slip');
 
     const updated = await approveSalarySlip(id, req.user?.id);
 
@@ -322,7 +337,7 @@ const getSalarySlipPdfController = asyncHandler(async (req, res) => {
         return res.send(Buffer.from(pdf));
     } finally {
         if (page) {
-            await page.close().catch(() => {});
+            await page.close().catch(() => { });
         }
     }
 });

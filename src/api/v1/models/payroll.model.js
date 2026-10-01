@@ -23,7 +23,7 @@ const fetchPayrollSettings = async (firmId) => {
                 pf_enabled: false,
                 pf_employer_percent: 12.00,
                 pf_employee_percent: 12.00,
-                pf_wage_ceiling: 15000.00,
+                pf_wage_ceiling: 25000.00,
                 esi_enabled: false,
                 esi_employer_percent: 3.25,
                 esi_employee_percent: 0.75,
@@ -574,7 +574,7 @@ const generateMonthlyPayroll = async (firmId, month, year, employeeIds = null, g
                 // Apply firm-level statutory settings for permanent employees
                 if (emp.employment_type === 'PERMANENT') {
                     if (settings.pf_enabled) {
-                        const pfEligible = Math.min(baseEarnings, parseFloat(settings.pf_wage_ceiling || 15000));
+                        const pfEligible = Math.min(baseEarnings, parseFloat(settings.pf_wage_ceiling || 25000));
                         const pfAmount = Math.round(pfEligible * (parseFloat(settings.pf_employee_percent || 12) / 100) * 100) / 100;
                         totalDeductions += pfAmount;
                         slipComponents.push({

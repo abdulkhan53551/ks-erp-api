@@ -2,6 +2,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiError } = require('../services/ApiError');
 const { ApiResponse } = require('../services/ApiResponse');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     fetchShifts,
     fetchShiftById,
@@ -86,6 +87,8 @@ const updateShiftController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Shift not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Shift');
+
     if (req.body.shiftCode && req.body.shiftCode !== existing.shift_code) {
         const duplicate = await findShiftByCode(existing.firm_id, req.body.shiftCode, id);
         if (duplicate) {
@@ -111,6 +114,8 @@ const deleteShiftController = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Shift not found.' });
     }
 
+    verifyRecordOwnership(req.user, existing, 'Shift');
+
     await deleteShift(id, req.user?.id);
 
     return res.status(200).json(
@@ -129,6 +134,8 @@ const assignShiftController = asyncHandler(async (req, res) => {
     if (!shift) {
         throw new ApiError({ statusCode: 404, message: 'Shift not found.' });
     }
+
+    verifyRecordOwnership(req.user, shift, 'Shift');
 
     const result = await assignShiftToEmployees(shiftId, employeeIds, effectiveFrom, effectiveTo, req.user?.id);
 

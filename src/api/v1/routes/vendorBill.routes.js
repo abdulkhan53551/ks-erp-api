@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const validate = require('../middlewares/validate');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const {
     createVendorBillSchema,
     updateVendorBillSchema,
@@ -20,6 +20,9 @@ const {
 } = require('../controllers/vendorBill.controller');
 
 const router = Router();
+
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
 
 // Summary & Metadata
 router.get('/summary', checkPermission('vendor-bills', 'read'), validate(queryVendorBillsSchema), getVendorBillsSummaryHandler);
