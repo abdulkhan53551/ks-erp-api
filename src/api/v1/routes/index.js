@@ -21,6 +21,7 @@ const shiftRoutes = require('./shift.routes');
 const attendanceRoutes = require('./attendance.routes');
 const leaveRoutes = require('./leave.routes');
 const payrollRoutes = require('./payroll.routes');
+const advanceRoutes = require('./advance.routes');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
 const { db } = require('../database');
 
@@ -61,6 +62,7 @@ router.use('/shifts', shiftRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/leaves', leaveRoutes);
 router.use('/payroll', payrollRoutes);
+router.use('/advances', advanceRoutes);
 
 module.exports = router;
 // exports.products = productRoutes;

@@ -331,6 +331,7 @@ const fetchSalarySlips = async (filters = {}) => {
             'ess.overtime_hours as overtimeHours',
             'ess.gross_earnings as grossEarnings',
             'ess.total_deductions as totalDeductions',
+            'ess.advance_deduction as advanceDeduction',
             'ess.overtime_pay as overtimePay',
             'ess.net_salary as netSalary',
             'ess.status',
@@ -609,6 +610,47 @@ const generateMonthlyPayroll = async (firmId, month, year, employeeIds = null, g
                 }
             }
 
+            // 7. Advance Recovery Calculation
+            let advanceDeduction = 0;
+            const availableNetBeforeAdvance = Math.max(0, grossEarnings + overtimePay - totalDeductions);
+
+            if (availableNetBeforeAdvance > 0) {
+                const activeAdvances = await trx('employee_advances')
+                    .where({
+                        employee_id: emp.id,
+                        firm_id: firmId,
+                        status: 'ACTIVE',
+                        is_paused: false
+                    })
+                    .where('remaining_balance', '>', 0)
+                    .whereNull('deleted_at')
+                    .orderBy('advance_date', 'asc');
+
+                let targetAdvanceRecovery = 0;
+                for (const adv of activeAdvances) {
+                    const remaining = parseFloat(adv.remaining_balance || 0);
+                    if (adv.recovery_type === 'EMI' && parseFloat(adv.monthly_deduction) > 0) {
+                        targetAdvanceRecovery += Math.min(remaining, parseFloat(adv.monthly_deduction));
+                    } else {
+                        targetAdvanceRecovery += remaining;
+                    }
+                }
+
+                // Never let advance recovery exceed available net earnings
+                advanceDeduction = Math.min(targetAdvanceRecovery, availableNetBeforeAdvance);
+                advanceDeduction = Math.round(advanceDeduction * 100) / 100;
+            }
+
+            if (advanceDeduction > 0) {
+                totalDeductions = Math.round((totalDeductions + advanceDeduction) * 100) / 100;
+                slipComponents.push({
+                    component_name: 'Salary Advance Recovery',
+                    component_type: 'DEDUCTION',
+                    amount: advanceDeduction,
+                    sort_order: 90
+                });
+            }
+
             // Net Salary
             const netSalary = Math.max(0, Math.round((grossEarnings + overtimePay - totalDeductions) * 100) / 100);
 
@@ -626,6 +668,7 @@ const generateMonthlyPayroll = async (firmId, month, year, employeeIds = null, g
                 overtime_hours: totalOTHours,
                 gross_earnings: grossEarnings,
                 total_deductions: totalDeductions,
+                advance_deduction: advanceDeduction,
                 overtime_pay: overtimePay,
                 net_salary: netSalary,
                 status: 'GENERATED',
@@ -672,6 +715,7 @@ const generateMonthlyPayroll = async (firmId, month, year, employeeIds = null, g
                 name: `${emp.first_name} ${emp.last_name || ''}`.trim(),
                 grossEarnings,
                 totalDeductions,
+                advanceDeduction,
                 overtimePay,
                 netSalary
             });
@@ -687,18 +731,166 @@ const generateMonthlyPayroll = async (firmId, month, year, employeeIds = null, g
 };
 
 /**
- * Approve a salary slip
+ * Approve a salary slip and automatically settle advance deduction against active advances
  */
 const approveSalarySlip = async (id, approverId) => {
-    return db('employee_salary_slips')
-        .where({ id })
-        .update({
-            status: 'APPROVED',
-            approved_by: approverId,
-            approved_at: new Date(),
-            updated_at: new Date()
-        })
-        .returning('*');
+    return db.transaction(async (trx) => {
+        const slip = await trx('employee_salary_slips')
+            .where({ id })
+            .whereNull('deleted_at')
+            .forUpdate()
+            .first();
+
+        if (!slip) {
+            throw new Error('Salary slip not found.');
+        }
+
+        if (slip.status === 'APPROVED' || slip.status === 'PAID') {
+            throw new Error('Salary slip is already approved or paid.');
+        }
+
+        const advanceDeduction = parseFloat(slip.advance_deduction || 0);
+
+        if (advanceDeduction > 0) {
+            // Allocate deduction across employee active advances (oldest advance first)
+            const activeAdvances = await trx('employee_advances')
+                .where({
+                    employee_id: slip.employee_id,
+                    firm_id: slip.firm_id,
+                    status: 'ACTIVE'
+                })
+                .where('remaining_balance', '>', 0)
+                .whereNull('deleted_at')
+                .orderBy('advance_date', 'asc')
+                .forUpdate();
+
+            let remainingToAllocate = advanceDeduction;
+
+            for (const adv of activeAdvances) {
+                if (remainingToAllocate <= 0) break;
+
+                const advBalance = parseFloat(adv.remaining_balance || 0);
+                const deductAmount = Math.min(advBalance, remainingToAllocate);
+
+                const currentRecovered = parseFloat(adv.recovered_amount || 0);
+                const newRecovered = Math.round((currentRecovered + deductAmount) * 100) / 100;
+                const newBalance = Math.max(0, Math.round((advBalance - deductAmount) * 100) / 100);
+                const newStatus = newBalance <= 0 ? 'CLOSED' : adv.status;
+
+                // 1. Record repayment entry in ledger
+                await trx('employee_advance_repayments').insert({
+                    advance_id: adv.id,
+                    firm_id: slip.firm_id,
+                    employee_id: slip.employee_id,
+                    salary_slip_id: slip.id,
+                    repayment_date: new Date(),
+                    amount_deducted: deductAmount,
+                    repayment_type: 'PAYROLL_DEDUCTION',
+                    balance_after: newBalance,
+                    recorded_by: approverId,
+                    remarks: `Auto-deducted via salary slip #${slip.id} for Month ${slip.month}/${slip.year}`,
+                    created_at: new Date(),
+                    updated_at: new Date()
+                });
+
+                // 2. Update advance balance
+                await trx('employee_advances')
+                    .where({ id: adv.id })
+                    .update({
+                        recovered_amount: newRecovered,
+                        remaining_balance: newBalance,
+                        status: newStatus,
+                        updated_by: approverId,
+                        updated_at: new Date()
+                    });
+
+                remainingToAllocate = Math.round((remainingToAllocate - deductAmount) * 100) / 100;
+            }
+        }
+
+        const [approvedSlip] = await trx('employee_salary_slips')
+            .where({ id })
+            .update({
+                status: 'APPROVED',
+                approved_by: approverId,
+                approved_at: new Date(),
+                updated_at: new Date()
+            })
+            .returning('*');
+
+        return approvedSlip;
+    });
+};
+
+/**
+ * Manually update advance deduction on a draft (GENERATED) salary slip
+ */
+const updateSlipAdvanceDeduction = async (slipId, newAdvanceDeduction, userId) => {
+    return db.transaction(async (trx) => {
+        const slip = await trx('employee_salary_slips')
+            .where({ id: slipId })
+            .whereNull('deleted_at')
+            .forUpdate()
+            .first();
+
+        if (!slip) {
+            throw new Error('Salary slip not found.');
+        }
+
+        if (slip.status !== 'GENERATED') {
+            throw new Error('Advance deduction can only be modified while the salary slip is in draft (GENERATED) status.');
+        }
+
+        const requestedDeduction = Math.round(parseFloat(newAdvanceDeduction || 0) * 100) / 100;
+        if (requestedDeduction < 0) {
+            throw new Error('Advance deduction cannot be negative.');
+        }
+
+        // Calculate max available earnings before advance deduction
+        const currentAdvanceDeduction = parseFloat(slip.advance_deduction || 0);
+        const otherDeductions = parseFloat(slip.total_deductions || 0) - currentAdvanceDeduction;
+        const grossTotal = parseFloat(slip.gross_earnings || 0) + parseFloat(slip.overtime_pay || 0);
+        const maxAllowable = Math.max(0, grossTotal - otherDeductions);
+
+        if (requestedDeduction > maxAllowable) {
+            throw new Error(`Advance deduction (₹${requestedDeduction}) cannot exceed available net earnings (₹${maxAllowable}).`);
+        }
+
+        const newTotalDeductions = Math.round((otherDeductions + requestedDeduction) * 100) / 100;
+        const newNetSalary = Math.max(0, Math.round((grossTotal - newTotalDeductions) * 100) / 100);
+
+        // Update or remove 'Salary Advance Recovery' component in salary_slip_details
+        await trx('salary_slip_details')
+            .where({
+                salary_slip_id: slipId,
+                component_name: 'Salary Advance Recovery'
+            })
+            .del();
+
+        if (requestedDeduction > 0) {
+            await trx('salary_slip_details').insert({
+                salary_slip_id: slipId,
+                component_name: 'Salary Advance Recovery',
+                component_type: 'DEDUCTION',
+                amount: requestedDeduction,
+                sort_order: 90
+            });
+        }
+
+        // Update slip
+        const [updatedSlip] = await trx('employee_salary_slips')
+            .where({ id: slipId })
+            .update({
+                advance_deduction: requestedDeduction,
+                total_deductions: newTotalDeductions,
+                net_salary: newNetSalary,
+                updated_by: userId,
+                updated_at: new Date()
+            })
+            .returning('*');
+
+        return updatedSlip;
+    });
 };
 
 /**
@@ -796,6 +988,7 @@ module.exports = {
     fetchSalarySlipById,
     generateMonthlyPayroll,
     approveSalarySlip,
+    updateSlipAdvanceDeduction,
     bulkPaySalarySlips,
     fetchPayrollReport
 };

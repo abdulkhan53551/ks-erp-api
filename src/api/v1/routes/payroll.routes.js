@@ -12,6 +12,7 @@ const {
     getSalarySlipPdfController,
     generatePayrollController,
     approveSalarySlipController,
+    updateSlipAdvanceDeductionController,
     bulkPaySlipsController,
     getPayrollReportController,
     exportSalaryMusterController
@@ -25,6 +26,7 @@ const {
     updatePayrollSettingsSchema,
     salaryTemplateSchema
 } = require('../validation/payrollValidation');
+const { updateSlipAdvanceDeductionSchema } = require('../validation/advanceValidation');
 const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 
 const router = Router();
@@ -48,6 +50,7 @@ router.patch('/bulk-pay', requireFirmContext, checkPermission('payroll', 'update
 router.get('/slips', checkPermission('payroll', 'read'), validate(querySlipsSchema), getSalarySlipsController);
 router.get('/slips/:id/pdf', checkPermission('payroll', 'read'), validate(slipIdParamSchema), getSalarySlipPdfController);
 router.get('/slips/:id', checkPermission('payroll', 'read'), validate(slipIdParamSchema), getSalarySlipDetail);
+router.patch('/slips/:id/advance-deduction', requireFirmContext, checkPermission('payroll', 'update'), validate(updateSlipAdvanceDeductionSchema), updateSlipAdvanceDeductionController);
 router.patch('/slips/:id/approve', requireFirmContext, checkPermission('payroll', 'approve'), validate(slipIdParamSchema), approveSalarySlipController);
 
 module.exports = router;

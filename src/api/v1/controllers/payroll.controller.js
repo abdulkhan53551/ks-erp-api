@@ -21,6 +21,7 @@ const {
     fetchSalarySlipById,
     generateMonthlyPayroll,
     approveSalarySlip,
+    updateSlipAdvanceDeduction,
     bulkPaySalarySlips,
     fetchPayrollReport
 } = require('../models/payroll.model');
@@ -247,6 +248,32 @@ const approveSalarySlipController = asyncHandler(async (req, res) => {
     );
 });
 
+const updateSlipAdvanceDeductionController = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { advanceDeduction } = req.body;
+
+    const existing = await fetchSalarySlipById(id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Salary slip not found.' });
+    }
+
+    verifyRecordOwnership(req.user, existing, 'Salary Slip');
+
+    try {
+        const updated = await updateSlipAdvanceDeduction(id, advanceDeduction, req.user?.id);
+
+        return res.status(200).json(
+            new ApiResponse({
+                statusCode: 200,
+                data: updated,
+                message: 'Salary slip advance deduction updated successfully.'
+            })
+        );
+    } catch (err) {
+        throw new ApiError({ statusCode: 400, message: err.message || 'Failed to update advance deduction.' });
+    }
+});
+
 const bulkPaySlipsController = asyncHandler(async (req, res) => {
     const { slipIds, paymentDate, paymentMode, paymentReference, remarks } = req.body;
 
@@ -397,6 +424,7 @@ module.exports = {
     getSalarySlipPdfController,
     generatePayrollController,
     approveSalarySlipController,
+    updateSlipAdvanceDeductionController,
     bulkPaySlipsController,
     getPayrollReportController,
     exportSalaryMusterController
