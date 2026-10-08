@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Attendance Muster Roll - <%= monthName %></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    @page {
+      size: A3 landscape;
+      margin: 8mm 10mm;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 8px;
+      line-height: 1.25;
+      color: #0f172a;
+      background: #ffffff;
+      padding: 6mm 8mm;
+    }
+    .muster-wrapper {
+      width: 100%;
+    }
+    /* Letterhead */
+    .company-header {
+      text-align: center;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .company-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .company-meta {
+      font-size: 8.5px;
+      color: #475569;
+      margin-top: 2px;
+    }
+    .form-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0284c7;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .doc-meta {
+      font-size: 8px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    /* Muster Table */
+    table.muster-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5px;
+    }
+    table.muster-table th,
+    table.muster-table td {
+      border: 1px solid #cbd5e1;
+      padding: 3px 2px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    table.muster-table th {
+      background: #1e293b;
+      color: #ffffff;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 7px;
+    }
+    table.muster-table th.sub-header {
+      background: #334155;
+      font-size: 6.5px;
+      padding: 2px 1px;
+    }
+    table.muster-table td.emp-name {
+      text-align: left;
+      font-weight: 600;
+      padding-left: 4px;
+      white-space: nowrap;
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    table.muster-table td.emp-code {
+      font-family: monospace;
+      font-weight: 700;
+      color: #0284c7;
+      white-space: nowrap;
+    }
+
+    /* Day status cell badge styles */
+    .status-P { background: #dcfce7; color: #15803d; font-weight: 700; }
+    .status-A { background: #fee2e2; color: #b91c1c; font-weight: 700; }
+    .status-HD { background: #fef3c7; color: #b45309; font-weight: 700; }
+    .status-L { background: #e0f2fe; color: #0369a1; font-weight: 700; }
+    .status-WO { background: #f1f5f9; color: #475569; font-weight: 600; }
+    .status-H { background: #f3e8ff; color: #7e22ce; font-weight: 700; }
+    .status-none { color: #cbd5e1; }
+
+    /* Summary columns */
+    .col-sum {
+      font-weight: 700;
+      background: #f8fafc;
+    }
+    .text-success { color: #15803d; }
+    .text-danger { color: #b91c1c; }
+    .text-warning { color: #b45309; }
+    .text-primary { color: #0284c7; }
+
+    /* Total footer row */
+    tr.totals-row td {
+      background: #f1f5f9;
+      font-weight: 800;
+      border-top: 2px solid #0f172a;
+      border-bottom: 2px solid #0f172a;
+    }
+
+    /* Signatures Section */
+    .sig-table {
+      width: 100%;
+      margin-top: 30px;
+      border: none;
+    }
+    .sig-table td {
+      border: none;
+      text-align: center;
+      width: 33.33%;
+      vertical-align: bottom;
+      padding: 0 30px;
+    }
+    .sig-line {
+      border-top: 1px solid #475569;
+      padding-top: 4px;
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #334155;
+      text-transform: uppercase;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 7.5px;
+      color: #94a3b8;
+      margin-top: 16px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div class="muster-wrapper">
+    <!-- Header -->
+    <div class="company-header">
+      <div class="company-name"><%= firm.firm_name || 'KS ENGINEERING WORKS' %></div>
+      <div class="company-meta">
+        <% if (firm.branch_name) { %><%= firm.branch_name %> • <% } %>
+        <% if (firm.gstin) { %>GSTIN: <%= firm.gstin %> • <% } %>
+        <% if (firm.phone) { %>Phone: <%= firm.phone %> • <% } %>
+        <% if (firm.email) { %>Email: <%= firm.email %><% } %>
+      </div>
+      <div class="form-title">FORM II — MUSTER ROLL (ATTENDANCE REGISTER)</div>
+      <div class="doc-meta">
+        Wage Period: <strong><%= monthName.toUpperCase() %></strong> • Total Headcount: <strong><%= employees.length %> Active Workers</strong> • Generated: <%= generatedAt %>
+      </div>
+    </div>
+
+    <!-- Muster Table -->
+    <table class="muster-table">
+      <thead>
+        <tr>
+          <th rowspan="2" style="width: 22px;">#</th>
+          <th rowspan="2" style="width: 55px;">Emp Code</th>
+          <th rowspan="2" style="width: 110px;">Employee Name</th>
+          <th rowspan="2" style="width: 70px;">Department</th>
+          <th rowspan="2" style="width: 75px;">Designation</th>
+          <th colspan="<%= daysInMonth %>">Daily Attendance Log (<%= monthName %>)</th>
+          <th colspan="7">Attendance Summary</th>
+          <% if (includeOt) { %><th rowspan="2" style="width: 32px;">OT (h)</th><% } %>
+        </tr>
+        <tr>
+          <% for (let d = 1; d <= daysInMonth; d++) { %>
+            <th class="sub-header" style="width: 15px;"><%= d %></th>
+          <% } %>
+          <th class="sub-header" style="width: 24px;">Days</th>
+          <th class="sub-header" style="width: 22px; color: #86efac;">P</th>
+          <th class="sub-header" style="width: 22px; color: #fca5a5;">A</th>
+          <th class="sub-header" style="width: 22px; color: #fde047;">½</th>
+          <th class="sub-header" style="width: 22px; color: #93c5fd;">L</th>
+          <th class="sub-header" style="width: 22px; color: #cbd5e1;">WO</th>
+          <th class="sub-header" style="width: 22px; color: #d8b4fe;">H</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (employees.length === 0) { %>
+          <tr>
+            <td colspan="<%= 5 + daysInMonth + 7 + (includeOt ? 1 : 0) %>" style="padding: 20px; color: #94a3b8; font-size: 10px;">
+              No employee attendance records found for this period.
+            </td>
+          </tr>
+        <% } %>
+
+        <% employees.forEach(function(emp, idx) { 
+             const stats = summaryMap[emp.id] || { p: 0, a: 0, hd: 0, l: 0, wo: 0, h: 0, ot: 0 };
+        %>
+          <tr>
+            <td><%= idx + 1 %></td>
+            <td class="emp-code"><%= emp.empCode %></td>
+            <td class="emp-name"><%= emp.firstName %> <%= emp.lastName || '' %></td>
+            <td style="text-align: left; padding-left: 3px;"><%= emp.department || '—' %></td>
+            <td style="text-align: left; padding-left: 3px;"><%= emp.designation || '—' %></td>
+
+            <% for (let d = 1; d <= daysInMonth; d++) { 
+                 const status = matrix[emp.id] && matrix[emp.id][d] ? matrix[emp.id][d].status : '';
+                 const short = statusShorthand[status] || '·';
+                 const cls = statusShorthand[status] ? 'status-' + short : 'status-none';
+            %>
+              <td class="<%= cls %>"><%= short %></td>
+            <% } %>
+
+            <td class="col-sum"><%= daysInMonth %></td>
+            <td class="col-sum text-success"><%= stats.p %></td>
+            <td class="col-sum text-danger"><%= stats.a %></td>
+            <td class="col-sum text-warning"><%= stats.hd %></td>
+            <td class="col-sum text-primary"><%= stats.l %></td>
+            <td class="col-sum"><%= stats.wo %></td>
+            <td class="col-sum" style="color: #7e22ce;"><%= stats.h %></td>
+            <% if (includeOt) { %>
+              <td class="col-sum text-primary"><%= stats.ot > 0 ? stats.ot + 'h' : '—' %></td>
+            <% } %>
+          </tr>
+        <% }); %>
+
+        <!-- Grand Totals Row -->
+        <% if (employees.length > 0) { %>
+          <tr class="totals-row">
+            <td colspan="5" style="text-align: right; padding-right: 8px;">GRAND TOTALS:</td>
+            <% for (let d = 1; d <= daysInMonth; d++) { %>
+              <td><%= dailyPresentCount[d] || 0 %></td>
+            <% } %>
+            <td><%= employees.length * daysInMonth %></td>
+            <td class="text-success"><%= totalStats.p %></td>
+            <td class="text-danger"><%= totalStats.a %></td>
+            <td class="text-warning"><%= totalStats.hd %></td>
+            <td class="text-primary"><%= totalStats.l %></td>
+            <td><%= totalStats.wo %></td>
+            <td style="color: #7e22ce;"><%= totalStats.h %></td>
+            <% if (includeOt) { %>
+              <td class="text-primary"><%= totalStats.ot %>h</td>
+            <% } %>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+
+    <!-- Signatures -->
+    <table class="sig-table">
+      <tr>
+        <td>
+          <div class="sig-line">Prepared By (Time Office)</div>
+        </td>
+        <td>
+          <div class="sig-line">Verified By (HR / Accounts)</div>
+        </td>
+        <td>
+          <div class="sig-line">Authorized Signatory / Factory Manager</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="footer-note">
+      This is a certified digital attendance register under Rule 26 of the Factories Act. Generated via KS Engineering Works ERP software.
+    </div>
+  </div>
+</body>
+</html>

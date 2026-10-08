@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const validate = require('../middlewares/validate');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const {
     createReceiptSchema,
     createVendorPaymentSchema,
@@ -31,6 +31,9 @@ const {
 } = require('../controllers/payment.controller');
 
 const router = Router();
+
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
 
 // ==========================================
 // 1. Customer Advances & Knock-Off Endpoints

@@ -104,6 +104,64 @@ const MODULES_REGISTRY = [
         icon: 'shield',
         description: 'User directory, registrations, password resets & role permissions',
         actions: ['read', 'create', 'update', 'delete', 'approve']
+    },
+
+    // 👥 EMPLOYEE & PAYROLL MANAGEMENT
+    {
+        slug: 'employees',
+        name: 'Employees Master',
+        category: 'Employee & Payroll Management',
+        icon: 'users',
+        description: 'Employee profiles, personal details, salary configurations & bank accounts',
+        actions: ['read', 'create', 'update', 'delete']
+    },
+    {
+        slug: 'shifts',
+        name: 'Shifts & Rosters',
+        category: 'Employee & Payroll Management',
+        icon: 'clock',
+        description: 'Work shifts, shift timings, break hours & employee shift assignments',
+        actions: ['read', 'create', 'update', 'delete']
+    },
+    {
+        slug: 'attendance',
+        name: 'Attendance Tracking',
+        category: 'Employee & Payroll Management',
+        icon: 'calendar',
+        description: 'Daily attendance, bulk attendance marking, OT hours & summaries',
+        actions: ['read', 'create', 'update', 'delete', 'approve']
+    },
+    {
+        slug: 'leaves',
+        name: 'Leave Management',
+        category: 'Employee & Payroll Management',
+        icon: 'coffee',
+        description: 'Leave applications, approval workflows, paid/unpaid leaves & balance',
+        actions: ['read', 'create', 'update', 'delete', 'approve']
+    },
+    {
+        slug: 'payroll',
+        name: 'Salary & Payroll',
+        category: 'Employee & Payroll Management',
+        icon: 'dollar-sign',
+        description: 'Payroll generation, payslips, overtime pay, deductions & payout approvals',
+        actions: ['read', 'create', 'update', 'delete', 'approve', 'print']
+    },
+    {
+        slug: 'salary-templates',
+        name: 'Salary Templates',
+        category: 'Employee & Payroll Management',
+        icon: 'file-text',
+        description: 'Salary structures, earnings, deductions & statutory components',
+        actions: ['read', 'create', 'update', 'delete']
+    },
+    {
+        slug: 'payroll-settings',
+        name: 'Payroll Settings',
+        category: 'Employee & Payroll Management',
+        icon: 'settings',
+        description: 'Firm overtime rates, working days, PF/ESI/PT rules & policies',
+        actions: ['read', 'create', 'update']
     }
 ];
 

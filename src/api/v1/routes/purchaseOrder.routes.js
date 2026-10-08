@@ -1,6 +1,6 @@
 const { Router } = require('express');
 const validate = require('../middlewares/validate');
-const { checkPermission } = require('../middlewares/authorize.middleware');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const { 
     getPurchaseOrderMeta, 
     getPurchaseOrderById, 
@@ -25,6 +25,9 @@ const {
 } = require('../validation/purchaseOrder.validation');
 
 const router = Router();
+
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
 
 // Purchase Order routes guarded by Casbin in-memory RBAC
 router.get('/pagination', checkPermission('purchase-orders', 'read'), getPurchaseOrderMeta);
