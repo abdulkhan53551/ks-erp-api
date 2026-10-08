@@ -45,8 +45,14 @@ const createEmployeeSchema = {
         cityId: Joi.number().integer().positive().allow(null, '').optional().label('City ID'),
         stateId: Joi.number().integer().positive().allow(null, '').optional().label('State ID'),
         pincode: Joi.string().trim().max(15).allow('', null).optional().label('Pincode'),
-        emergencyContactName: Joi.string().trim().max(100).allow('', null).optional().label('Emergency Contact Name'),
-        emergencyContactPhone: Joi.string().trim().max(25).allow('', null).optional().label('Emergency Contact Phone'),
+        emergencyContactName: Joi.string().trim().min(2).max(100).pattern(/^[a-zA-Z\s.'-]+$/).allow('', null).optional().messages({
+            'string.min': 'Emergency contact person name must be at least 2 characters.',
+            'string.max': 'Emergency contact person name cannot exceed 100 characters.',
+            'string.pattern.base': 'Emergency contact person name can only contain letters, spaces, and dots.'
+        }).label('Emergency Contact Name'),
+        emergencyContactPhone: Joi.string().trim().pattern(/^[6-9]\d{9}$/).allow('', null).optional().messages({
+            'string.pattern.base': 'Emergency contact phone must be a valid 10-digit mobile number.'
+        }).label('Emergency Contact Phone'),
 
         dateOfJoining: Joi.date().iso().required().label('Date of Joining'),
         dateOfExit: Joi.date().iso().allow(null, '').optional().label('Date of Exit'),
@@ -69,6 +75,20 @@ const createEmployeeSchema = {
 
         // Initial Shift Assignment (Optional)
         shiftId: Joi.number().integer().positive().allow(null, '').optional().label('Shift ID')
+    }).custom((obj, helpers) => {
+        const hasName = Boolean(obj.emergencyContactName && String(obj.emergencyContactName).trim());
+        const hasPhone = Boolean(obj.emergencyContactPhone && String(obj.emergencyContactPhone).trim());
+
+        if (hasName && !hasPhone) {
+            return helpers.message('Emergency contact phone is required when contact person name is entered.');
+        }
+        if (hasPhone && !hasName) {
+            return helpers.message('Emergency contact person name is required when emergency phone is entered.');
+        }
+        if (hasPhone && obj.phone && String(obj.emergencyContactPhone).trim() === String(obj.phone).trim()) {
+            return helpers.message('Emergency contact phone cannot be the same as personal mobile number.');
+        }
+        return obj;
     }).options({ stripUnknown: true })
 };
 
@@ -95,8 +115,14 @@ const updateEmployeeSchema = {
         cityId: Joi.number().integer().positive().allow(null, '').optional().label('City ID'),
         stateId: Joi.number().integer().positive().allow(null, '').optional().label('State ID'),
         pincode: Joi.string().trim().max(15).allow('', null).optional().label('Pincode'),
-        emergencyContactName: Joi.string().trim().max(100).allow('', null).optional().label('Emergency Contact Name'),
-        emergencyContactPhone: Joi.string().trim().max(25).allow('', null).optional().label('Emergency Contact Phone'),
+        emergencyContactName: Joi.string().trim().min(2).max(100).pattern(/^[a-zA-Z\s.'-]+$/).allow('', null).optional().messages({
+            'string.min': 'Emergency contact person name must be at least 2 characters.',
+            'string.max': 'Emergency contact person name cannot exceed 100 characters.',
+            'string.pattern.base': 'Emergency contact person name can only contain letters, spaces, and dots.'
+        }).label('Emergency Contact Name'),
+        emergencyContactPhone: Joi.string().trim().pattern(/^[6-9]\d{9}$/).allow('', null).optional().messages({
+            'string.pattern.base': 'Emergency contact phone must be a valid 10-digit mobile number.'
+        }).label('Emergency Contact Phone'),
 
         dateOfJoining: Joi.date().iso().optional().label('Date of Joining'),
         dateOfExit: Joi.date().iso().allow(null, '').optional().label('Date of Exit'),
@@ -118,6 +144,20 @@ const updateEmployeeSchema = {
         esiNumber: Joi.string().trim().max(30).allow('', null).optional().label('ESI Number'),
 
         shiftId: Joi.number().integer().positive().allow(null, '').optional().label('Shift ID')
+    }).custom((obj, helpers) => {
+        const hasName = Boolean(obj.emergencyContactName && String(obj.emergencyContactName).trim());
+        const hasPhone = Boolean(obj.emergencyContactPhone && String(obj.emergencyContactPhone).trim());
+
+        if (hasName && !hasPhone) {
+            return helpers.message('Emergency contact phone is required when contact person name is entered.');
+        }
+        if (hasPhone && !hasName) {
+            return helpers.message('Emergency contact person name is required when emergency phone is entered.');
+        }
+        if (hasPhone && obj.phone && String(obj.emergencyContactPhone).trim() === String(obj.phone).trim()) {
+            return helpers.message('Emergency contact phone cannot be the same as personal mobile number.');
+        }
+        return obj;
     }).options({ stripUnknown: true })
 };
 
