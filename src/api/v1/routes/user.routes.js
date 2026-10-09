@@ -53,13 +53,13 @@ router.patch('/update-avatar', updateAccountDetail);
 router.get('/meta', checkPermission('users', 'read'), validate(queryUsersSchema), getUsersMeta);
 router.get('/firm-counts', checkPermission('users', 'read'), getUserCountsByFirmController);
 router.post('/bulk-delete', checkPermission('users', 'delete'), validate(bulkDeleteUsersSchema), bulkDeleteUsersController);
-router.post('/bulk-restore', checkPermission('users', 'update'), validate(bulkRestoreUsersSchema), bulkRestoreUsersController);
+router.post('/bulk-restore', checkPermission('users', 'delete'), validate(bulkRestoreUsersSchema), bulkRestoreUsersController);
 
 router.get('/', checkPermission('users', 'read'), validate(queryUsersSchema), getAllUsers);
 router.get('/:id/assignments', checkPermission('users', 'read'), validate(userIdParamSchema), getUserAssignments);
 router.put('/:id/assignments', checkPermission('users', 'update'), validate(updateUserAssignmentsSchema), updateUserAssignments);
 router.delete('/:id', checkPermission('users', 'delete'), validate(deleteUserSchema), deleteUser);
-router.patch('/:id/restore', checkPermission('users', 'update'), validate(userIdParamSchema), restoreUserController);
+router.patch('/:id/restore', checkPermission('users', 'delete'), validate(userIdParamSchema), restoreUserController);
 router.patch('/:id/role', checkPermission('users', 'update'), validate(changeUserRoleSchema), changeUserRole);
 router.patch('/:id/status', checkPermission('users', 'update'), validate(toggleUserStatusSchema), toggleUserStatus);
 router.post('/:id/reset-link', checkPermission('users', 'update'), validate(userIdParamSchema), adminGenerateResetLink);

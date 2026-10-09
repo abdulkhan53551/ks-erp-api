@@ -34,15 +34,15 @@ router.get('/search', checkPermission('products', 'read'), validate(searchProduc
 
 // Bulk Operations
 router.post('/bulk-delete', checkPermission('products', 'delete'), validate(bulkDeleteProductsSchema), bulkDeleteProductsHandler);
-router.patch('/bulk-restore', checkPermission('products', 'update'), validate(bulkRestoreProductsSchema), bulkRestoreProductsHandler);
-router.post('/bulk-restore', checkPermission('products', 'update'), validate(bulkRestoreProductsSchema), bulkRestoreProductsHandler);
+router.patch('/bulk-restore', checkPermission('products', 'delete'), validate(bulkRestoreProductsSchema), bulkRestoreProductsHandler);
+router.post('/bulk-restore', checkPermission('products', 'delete'), validate(bulkRestoreProductsSchema), bulkRestoreProductsHandler);
 
 // CRUD
 router.get('/', checkPermission('products', 'read'), validate(queryProductsSchema), getAllProducts);
 router.post('/', checkPermission('products', 'create'), validate(createProductSchema), createProduct);
 router.get('/:id', checkPermission('products', 'read'), validate(productIdParamSchema), getProductById);
 router.patch('/:id', checkPermission('products', 'update'), validate(updateProductSchema), updateProduct);
-router.patch('/:id/restore', checkPermission('products', 'update'), validate(productIdParamSchema), restoreProduct);
+router.patch('/:id/restore', checkPermission('products', 'delete'), validate(productIdParamSchema), restoreProduct);
 router.delete('/:id', checkPermission('products', 'delete'), validate(productIdParamSchema), deleteProduct);
 
 module.exports = router;

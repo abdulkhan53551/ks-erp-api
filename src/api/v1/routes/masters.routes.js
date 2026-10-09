@@ -23,10 +23,10 @@ router.get('/product-units', checkPermission('masters', 'read'), getProductUnits
 router.get('/contact-roles/pagination', checkPermission('masters', 'read'), getContactRolesMeta);
 router.get('/contact-roles', checkPermission('masters', 'read'), getAllContactRoles);
 router.post('/contact-roles/bulk-delete', checkPermission('masters', 'delete'), validate(bulkDeleteContactRolesSchema), bulkDeleteContactRoles);
-router.patch('/contact-roles/bulk-restore', checkPermission('masters', 'update'), validate(bulkRestoreContactRolesSchema), bulkRestoreContactRoles);
+router.patch('/contact-roles/bulk-restore', checkPermission('masters', 'delete'), validate(bulkRestoreContactRolesSchema), bulkRestoreContactRoles);
 router.post('/contact-roles', checkPermission('masters', 'create'), validate(createContactRoleSchema), createContactRole);
 router.get('/contact-roles/:id', checkPermission('masters', 'read'), validate(getContactRoleSchema), getContactRoleById);
-router.patch('/contact-roles/:id/restore', checkPermission('masters', 'update'), validate(restoreContactRoleSchema), restoreContactRole);
+router.patch('/contact-roles/:id/restore', checkPermission('masters', 'delete'), validate(restoreContactRoleSchema), restoreContactRole);
 router.patch('/contact-roles/:id', checkPermission('masters', 'update'), validate(updateContactRoleSchema), updateContactRole);
 router.delete('/contact-roles/:id', checkPermission('masters', 'delete'), validate(deleteContactRoleSchema), deleteContactRole);
 

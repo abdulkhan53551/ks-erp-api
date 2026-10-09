@@ -34,6 +34,6 @@ router.post('/', requireFirmContext, checkPermission('employees', 'create'), val
 router.get('/:id', checkPermission('employees', 'read'), validate(employeeIdParamSchema), getEmployeeDetail);
 router.put('/:id', requireFirmContext, checkPermission('employees', 'update'), validate(updateEmployeeSchema), updateEmployeeController);
 router.delete('/:id', requireFirmContext, checkPermission('employees', 'delete'), validate(employeeIdParamSchema), deleteEmployeeController);
-router.patch('/:id/restore', requireFirmContext, checkPermission('employees', 'update'), validate(employeeIdParamSchema), restoreEmployeeController);
+router.patch('/:id/restore', requireFirmContext, checkPermission('employees', 'delete'), validate(employeeIdParamSchema), restoreEmployeeController);
 
 module.exports = router;

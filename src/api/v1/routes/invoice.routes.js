@@ -33,11 +33,11 @@ router.get('/pagination', checkPermission('invoices', 'read'), validate(queryInv
 router.get('/', checkPermission('invoices', 'read'), validate(queryInvoicesSchema), getAllInvoice);
 router.post('/', requireFirmContext, checkPermission('invoices', 'create'), validate(createInvoiceValidationSchema), createInvoice);
 router.post('/bulk-delete', requireFirmContext, checkPermission('invoices', 'delete'), validate(bulkDeleteInvoicesValidationSchema), bulkDeleteInvoices);
-router.patch('/bulk-restore', requireFirmContext, checkPermission('invoices', 'update'), validate(bulkRestoreInvoicesValidationSchema), bulkRestoreInvoices);
+router.patch('/bulk-restore', requireFirmContext, checkPermission('invoices', 'delete'), validate(bulkRestoreInvoicesValidationSchema), bulkRestoreInvoices);
 router.get('/:id/pdf', checkPermission('invoices', 'print'), validate(getInvoiceByIdValidationSchema), getInvoicePdf);
 router.get('/:id', checkPermission('invoices', 'read'), validate(getInvoiceByIdValidationSchema), getInvoiceById);
 router.patch('/:id', requireFirmContext, checkPermission('invoices', 'update'), validate(updateInvoiceValidationSchema), updateInvoice);
-router.patch('/:id/restore', requireFirmContext, checkPermission('invoices', 'update'), validate(restoreInvoiceValidationSchema), restoreInvoice);
+router.patch('/:id/restore', requireFirmContext, checkPermission('invoices', 'delete'), validate(restoreInvoiceValidationSchema), restoreInvoice);
 router.delete('/:id', requireFirmContext, checkPermission('invoices', 'delete'), validate(deleteInvoiceValidationSchema), deleteInvoice);
 
 module.exports = router;

@@ -33,12 +33,12 @@ router.use(requireFirmContext);
 router.get('/pagination', checkPermission('purchase-orders', 'read'), getPurchaseOrderMeta);
 router.get('/', checkPermission('purchase-orders', 'read'), getAllPurchaseOrder);
 router.post('/bulk-delete', checkPermission('purchase-orders', 'delete'), validate(bulkDeletePurchaseOrdersValidationSchema), bulkDeletePurchaseOrders);
-router.patch('/bulk-restore', checkPermission('purchase-orders', 'update'), validate(bulkRestorePurchaseOrdersValidationSchema), bulkRestorePurchaseOrders);
+router.patch('/bulk-restore', checkPermission('purchase-orders', 'delete'), validate(bulkRestorePurchaseOrdersValidationSchema), bulkRestorePurchaseOrders);
 router.get('/invoice/:invoiceId', checkPermission('purchase-orders', 'read'), validate(getPurchaseOrdersByInvoiceIdValidationSchema), getPurchaseOrderByInvoiceId);
 router.get('/:id', checkPermission('purchase-orders', 'read'), validate(getPurchaseOrderByIdValidationSchema), getPurchaseOrderById);
 router.post('/', checkPermission('purchase-orders', 'create'), validate(createPurchaseOrderValidationSchema), createPurchaseOrder);
 router.patch('/:id', checkPermission('purchase-orders', 'update'), validate(updatePurchaseOrderValidationSchema), updatePurchaseOrder);
-router.patch('/:id/restore', checkPermission('purchase-orders', 'update'), validate(restorePurchaseOrderValidationSchema), restorePurchaseOrder);
+router.patch('/:id/restore', checkPermission('purchase-orders', 'delete'), validate(restorePurchaseOrderValidationSchema), restorePurchaseOrder);
 router.delete('/:id', checkPermission('purchase-orders', 'delete'), validate(deletePurchaseOrderValidationSchema), deletePurchaseOrder);
 
 module.exports = router;

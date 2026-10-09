@@ -13,7 +13,7 @@ router.get('/firm-pagination', checkPermission('firms', 'read'), getFirmMeta);
 router.get('/', checkPermission('firms', 'read'), getAllFirm);
 router.get('/:id', checkPermission('firms', 'read'), validate(getFirmByIdValidationSchema), getFirmById);
 router.post('/', checkPermission('firms', 'create'), validate(createFirmValidationSchema), createFirm);
-router.patch('/:id/restore', checkPermission('firms', 'update'), restoreFirm);
+router.patch('/:id/restore', checkPermission('firms', 'delete'), restoreFirm);
 router.patch('/:id', checkPermission('firms', 'update'), validate(updateFirmValidationSchema), updateFirm);
 router.delete('/:id', checkPermission('firms', 'delete'), validate(deleteFirmValidationSchema), deleteFirm);
 router.post("/:id/logo", checkPermission('firms', 'update'), upload.fields([

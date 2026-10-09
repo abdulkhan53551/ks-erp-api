@@ -33,10 +33,10 @@ router.use(requireFirmContext);
 router.get('/party-roles/pagination', checkPermission('parties', 'read'), getPartyRolesMeta);
 router.get('/party-roles', checkPermission('parties', 'read'), getAllPartyRoles);
 router.post('/party-roles/bulk-delete', checkPermission('parties', 'delete'), validate(bulkDeletePartyRolesSchema), bulkDeletePartyRoles);
-router.patch('/party-roles/bulk-restore', checkPermission('parties', 'update'), validate(bulkRestorePartyRolesSchema), bulkRestorePartyRoles);
+router.patch('/party-roles/bulk-restore', checkPermission('parties', 'delete'), validate(bulkRestorePartyRolesSchema), bulkRestorePartyRoles);
 router.post('/party-roles', checkPermission('parties', 'create'), validate(createPartyRolesSchema), createPartyRole);
 router.get('/party-roles/:id', checkPermission('parties', 'read'), validate(getPartyRolesSchema), getPartyRoleById);
-router.patch('/party-roles/:id/restore', checkPermission('parties', 'update'), validate(restorePartyRolesSchema), restorePartyRole);
+router.patch('/party-roles/:id/restore', checkPermission('parties', 'delete'), validate(restorePartyRolesSchema), restorePartyRole);
 router.patch('/party-roles/:id', checkPermission('parties', 'update'), validate(updatePartyRolesSchema), updatePartyRole);
 router.delete('/party-roles/:id', checkPermission('parties', 'delete'), validate(deletePartyRolesSchema), deletePartyRole);
 
@@ -47,10 +47,10 @@ router.get('/:partyId/details', checkPermission('parties', 'read'), validate(get
 router.get('/', checkPermission('parties', 'read'), getAllParties);
 router.post('/', checkPermission('parties', 'create'), validate(createPartySchema), createParty);
 router.post('/bulk-delete', checkPermission('parties', 'delete'), validate(bulkDeletePartiesSchema), bulkDeleteParties);
-router.patch('/bulk-restore', checkPermission('parties', 'update'), validate(bulkRestorePartiesSchema), bulkRestoreParties);
+router.patch('/bulk-restore', checkPermission('parties', 'delete'), validate(bulkRestorePartiesSchema), bulkRestoreParties);
 router.get('/:id', checkPermission('parties', 'read'), validate(getPartySchema), getPartyById);
 router.patch('/:id', checkPermission('parties', 'update'), validate(updatePartySchema), updateParty);
-router.patch('/:id/restore', checkPermission('parties', 'update'), validate(restorePartySchema), restoreParty);
+router.patch('/:id/restore', checkPermission('parties', 'delete'), validate(restorePartySchema), restoreParty);
 router.delete('/:id', checkPermission('parties', 'delete'), validate(deletePartySchema), deleteParty);
 
 // Party Branch

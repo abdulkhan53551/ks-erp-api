@@ -33,12 +33,12 @@ router.use(requireFirmContext);
 router.get('/pagination', checkPermission('challans', 'read'), getInvoiceChallanMeta);
 router.get('/', checkPermission('challans', 'read'), getAllInvoiceChallans);
 router.post('/bulk-delete', checkPermission('challans', 'delete'), validate(bulkDeleteInvoiceChallansValidationSchema), bulkDeleteInvoiceChallans);
-router.patch('/bulk-restore', checkPermission('challans', 'update'), validate(bulkRestoreInvoiceChallansValidationSchema), bulkRestoreInvoiceChallans);
+router.patch('/bulk-restore', checkPermission('challans', 'delete'), validate(bulkRestoreInvoiceChallansValidationSchema), bulkRestoreInvoiceChallans);
 router.get('/invoice/:invoiceId', checkPermission('challans', 'read'), validate(getInvoiceChallansByInvoiceIdValidationSchema), getInvoiceChallansByInvoiceId);
 router.get('/:id', checkPermission('challans', 'read'), validate(getInvoiceChallanByIdValidationSchema), getInvoiceChallanById);
 router.post('/', checkPermission('challans', 'create'), validate(createInvoiceChallanValidationSchema), createInvoiceChallan);
 router.patch('/:id', checkPermission('challans', 'update'), validate(updateInvoiceChallanValidationSchema), updateInvoiceChallan);
-router.patch('/:id/restore', checkPermission('challans', 'update'), validate(restoreInvoiceChallanValidationSchema), restoreInvoiceChallan);
+router.patch('/:id/restore', checkPermission('challans', 'delete'), validate(restoreInvoiceChallanValidationSchema), restoreInvoiceChallan);
 router.delete('/:id', checkPermission('challans', 'delete'), validate(deleteInvoiceChallanValidationSchema), deleteInvoiceChallan);
 
 module.exports = router;
