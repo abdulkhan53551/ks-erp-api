@@ -102,12 +102,16 @@ const queryPaymentsSchema = {
         pageSize: Joi.number().integer().min(1).max(100).default(10),
         search: Joi.string().trim().allow('').optional(),
         partyId: Joi.number().integer().positive().optional(),
+        firmId: Joi.number().integer().positive().allow(null, '').optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null, '').optional(),
         paymentModeId: Joi.number().integer().positive().optional(),
         status: Joi.string().valid('COMPLETED', 'CANCELLED').optional(),
         startDate: Joi.date().iso().optional(),
         endDate: Joi.date().iso().optional(),
         sortBy: Joi.string().valid('payment_date', 'payment_no', 'total_amount', 'created_at').default('payment_date'),
-        sortOrder: Joi.string().valid('asc', 'desc').default('desc')
+        sortOrder: Joi.string().valid('asc', 'desc').default('desc'),
+        trash: Joi.boolean().truthy('true').falsy('false').optional(),
+        isTrash: Joi.boolean().truthy('true').falsy('false').optional()
     })
 };
 
@@ -139,6 +143,44 @@ const invoiceIdParamSchema = {
     })
 };
 
+const deletePaymentSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().positive().required().messages({
+            'any.required': 'Payment ID is required'
+        })
+    }),
+    query: Joi.object({
+        isPermanentDelete: Joi.boolean().truthy('true').falsy('false').default(false)
+    }).unknown(true)
+};
+
+const restorePaymentSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().positive().required().messages({
+            'any.required': 'Payment ID is required'
+        })
+    })
+};
+
+const bulkDeletePaymentsSchema = {
+    body: Joi.object({
+        ids: Joi.array().items(Joi.number().integer().positive()).min(1).required().messages({
+            'any.required': 'Payment IDs array is required',
+            'array.min': 'At least one payment ID must be provided'
+        }),
+        isPermanentDelete: Joi.boolean().truthy('true').falsy('false').default(false)
+    })
+};
+
+const bulkRestorePaymentsSchema = {
+    body: Joi.object({
+        ids: Joi.array().items(Joi.number().integer().positive()).min(1).required().messages({
+            'any.required': 'Payment IDs array is required',
+            'array.min': 'At least one payment ID must be provided'
+        })
+    })
+};
+
 module.exports = {
     createReceiptSchema,
     createVendorPaymentSchema,
@@ -148,5 +190,9 @@ module.exports = {
     paymentIdParamSchema,
     receiptIdParamSchema,
     partyIdParamSchema,
-    invoiceIdParamSchema
+    invoiceIdParamSchema,
+    deletePaymentSchema,
+    restorePaymentSchema,
+    bulkDeletePaymentsSchema,
+    bulkRestorePaymentsSchema
 };

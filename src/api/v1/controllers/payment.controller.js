@@ -19,6 +19,10 @@ const {
     fetchAvailableAdvancesByParty,
     cancelPaymentTransaction,
     cancelReceiptTransaction,
+    deletePaymentById,
+    restorePaymentById,
+    bulkDeletePayments,
+    bulkRestorePayments,
     fetchAllReceipts,
     fetchReceiptsMeta,
     fetchReceiptsSummary,
@@ -248,7 +252,7 @@ const getNextReceiptNumber = asyncHandler(async (req, res) => {
  * Get unpaid/partial invoices for a customer
  */
 const getUnpaidInvoices = asyncHandler(async (req, res) => {
-    const invoices = await fetchUnpaidInvoicesByParty(req.params.partyId);
+    const invoices = await fetchUnpaidInvoicesByParty(req.params.partyId, req.query?.firmId);
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -491,6 +495,79 @@ const getPaymentPDF = asyncHandler(async (req, res) => {
 
 const getReceiptPDF = getPaymentPDF;
 
+/**
+ * Delete a payment record (Soft delete to Recycle Bin or Permanent Delete)
+ */
+const deletePaymentController = asyncHandler(async (req, res) => {
+    const paymentId = req.params.id;
+    const { isPermanentDelete = false } = req.query;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const result = await deletePaymentById(paymentId, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: permanent
+                ? 'Payment record permanently deleted successfully.'
+                : 'Payment record moved to Recycle Bin successfully.'
+        })
+    );
+});
+
+/**
+ * Restore a payment record from Recycle Bin back to active
+ */
+const restorePaymentController = asyncHandler(async (req, res) => {
+    const paymentId = req.params.id;
+    const result = await restorePaymentById(paymentId);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: 'Payment record restored from Recycle Bin successfully.'
+        })
+    );
+});
+
+/**
+ * Bulk delete payment records (Soft delete to Recycle Bin or Permanent Delete)
+ */
+const bulkDeletePaymentsController = asyncHandler(async (req, res) => {
+    const { ids = [], isPermanentDelete = false } = req.body;
+    const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
+
+    const affectedRows = await bulkDeletePayments(ids, permanent);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: permanent
+                ? `${affectedRows} payment records permanently deleted successfully.`
+                : `${affectedRows} payment records moved to Recycle Bin successfully.`
+        })
+    );
+});
+
+/**
+ * Bulk restore payment records from Recycle Bin
+ */
+const bulkRestorePaymentsController = asyncHandler(async (req, res) => {
+    const { ids = [] } = req.body;
+    const affectedRows = await bulkRestorePayments(ids);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { affectedRows },
+            message: `${affectedRows} payment records restored from Recycle Bin successfully.`
+        })
+    );
+});
+
 module.exports = {
     createReceipt,
     createVendorPayment,
@@ -506,6 +583,10 @@ module.exports = {
     getReceiptById,
     cancelPaymentHandler,
     cancelReceiptHandler,
+    deletePaymentController,
+    restorePaymentController,
+    bulkDeletePaymentsController,
+    bulkRestorePaymentsController,
     getNextPaymentNumberHandler,
     getNextReceiptNumber,
     getUnpaidInvoices,

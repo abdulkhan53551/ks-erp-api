@@ -690,7 +690,9 @@ const cancelReceiptTransaction = async (paymentId) => {
  * Fetch receipts (INWARD customer payments) with pagination, search, and filters
  */
 const fetchAllReceipts = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         page = 1,
         pageSize = 10,
@@ -701,8 +703,11 @@ const fetchAllReceipts = async (query = {}) => {
         startDate,
         endDate,
         sortBy = 'payment_date',
-        sortOrder = 'desc'
+        sortOrder = 'desc',
+        trash = false,
+        isTrash = false
     } = query;
+    const inTrash = trash === true || trash === 'true' || isTrash === true || isTrash === 'true';
 
     const baseQuery = db('payments as p')
         .select(
@@ -727,15 +732,18 @@ const fetchAllReceipts = async (query = {}) => {
             'p.status',
             'p.notes',
             'p.created_at as createdAt',
-            db.raw("CONCAT(u.first_name, ' ', u.last_name) as createdByName")
+            'p.deleted_at as deletedAt',
+            db.raw("CONCAT(u.first_name, ' ', u.last_name) as createdByName"),
+            db.raw("CONCAT(du.first_name, ' ', du.last_name) as deletedByName")
         )
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
         .leftJoin('firm_branches as fb', 'p.firm_branch_id', 'fb.id')
         .leftJoin('firms as f', 'p.firm_id', 'f.id')
         .leftJoin('users as u', 'p.created_by', 'u.id')
+        .leftJoin('users as du', 'p.deleted_by', 'du.id')
         .where('p.payment_type', 'INWARD')
-        .where('p.is_active', true);
+        .where('p.is_active', !inTrash);
 
     if (firmId) baseQuery.where('p.firm_id', firmId);
     if (branchId) baseQuery.where('p.firm_branch_id', branchId);
@@ -758,13 +766,17 @@ const fetchAllReceipts = async (query = {}) => {
         payment_date: 'p.payment_date',
         payment_no: 'p.payment_no',
         total_amount: 'p.total_amount',
-        created_at: 'p.created_at'
+        created_at: 'p.created_at',
+        deleted_at: 'p.deleted_at'
     };
 
-    const sortColumn = validSortCols[sortBy] || 'p.payment_date';
-    const order = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
-
-    baseQuery.orderBy(sortColumn, order).orderBy('p.id', 'desc');
+    if (inTrash) {
+        baseQuery.orderBy('p.deleted_at', 'desc').orderBy('p.id', 'desc');
+    } else {
+        const sortColumn = validSortCols[sortBy] || 'p.payment_date';
+        const order = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
+        baseQuery.orderBy(sortColumn, order).orderBy('p.id', 'desc');
+    }
 
     return await fetchPageData({ baseQuery, page, pageSize });
 };
@@ -773,7 +785,9 @@ const fetchAllReceipts = async (query = {}) => {
  * Fetch receipts pagination metadata (INWARD)
  */
 const fetchReceiptsMeta = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         page = 1,
         pageSize = 10,
@@ -782,13 +796,16 @@ const fetchReceiptsMeta = async (query = {}) => {
         paymentModeId,
         status,
         startDate,
-        endDate
+        endDate,
+        trash = false,
+        isTrash = false
     } = query;
+    const inTrash = trash === true || trash === 'true' || isTrash === true || isTrash === 'true';
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .where('p.payment_type', 'INWARD')
-        .where('p.is_active', true);
+        .where('p.is_active', !inTrash);
 
     if (firmId) baseQuery.where('p.firm_id', firmId);
     if (branchId) baseQuery.where('p.firm_branch_id', branchId);
@@ -807,14 +824,33 @@ const fetchReceiptsMeta = async (query = {}) => {
         });
     }
 
-    return await buildPagination({ baseQuery, page, pageSize });
+    const counts = await db('payments as p')
+        .select(
+            db.raw(`COUNT(CASE WHEN p.is_active = true THEN 1 END) as "activeCount"`),
+            db.raw(`COUNT(CASE WHEN p.is_active = false THEN 1 END) as "trashCount"`)
+        )
+        .where('p.payment_type', 'INWARD')
+        .modify(qb => {
+            if (firmId) qb.where('p.firm_id', firmId);
+            if (branchId) qb.where('p.firm_branch_id', branchId);
+        })
+        .first();
+
+    const pagination = await buildPagination({ baseQuery, page, pageSize });
+    return {
+        ...pagination,
+        activeCount: Number(counts?.activeCount || 0),
+        trashCount: Number(counts?.trashCount || 0)
+    };
 };
 
 /**
  * Fetch summary metrics across receipts (INWARD)
  */
 const fetchReceiptsSummary = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         search = '',
         partyId,
@@ -873,7 +909,9 @@ const fetchReceiptsSummary = async (query = {}) => {
  * Fetch all outward vendor payments with pagination, search, and filters (OUTWARD)
  */
 const fetchAllVendorPayments = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         page = 1,
         pageSize = 10,
@@ -884,8 +922,11 @@ const fetchAllVendorPayments = async (query = {}) => {
         startDate,
         endDate,
         sortBy = 'payment_date',
-        sortOrder = 'desc'
+        sortOrder = 'desc',
+        trash = false,
+        isTrash = false
     } = query;
+    const inTrash = trash === true || trash === 'true' || isTrash === true || isTrash === 'true';
 
     const baseQuery = db('payments as p')
         .select(
@@ -911,15 +952,18 @@ const fetchAllVendorPayments = async (query = {}) => {
             'p.status',
             'p.notes',
             'p.created_at as createdAt',
-            db.raw("CONCAT(u.first_name, ' ', u.last_name) as createdByName")
+            'p.deleted_at as deletedAt',
+            db.raw("CONCAT(u.first_name, ' ', u.last_name) as createdByName"),
+            db.raw("CONCAT(du.first_name, ' ', du.last_name) as deletedByName")
         )
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
         .leftJoin('firm_branches as fb', 'p.firm_branch_id', 'fb.id')
         .leftJoin('firms as f', 'p.firm_id', 'f.id')
         .leftJoin('users as u', 'p.created_by', 'u.id')
+        .leftJoin('users as du', 'p.deleted_by', 'du.id')
         .where('p.payment_type', 'OUTWARD')
-        .where('p.is_active', true);
+        .where('p.is_active', !inTrash);
 
     if (firmId) baseQuery.where('p.firm_id', firmId);
     if (branchId) baseQuery.where('p.firm_branch_id', branchId);
@@ -942,13 +986,17 @@ const fetchAllVendorPayments = async (query = {}) => {
         payment_date: 'p.payment_date',
         payment_no: 'p.payment_no',
         total_amount: 'p.total_amount',
-        created_at: 'p.created_at'
+        created_at: 'p.created_at',
+        deleted_at: 'p.deleted_at'
     };
 
-    const sortColumn = validSortCols[sortBy] || 'p.payment_date';
-    const order = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
-
-    baseQuery.orderBy(sortColumn, order).orderBy('p.id', 'desc');
+    if (inTrash) {
+        baseQuery.orderBy('p.deleted_at', 'desc').orderBy('p.id', 'desc');
+    } else {
+        const sortColumn = validSortCols[sortBy] || 'p.payment_date';
+        const order = sortOrder.toLowerCase() === 'asc' ? 'asc' : 'desc';
+        baseQuery.orderBy(sortColumn, order).orderBy('p.id', 'desc');
+    }
 
     return await fetchPageData({ baseQuery, page, pageSize });
 };
@@ -957,7 +1005,9 @@ const fetchAllVendorPayments = async (query = {}) => {
  * Fetch vendor payments pagination metadata (OUTWARD)
  */
 const fetchVendorPaymentsMeta = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         page = 1,
         pageSize = 10,
@@ -966,13 +1016,16 @@ const fetchVendorPaymentsMeta = async (query = {}) => {
         paymentModeId,
         status,
         startDate,
-        endDate
+        endDate,
+        trash = false,
+        isTrash = false
     } = query;
+    const inTrash = trash === true || trash === 'true' || isTrash === true || isTrash === 'true';
 
     const baseQuery = db('payments as p')
         .leftJoin('parties as pt', 'p.party_id', 'pt.id')
         .where('p.payment_type', 'OUTWARD')
-        .where('p.is_active', true);
+        .where('p.is_active', !inTrash);
 
     if (firmId) baseQuery.where('p.firm_id', firmId);
     if (branchId) baseQuery.where('p.firm_branch_id', branchId);
@@ -991,14 +1044,33 @@ const fetchVendorPaymentsMeta = async (query = {}) => {
         });
     }
 
-    return await buildPagination({ baseQuery, page, pageSize });
+    const counts = await db('payments as p')
+        .select(
+            db.raw(`COUNT(CASE WHEN p.is_active = true THEN 1 END) as "activeCount"`),
+            db.raw(`COUNT(CASE WHEN p.is_active = false THEN 1 END) as "trashCount"`)
+        )
+        .where('p.payment_type', 'OUTWARD')
+        .modify(qb => {
+            if (firmId) qb.where('p.firm_id', firmId);
+            if (branchId) qb.where('p.firm_branch_id', branchId);
+        })
+        .first();
+
+    const pagination = await buildPagination({ baseQuery, page, pageSize });
+    return {
+        ...pagination,
+        activeCount: Number(counts?.activeCount || 0),
+        trashCount: Number(counts?.trashCount || 0)
+    };
 };
 
 /**
  * Fetch summary metrics for vendor payments (OUTWARD)
  */
 const fetchVendorPaymentsSummary = async (query = {}) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId: ctxFirmId = 0, branchId: ctxBranchId = null } = getContext();
+    const firmId = query.firmId !== undefined && query.firmId !== null && query.firmId !== '' ? Number(query.firmId) : ctxFirmId;
+    const branchId = query.firmBranchId !== undefined && query.firmBranchId !== null && query.firmBranchId !== '' ? Number(query.firmBranchId) : ctxBranchId;
     const {
         search = '',
         partyId,
@@ -1164,17 +1236,22 @@ const fetchReceiptById = async (id) => {
 /**
  * Fetch unpaid/partially paid invoices for a customer (for receipt allocation)
  */
-const fetchUnpaidInvoicesByParty = async (partyId) => {
-    const { firmId = 0 } = getContext();
+const fetchUnpaidInvoicesByParty = async (partyId, targetFirmId = null) => {
+    const { firmId: ctxFirmId = 0 } = getContext();
+    const firmId = targetFirmId ? Number(targetFirmId) : ctxFirmId;
 
-    const party = await db('parties').where({ id: partyId, firm_id: firmId, is_active: true }).first();
+    const partyQuery = db('parties').where({ id: partyId, is_active: true });
+    if (firmId) {
+        partyQuery.where({ firm_id: firmId });
+    }
+    const party = await partyQuery.first();
     if (!party) {
         throw new ApiError({ statusCode: 404, message: 'Customer party not found.' });
     }
 
     const statusMap = await getPaymentStatusIds();
 
-    const invoices = await db('invoices as i')
+    const baseInvoicesQuery = db('invoices as i')
         .select(
             'i.id',
             'i.invoice_no as invoiceNo',
@@ -1187,10 +1264,15 @@ const fetchUnpaidInvoicesByParty = async (partyId) => {
             'ps.label as paymentStatus'
         )
         .join('payment_statuses as ps', 'i.payment_status_id', 'ps.id')
-        .where('i.firm_id', firmId)
         .where('i.is_active', true)
         .where('i.payment_status_id', '!=', statusMap['PAID'])
-        .where('i.balance_amount', '>', 0)
+        .where('i.balance_amount', '>', 0);
+
+    if (firmId) {
+        baseInvoicesQuery.where('i.firm_id', firmId);
+    }
+
+    const invoices = await baseInvoicesQuery
         .where(function () {
             this.where('i.party_id', partyId);
             if (party.legal_name) {
@@ -1252,6 +1334,229 @@ const fetchInvoicePaymentHistory = async (invoiceId) => {
     };
 };
 
+/**
+ * Internal helper to revert invoice/bill allocations for a payment within a transaction
+ */
+const revertPaymentAllocationsInTrx = async (trx, payment, statusMap) => {
+    const allocations = await trx('payment_allocations').where({ payment_id: payment.id });
+
+    if (payment.payment_type === 'OUTWARD') {
+        for (const alloc of allocations) {
+            if (!alloc.vendor_bill_id) continue;
+            const bill = await trx('vendor_bills')
+                .where({ id: alloc.vendor_bill_id })
+                .forUpdate()
+                .first();
+
+            if (bill) {
+                const settledAmount = new Decimal(alloc.total_settled_amount || 0);
+                const currentPaid = new Decimal(bill.paid_amount || 0);
+                const newPaid = Decimal.max(0, currentPaid.minus(settledAmount));
+                const newBalance = new Decimal(bill.total).minus(newPaid);
+                const cleanBalance = newBalance.lte(0.01) ? 0 : newBalance.toNumber();
+
+                let newStatusId = statusMap['PENDING'];
+                if (cleanBalance <= 0) {
+                    newStatusId = statusMap['PAID'];
+                } else if (newPaid.gt(0)) {
+                    newStatusId = statusMap['PARTIAL'];
+                }
+
+                await trx('vendor_bills')
+                    .where({ id: alloc.vendor_bill_id })
+                    .update({
+                        paid_amount: newPaid.toNumber(),
+                        balance_amount: cleanBalance,
+                        payment_status_id: newStatusId
+                    });
+            }
+        }
+    } else {
+        // INWARD
+        for (const alloc of allocations) {
+            if (!alloc.invoice_id) continue;
+            const invoice = await trx('invoices')
+                .where({ id: alloc.invoice_id })
+                .forUpdate()
+                .first();
+
+            if (invoice) {
+                const settledAmount = new Decimal(alloc.total_settled_amount || 0);
+                const currentPaid = new Decimal(invoice.paid_amount || 0);
+                const newPaid = Decimal.max(0, currentPaid.minus(settledAmount));
+                const newBalance = new Decimal(invoice.total).minus(newPaid);
+                const cleanBalance = newBalance.lte(0.01) ? 0 : newBalance.toNumber();
+
+                let newStatusId = statusMap['PENDING'];
+                if (cleanBalance <= 0) {
+                    newStatusId = statusMap['PAID'];
+                } else if (newPaid.gt(0)) {
+                    newStatusId = statusMap['PARTIAL'];
+                }
+
+                await trx('invoices')
+                    .where({ id: alloc.invoice_id })
+                    .update({
+                        paid_amount: newPaid.toNumber(),
+                        balance_amount: cleanBalance,
+                        payment_status_id: newStatusId
+                    });
+            }
+        }
+    }
+};
+
+/**
+ * Delete a payment record by ID (Soft delete to Recycle Bin or Permanent Delete)
+ */
+const deletePaymentById = async (paymentId, isPermanentDelete = false) => {
+    const { firmId = 0 } = getContext();
+
+    return await db.transaction(async (trx) => {
+        let q = trx('payments').where({ id: paymentId }).forUpdate();
+        if (firmId) q.andWhere({ firm_id: firmId });
+        if (!isPermanentDelete) q.andWhere({ is_active: true });
+
+        const payment = await q.first();
+        if (!payment) {
+            throw new ApiError({
+                statusCode: 404,
+                message: isPermanentDelete
+                    ? 'Payment record not found.'
+                    : 'Payment record not found or already moved to Recycle Bin.'
+            });
+        }
+
+        const statusMap = await getPaymentStatusIds(trx);
+
+        // If payment is COMPLETED, rollback invoice/bill allocations first
+        if (payment.status === 'COMPLETED') {
+            await revertPaymentAllocationsInTrx(trx, payment, statusMap);
+        }
+
+        if (isPermanentDelete) {
+            await trx('payment_allocations').where({ payment_id: paymentId }).del();
+            await trx('payments').where({ id: paymentId }).del();
+            return {
+                id: Number(paymentId),
+                paymentNo: payment.payment_no,
+                permanent: true
+            };
+        } else {
+            // Soft delete: move to recycle bin
+            await trx('payment_allocations').where({ payment_id: paymentId }).update({ is_active: false });
+            await trx('payments').where({ id: paymentId }).update({
+                status: 'CANCELLED',
+                is_active: false
+            });
+            return {
+                id: Number(paymentId),
+                paymentNo: payment.payment_no,
+                permanent: false
+            };
+        }
+    });
+};
+
+/**
+ * Restore a payment record from Recycle Bin back to active
+ */
+const restorePaymentById = async (paymentId) => {
+    const { firmId = 0 } = getContext();
+
+    return await db.transaction(async (trx) => {
+        let q = trx('payments').where({ id: paymentId, is_active: false }).forUpdate();
+        if (firmId) q.andWhere({ firm_id: firmId });
+
+        const payment = await q.first();
+        if (!payment) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Payment record not found in Recycle Bin or already active.'
+            });
+        }
+
+        await trx('payment_allocations').where({ payment_id: paymentId }).update({ is_active: true });
+        await trx('payments').where({ id: paymentId }).update({
+            is_active: true
+        });
+
+        return {
+            id: Number(paymentId),
+            paymentNo: payment.payment_no,
+            restored: true
+        };
+    });
+};
+
+/**
+ * Bulk delete payments (Soft delete to Recycle Bin or Permanent Delete)
+ */
+const bulkDeletePayments = async (paymentIds = [], isPermanentDelete = false) => {
+    if (!paymentIds || !paymentIds.length) return 0;
+    const { firmId = 0 } = getContext();
+
+    return await db.transaction(async (trx) => {
+        let q = trx('payments').whereIn('id', paymentIds).forUpdate();
+        if (firmId) q.andWhere({ firm_id: firmId });
+        if (!isPermanentDelete) q.andWhere({ is_active: true });
+
+        const payments = await q;
+        if (!payments.length) {
+            return 0;
+        }
+
+        const statusMap = await getPaymentStatusIds(trx);
+
+        for (const payment of payments) {
+            if (payment.status === 'COMPLETED') {
+                await revertPaymentAllocationsInTrx(trx, payment, statusMap);
+            }
+        }
+
+        const matchedIds = payments.map(p => p.id);
+
+        if (isPermanentDelete) {
+            await trx('payment_allocations').whereIn('payment_id', matchedIds).del();
+            await trx('payments').whereIn('id', matchedIds).del();
+        } else {
+            await trx('payment_allocations').whereIn('payment_id', matchedIds).update({ is_active: false });
+            await trx('payments').whereIn('id', matchedIds).update({
+                status: 'CANCELLED',
+                is_active: false
+            });
+        }
+
+        return matchedIds.length;
+    });
+};
+
+/**
+ * Bulk restore payments from Recycle Bin
+ */
+const bulkRestorePayments = async (paymentIds = []) => {
+    if (!paymentIds || !paymentIds.length) return 0;
+    const { firmId = 0 } = getContext();
+
+    return await db.transaction(async (trx) => {
+        let q = trx('payments').whereIn('id', paymentIds).andWhere({ is_active: false }).forUpdate();
+        if (firmId) q.andWhere({ firm_id: firmId });
+
+        const payments = await q;
+        if (!payments.length) {
+            return 0;
+        }
+
+        const matchedIds = payments.map(p => p.id);
+        await trx('payment_allocations').whereIn('payment_id', matchedIds).update({ is_active: true });
+        await trx('payments').whereIn('id', matchedIds).update({
+            is_active: true
+        });
+
+        return matchedIds.length;
+    });
+};
+
 module.exports = {
     getPaymentStatusIds,
     generateNextPaymentNumber,
@@ -1262,6 +1567,10 @@ module.exports = {
     fetchAvailableAdvancesByParty,
     cancelPaymentTransaction,
     cancelReceiptTransaction,
+    deletePaymentById,
+    restorePaymentById,
+    bulkDeletePayments,
+    bulkRestorePayments,
     fetchAllReceipts,
     fetchReceiptsMeta,
     fetchReceiptsSummary,
