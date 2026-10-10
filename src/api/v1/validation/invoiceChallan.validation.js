@@ -21,6 +21,7 @@ const getInvoiceChallansByInvoiceIdValidationSchema = {
 const createInvoiceChallanValidationSchema = {
     body: Joi.object({
         invoiceId: Joi.number().integer().positive().allow(null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         challanNo: Joi.string().max(50).required(),
         challanDate: Joi.date().required(),
         customerName: Joi.string().max(255).required()
@@ -34,6 +35,7 @@ const updateInvoiceChallanValidationSchema = {
     }),
     body: Joi.object({
         invoiceId: Joi.number().integer().positive().allow(null).optional(),
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         challanNo: Joi.string().max(50).optional(),
         challanDate: Joi.date().optional(),
         customerName: Joi.string().max(255).optional()

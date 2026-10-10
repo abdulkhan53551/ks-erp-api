@@ -58,16 +58,28 @@ function patchKnex(knex) {
           updated_by: data.updated_by !== undefined ? data.updated_by : (userId ? userId : null),
         };
 
-        // If soft-deleting (moving to trash)
-        if (data.is_active === false && data.deleted_at === undefined) {
-          data.deleted_at = now;
-          data.deleted_by = data.deleted_by !== undefined ? data.deleted_by : (userId ? userId : null);
-        }
+        const nonSoftDeleteTables = [
+          "users",
+          "roles",
+          "permissions",
+          "refresh_tokens",
+          "policies",
+          "knex_migrations",
+          "knex_migrations_lock",
+        ];
 
-        // If restoring from trash
-        if (data.is_active === true && data.deleted_at === undefined) {
-          data.deleted_at = null;
-          data.deleted_by = null;
+        if (!nonSoftDeleteTables.includes(tableName)) {
+          // If soft-deleting (moving to trash)
+          if (data.is_active === false && data.deleted_at === undefined) {
+            data.deleted_at = now;
+            data.deleted_by = data.deleted_by !== undefined ? data.deleted_by : (userId ? userId : null);
+          }
+
+          // If restoring from trash
+          if (data.is_active === true && data.deleted_at === undefined) {
+            data.deleted_at = null;
+            data.deleted_by = null;
+          }
         }
       }
     }

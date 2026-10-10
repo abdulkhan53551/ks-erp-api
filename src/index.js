@@ -18,7 +18,6 @@ const shutdown = async (signal) => {
         //         await redisClient.disconnect();
         //     }
         // } catch (_) {}
-
         console.log('✅ Connections closed. Exiting cleanly.');
         process.exit(0);
     } catch (error) {
@@ -27,26 +26,27 @@ const shutdown = async (signal) => {
     }
 };
 
+connectDB()
+    .then(async () => {
+        // Initialize Casbin (runs in Standalone In-Memory mode on Render Free Tier)
+        await initCasbin(null);
+        // Automatically sync module registry permissions and Casbin policies
+        const { bootstrapPermissions } = require("./api/v1/services/permissionBootstrapper");
+        await bootstrapPermissions();
+    })
+    .then(() => {
+        app.listen(PORT, () => console.log('✅ Server listing on port ' + PORT));
+    })
+    .catch((err) => {
+        if (err.message.includes('Casbin')) {
+            console.error('Error initializing Casbin:', err);
+        } else if (err.message.includes('Redis')) {
+            console.error('Redis connection FAILED!!!', err);
+        } else {
+            console.log('POSTGRESQL connection FAILED!!!', err);
+        }
+        process.exit(1);
+    });
+
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-/**
- * Bootstrap function: connect to DB first, then start listening for HTTP traffic
- */
-const startServer = async () => {
-    try {
-        // 1. Connect to PostgreSQL
-        // Knex pool automatically waits up to acquireTimeoutMillis (60s) for Neon to wake up
-        await connectDB();
-
-        // 2. Start HTTP server only AFTER database connection is verified
-        app.listen(PORT, () => {
-            console.log(`✅ Server listening on port ${PORT}`);
-        });
-    } catch (err) {
-        console.error('❌ POSTGRESQL connection FAILED:', err);
-        process.exit(1); // Fail-fast so process managers (Docker/PM2/Render) know startup failed
-    }
-};
-
-startServer();

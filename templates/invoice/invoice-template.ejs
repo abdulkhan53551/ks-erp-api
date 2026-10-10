@@ -313,7 +313,9 @@
               <% } %>
               <div class="firm-detail">
                 <h4 class="name"><%= company.name %></h4>
+              <% if (company.gstNo) { %>
                 <div class="gst">GSTIN <%= company.gstNo %></div>
+              <% } %>
                 <div class="addrs-1"><%- company.address %></div>
                 <div class="mobile">
                   <span class="label">Mobile</span>

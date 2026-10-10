@@ -1,4 +1,5 @@
 const { getContext } = require("../helpers/requestContext");
+const { db } = require("../database");
 const { insertInvoiceChallan, deleteInvoiceChallanById, bulkDeleteInvoiceChallans: bulkDeleteInvoiceChallansModel, restoreInvoiceChallanById, bulkRestoreInvoiceChallans: bulkRestoreInvoiceChallansModel, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta, fetchAllInvoiceChallans } = require("../models/invoiceChallan.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
@@ -64,15 +65,30 @@ const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create a new invoice challan
 const createInvoiceChallan = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
+    const { firmId = 0, branchId = null } = getContext();
     const body = req.body;
+    const effectiveFirmId = body.firmId ? Number(body.firmId) : firmId;
+
+    if (!effectiveFirmId) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Firm ID is required to create a challan.'
+        });
+    }
+
+    let resolvedFirmBranchId = body.firmBranchId ? Number(body.firmBranchId) : (branchId ? Number(branchId) : null);
+    if (!resolvedFirmBranchId && effectiveFirmId) {
+        const defaultBranch = await db('firm_branches').where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+        if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
+    }
 
     const challanData = {
         invoice_id: body.invoiceId || null,
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName,
-        firm_id: firmId
+        firm_id: effectiveFirmId,
+        firm_branch_id: resolvedFirmBranchId
     };
 
     const challanId = await insertInvoiceChallan(challanData);
@@ -99,6 +115,7 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
 
     const updatedData = {
         invoice_id: body.invoiceId !== undefined ? body.invoiceId : undefined,
+        firm_branch_id: body.firmBranchId !== undefined ? (body.firmBranchId ? Number(body.firmBranchId) : null) : undefined,
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName

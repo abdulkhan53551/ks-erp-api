@@ -1,19 +1,44 @@
-const { Router } = require('express')
-const validate = require('../middlewares/validate')
-const { getEwayBillMeta, getEwayBillById, getEwayBillByInvoiceId, createEwayBill, updateEwayBill, deleteEwayBill, restoreEwayBill, bulkDeleteEwayBills, bulkRestoreEwayBills, getAllEwayBill } = require('../controllers/ewayBill.controller')
-const { getEWayBillByIdValidationSchema, getEWayBillsByInvoiceValidationSchema, createEWayBillValidationSchema, updateEWayBillValidationSchema, deleteEWayBillValidationSchema, restoreEWayBillValidationSchema, bulkDeleteEWayBillsValidationSchema, bulkRestoreEWayBillsValidationSchema } = require('../validation/ewaybill.validation')
-const router = Router()
+const { Router } = require('express');
+const validate = require('../middlewares/validate');
+const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
+const { 
+    getEwayBillMeta, 
+    getEwayBillById, 
+    getEwayBillByInvoiceId, 
+    createEwayBill, 
+    updateEwayBill, 
+    deleteEwayBill, 
+    restoreEwayBill, 
+    bulkDeleteEwayBills, 
+    bulkRestoreEwayBills, 
+    getAllEwayBill 
+} = require('../controllers/ewayBill.controller');
+const { 
+    getEWayBillByIdValidationSchema, 
+    getEWayBillsByInvoiceValidationSchema, 
+    createEWayBillValidationSchema, 
+    updateEWayBillValidationSchema, 
+    deleteEWayBillValidationSchema, 
+    restoreEWayBillValidationSchema, 
+    bulkDeleteEWayBillsValidationSchema, 
+    bulkRestoreEWayBillsValidationSchema 
+} = require('../validation/ewaybill.validation');
 
-// Eway Bill
-router.get('/pagination', getEwayBillMeta);
-router.get('/', getAllEwayBill);
-router.post('/bulk-delete', validate(bulkDeleteEWayBillsValidationSchema), bulkDeleteEwayBills);
-router.patch('/bulk-restore', validate(bulkRestoreEWayBillsValidationSchema), bulkRestoreEwayBills);
-router.get('/invoice/:invoiceId', validate(getEWayBillsByInvoiceValidationSchema), getEwayBillByInvoiceId);
-router.get('/:id', validate(getEWayBillByIdValidationSchema), getEwayBillById);
-router.post('/', validate(createEWayBillValidationSchema), createEwayBill);
-router.patch('/:id', validate(updateEWayBillValidationSchema), updateEwayBill);
-router.patch('/:id/restore', validate(restoreEWayBillValidationSchema), restoreEwayBill);
-router.delete('/:id', validate(deleteEWayBillValidationSchema), deleteEwayBill);
+const router = Router();
 
-module.exports = router
+// Enforce firm context on all mutations in this module
+router.use(requireFirmContext);
+
+// Eway Bill routes guarded by Casbin in-memory RBAC
+router.get('/pagination', checkPermission('eway-bills', 'read'), getEwayBillMeta);
+router.get('/', checkPermission('eway-bills', 'read'), getAllEwayBill);
+router.post('/bulk-delete', checkPermission('eway-bills', 'delete'), validate(bulkDeleteEWayBillsValidationSchema), bulkDeleteEwayBills);
+router.patch('/bulk-restore', checkPermission('eway-bills', 'delete'), validate(bulkRestoreEWayBillsValidationSchema), bulkRestoreEwayBills);
+router.get('/invoice/:invoiceId', checkPermission('eway-bills', 'read'), validate(getEWayBillsByInvoiceValidationSchema), getEwayBillByInvoiceId);
+router.get('/:id', checkPermission('eway-bills', 'read'), validate(getEWayBillByIdValidationSchema), getEwayBillById);
+router.post('/', checkPermission('eway-bills', 'create'), validate(createEWayBillValidationSchema), createEwayBill);
+router.patch('/:id', checkPermission('eway-bills', 'update'), validate(updateEWayBillValidationSchema), updateEwayBill);
+router.patch('/:id/restore', checkPermission('eway-bills', 'delete'), validate(restoreEWayBillValidationSchema), restoreEwayBill);
+router.delete('/:id', checkPermission('eway-bills', 'delete'), validate(deleteEWayBillValidationSchema), deleteEwayBill);
+
+module.exports = router;

@@ -16,6 +16,8 @@ const fetchAllEwayBill = async (query) => {
                 'EB.eway_bill_no',
                 'EB.eway_bill_date',
                 'EB.valid_upto',
+                'EB.firm_id',
+                'F.firm_name',
                 db.raw('("EB"."invoice_id" IS NOT NULL) AS is_invoiced'),
                 'I.invoice_no',
                 'EB.customer_name',
@@ -25,11 +27,15 @@ const fetchAllEwayBill = async (query) => {
                 'EB.deleted_at',
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
+            .leftJoin('firms AS F', 'EB.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'EB.invoice_id', 'I.id')
             .leftJoin('users AS u', 'EB.created_by', 'u.id')
             .leftJoin('users AS du', 'EB.deleted_by', 'du.id')
-            .where('EB.is_active', !isTrash)
-            .andWhere('EB.firm_id', firmId);
+            .where('EB.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('EB.firm_id', firmId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -64,8 +70,11 @@ const fetchEwayBillMeta = async (query) => {
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('eway_bills AS EB')
-            .where('EB.is_active', !isTrash)
-            .andWhere('EB.firm_id', firmId);
+            .where('EB.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('EB.firm_id', firmId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -90,22 +99,29 @@ const fetchEwayBillById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const result = await db('eway_bills AS EB')
+        const resultQuery = db('eway_bills AS EB')
             .select(
                 'EB.id AS eway_bill_id',
                 'EB.eway_bill_no',
                 'EB.eway_bill_date',
                 'EB.valid_upto',
+                'EB.firm_id',
+                'F.firm_name',
                 db.raw('("EB"."invoice_id" IS NOT NULL) AS is_invoiced'),
                 'EB.invoice_id',
                 'EB.customer_name',
                 'I.invoice_no'
             )
+            .leftJoin('firms AS F', 'EB.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'EB.invoice_id', 'I.id')
             .where('EB.id', id)
-            .andWhere('EB.firm_id', firmId)
-            .andWhere('EB.is_active', true)
-            .first();
+            .andWhere('EB.is_active', true);
+
+        if (firmId) {
+            resultQuery.andWhere('EB.firm_id', firmId);
+        }
+
+        const result = await resultQuery.first();
 
         return result || null;
     } catch (err) {
@@ -131,8 +147,11 @@ const fetchEwayBillByInvoiceId = async (invoiceId, includeUnmappedEwayBills) => 
                 'EB.customer_name'
             )
             .leftJoin('invoices AS I', 'EB.invoice_id', 'I.id')
-            .where('EB.firm_id', firmId)
-            .andWhere('EB.is_active', true);
+            .where('EB.is_active', true);
+
+        if (firmId) {
+            baseQuery.andWhere('EB.firm_id', firmId);
+        }
 
         if (includeUnmappedEwayBills) {
             baseQuery.andWhere(function () {
@@ -265,12 +284,16 @@ const deleteEwayBillById = async (id, isPermanentDelete) => {
 
         // Hard delete
         if (isPermanentDelete) {
-            const result = await db('eway_bills').where({ id, firm_id: firmId }).del();
+            const delQuery = db('eway_bills').where('id', id);
+            if (firmId) delQuery.andWhere('firm_id', firmId);
+            const result = await delQuery.del();
             return result > 0;
         }
 
         // Soft delete (move to trash)
-        const updated = await db('eway_bills').where({ id, firm_id: firmId }).update({ is_active: false });
+        const updateQuery = db('eway_bills').where('id', id);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const updated = await updateQuery.update({ is_active: false });
         return updated > 0;
     } catch (err) {
         if (err instanceof ApiError) {
@@ -305,14 +328,16 @@ const bulkDeleteEwayBills = async (ewayBillIds = [], isPermanentDelete = false) 
         }
 
         if (isPermanentDelete) {
-            return await db('eway_bills').whereIn('id', ewayBillIds).andWhere({ firm_id: firmId }).del();
+            const delQuery = db('eway_bills').whereIn('id', ewayBillIds);
+            if (firmId) delQuery.andWhere('firm_id', firmId);
+            return await delQuery.del();
         }
 
         // Soft delete (bulk move to trash)
-        const affectedRows = await db('eway_bills')
-            .whereIn('id', ewayBillIds)
-            .andWhere({ firm_id: firmId })
-            .update({ is_active: false });
+        const updateQuery = db('eway_bills')
+            .whereIn('id', ewayBillIds);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: false });
 
         return affectedRows;
     } catch (err) {
@@ -331,9 +356,10 @@ const restoreEwayBillById = async (id) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const ewayBill = await db('eway_bills')
-            .where({ id, firm_id: firmId, is_active: false })
-            .first();
+        const ewayBillQuery = db('eway_bills')
+            .where({ id, is_active: false });
+        if (firmId) ewayBillQuery.andWhere('firm_id', firmId);
+        const ewayBill = await ewayBillQuery.first();
 
         if (!ewayBill) {
             throw new ApiError({
@@ -342,9 +368,10 @@ const restoreEwayBillById = async (id) => {
             });
         }
 
-        const affectedRows = await db('eway_bills')
-            .where({ id, firm_id: firmId })
-            .update({ is_active: true });
+        const updateQuery = db('eway_bills')
+            .where('id', id);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: true });
 
         return affectedRows > 0;
     } catch (err) {
@@ -364,10 +391,11 @@ const bulkRestoreEwayBills = async (ewayBillIds = []) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const affectedRows = await db('eway_bills')
+        const updateQuery = db('eway_bills')
             .whereIn('id', ewayBillIds)
-            .andWhere({ firm_id: firmId, is_active: false })
-            .update({ is_active: true });
+            .andWhere('is_active', false);
+        if (firmId) updateQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updateQuery.update({ is_active: true });
 
         return affectedRows;
     } catch (err) {
@@ -401,10 +429,11 @@ const updateInvoiceEwayBillMapping = async (trx, invoiceId, newEwayBillIds) => {
         const selectedEwayBillId = uniqueNewIds[0];
 
         // 0️⃣ Validate: eway bill must exist in this firm and be active
-        const ewayBill = await trx('eway_bills')
+        const ewayBillQuery = trx('eway_bills')
             .select('id', 'invoice_id')
-            .where({ id: selectedEwayBillId, firm_id: firmId, is_active: true })
-            .first();
+            .where({ id: selectedEwayBillId, is_active: true });
+        if (firmId) ewayBillQuery.andWhere('firm_id', firmId);
+        const ewayBill = await ewayBillQuery.first();
 
         if (!ewayBill) {
             throw new ApiError({
@@ -422,10 +451,11 @@ const updateInvoiceEwayBillMapping = async (trx, invoiceId, newEwayBillIds) => {
         }
 
         // Unmap any previously mapped E-Way Bill on this invoice
-        await trx('eway_bills')
-            .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true })
-            .whereNot({ id: selectedEwayBillId })
-            .update({ invoice_id: null });
+        const unmapOthersQuery = trx('eway_bills')
+            .where({ invoice_id: invoiceId, is_active: true })
+            .whereNot({ id: selectedEwayBillId });
+        if (firmId) unmapOthersQuery.andWhere('firm_id', firmId);
+        await unmapOthersQuery.update({ invoice_id: null });
 
         // Map the new E-Way Bill
         await trx('eway_bills')
@@ -435,9 +465,10 @@ const updateInvoiceEwayBillMapping = async (trx, invoiceId, newEwayBillIds) => {
         return { mapped: selectedEwayBillId };
     } else {
         // Unmap any existing E-Way Bill for this invoice
-        await trx('eway_bills')
-            .where({ invoice_id: invoiceId, firm_id: firmId, is_active: true })
-            .update({ invoice_id: null });
+        const unmapAllQuery = trx('eway_bills')
+            .where({ invoice_id: invoiceId, is_active: true });
+        if (firmId) unmapAllQuery.andWhere('firm_id', firmId);
+        await unmapAllQuery.update({ invoice_id: null });
 
         return { mapped: null };
     }

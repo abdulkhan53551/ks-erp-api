@@ -314,6 +314,7 @@ const fetchAllParties = async (firmId, query) => {
             .select(
                 'p.id',
                 'p.firm_id',
+                'f.firm_name as firmName',
                 'p.party_code',
                 'p.legal_name',
                 'p.display_name',
@@ -328,6 +329,7 @@ const fetchAllParties = async (firmId, query) => {
                 'p.logo_url as logoUrl',
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
+                'p.credit_period_days',
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'p.created_at',
@@ -335,12 +337,16 @@ const fetchAllParties = async (firmId, query) => {
                 'p.deleted_at',
                 db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
             )
+            .leftJoin('firms as f', 'p.firm_id', 'f.id')
             .leftJoin('users as u', 'p.created_by', 'u.id')
             .leftJoin('users as du', 'p.deleted_by', 'du.id')
             .where({
-                'p.firm_id': firmId,
                 'p.is_active': !isTrash
             });
+
+        if (firmId) {
+            baseQuery.andWhere('p.firm_id', firmId);
+        }
 
         if (isTrash) {
             baseQuery.orderBy('p.deleted_at', 'desc');
@@ -368,8 +374,11 @@ const fetchPartyMeta = async (query) => {
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('parties AS P')
-            .where('P.firm_id', firmId)
-            .andWhere('P.is_active', !isTrash);
+            .where('P.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('P.firm_id', firmId);
+        }
 
         if (search) {
             baseQuery.where(function () {
@@ -401,32 +410,39 @@ const fetchPartyMeta = async (query) => {
 // Fetch party by ID for a given firm
 const fetchPartyById = async (partyId, firmId) => {
     try {
-        const party = await db('parties')
+        const partyQuery = db('parties as p')
             .select(
-                'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
-                'mobile',
-                'email',
-                'gst_registered',
-                'gstin',
-                'cin_number',
-                'tan_number',
-                'pan_number',
-                'website',
-                'logo_url as logoUrl',
-                'logo_public_id as logoPublicId',
-                'remarks',
-                'status'
+                'p.id',
+                'p.firm_id',
+                'f.firm_name as firmName',
+                'p.party_code',
+                'p.legal_name',
+                'p.display_name',
+                'p.mobile',
+                'p.email',
+                'p.gst_registered',
+                'p.gstin',
+                'p.cin_number',
+                'p.tan_number',
+                'p.pan_number',
+                'p.website',
+                'p.logo_url as logoUrl',
+                'p.logo_public_id as logoPublicId',
+                'p.remarks',
+                'p.credit_period_days',
+                'p.status'
             )
+            .leftJoin('firms as f', 'p.firm_id', 'f.id')
             .where({
-                id: partyId,
-                firm_id: firmId,
-                is_active: true
-            })
-            .first();
+                'p.id': partyId,
+                'p.is_active': true
+            });
+
+        if (firmId) {
+            partyQuery.andWhere({ 'p.firm_id': firmId });
+        }
+
+        const party = await partyQuery.first();
 
         if (!party) return null;
 
@@ -594,13 +610,52 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const party = await trx('parties')
-            .where({ id: partyId, firm_id: firmId })
-            .first();
+        let partyQuery = trx('parties').where('id', partyId);
+        if (firmId) {
+            partyQuery.andWhere('firm_id', firmId);
+        }
+        const party = await partyQuery.first();
 
         if (!party) {
             await trx.rollback();
             return 0;
+        }
+
+        // Protective check: Guard against deleting parties with active invoices, bills, or payments
+        let hasInvoicesQuery = trx('invoices')
+            .where({ party_id: partyId, is_active: true });
+        if (firmId) hasInvoicesQuery.andWhere('firm_id', firmId);
+        const hasInvoices = await hasInvoicesQuery.first();
+
+        if (hasInvoices) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active invoices are associated with it.'
+            });
+        }
+
+        let hasVendorBillsQuery = trx('vendor_bills')
+            .where({ party_id: partyId, is_active: true });
+        if (firmId) hasVendorBillsQuery.andWhere('firm_id', firmId);
+        const hasVendorBills = await hasVendorBillsQuery.first();
+
+        if (hasVendorBills) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active vendor bills are associated with it.'
+            });
+        }
+
+        let hasPaymentsQuery = trx('payments')
+            .where({ party_id: partyId, is_active: true });
+        if (firmId) hasPaymentsQuery.andWhere('firm_id', firmId);
+        const hasPayments = await hasPaymentsQuery.first();
+
+        if (hasPayments) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete party because active payment transactions are associated with it.'
+            });
         }
 
         if (isPermanentDelete) {
@@ -614,7 +669,10 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
             await trx('party_bank_accounts').where({ party_id: partyId }).del();
             await trx('party_contacts').where({ party_id: partyId }).del();
             await trx('party_branches').where({ party_id: partyId }).del();
-            const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).del();
+            
+            let delPartyQuery = trx('parties').where('id', partyId);
+            if (firmId) delPartyQuery.andWhere('firm_id', firmId);
+            const affectedRows = await delPartyQuery.del();
 
             await trx.commit();
 
@@ -638,7 +696,10 @@ const deletePartyMaster = async (partyId, isPermanentDelete = false) => {
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: false });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: false });
         await trx('party_branches').where({ party_id: partyId }).update({ is_active: false });
-        const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: false });
+        
+        let updatePartyQuery = trx('parties').where('id', partyId);
+        if (firmId) updatePartyQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updatePartyQuery.update({ is_active: false });
 
         await trx.commit();
         return affectedRows;
@@ -671,12 +732,53 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
     try {
         const { firmId = 0 } = getContext();
 
+        // Protective check: Guard against bulk deleting parties with active invoices, bills, or payments
+        let hasInvoicesQuery = trx('invoices')
+            .whereIn('party_id', partyIds)
+            .andWhere('is_active', true);
+        if (firmId) hasInvoicesQuery.andWhere('firm_id', firmId);
+        const hasInvoices = await hasInvoicesQuery.first();
+
+        if (hasInvoices) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active invoices are associated with them.'
+            });
+        }
+
+        let hasVendorBillsQuery = trx('vendor_bills')
+            .whereIn('party_id', partyIds)
+            .andWhere('is_active', true);
+        if (firmId) hasVendorBillsQuery.andWhere('firm_id', firmId);
+        const hasVendorBills = await hasVendorBillsQuery.first();
+
+        if (hasVendorBills) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active vendor bills are associated with them.'
+            });
+        }
+
+        let hasPaymentsQuery = trx('payments')
+            .whereIn('party_id', partyIds)
+            .andWhere('is_active', true);
+        if (firmId) hasPaymentsQuery.andWhere('firm_id', firmId);
+        const hasPayments = await hasPaymentsQuery.first();
+
+        if (hasPayments) {
+            throw new ApiError({
+                statusCode: 422,
+                message: 'Cannot delete one or more parties because active payment transactions are associated with them.'
+            });
+        }
+
         if (isPermanentDelete) {
             // Fetch party logos and attachments before deleting
-            const parties = await trx('parties')
+            let pQuery = trx('parties')
                 .select('id', 'logo_public_id')
-                .whereIn('id', partyIds)
-                .andWhere({ firm_id: firmId });
+                .whereIn('id', partyIds);
+            if (firmId) pQuery.andWhere('firm_id', firmId);
+            const parties = await pQuery;
 
             const attachments = await trx('attachments')
                 .select('public_id', 'resource_type')
@@ -688,10 +790,10 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
             await trx('party_bank_accounts').whereIn('party_id', partyIds).del();
             await trx('party_contacts').whereIn('party_id', partyIds).del();
             await trx('party_branches').whereIn('party_id', partyIds).del();
-            const affectedRows = await trx('parties')
-                .whereIn('id', partyIds)
-                .andWhere({ firm_id: firmId })
-                .del();
+            
+            let delPartiesQuery = trx('parties').whereIn('id', partyIds);
+            if (firmId) delPartiesQuery.andWhere('firm_id', firmId);
+            const affectedRows = await delPartiesQuery.del();
 
             await trx.commit();
 
@@ -717,10 +819,10 @@ const bulkDeleteParties = async (partyIds = [], isPermanentDelete = false) => {
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: false });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: false });
         await trx('party_branches').whereIn('party_id', partyIds).update({ is_active: false });
-        const affectedRows = await trx('parties')
-            .whereIn('id', partyIds)
-            .andWhere({ firm_id: firmId })
-            .update({ is_active: false });
+        
+        let updatePartiesQuery = trx('parties').whereIn('id', partyIds);
+        if (firmId) updatePartiesQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updatePartiesQuery.update({ is_active: false });
 
         await trx.commit();
         return affectedRows;
@@ -752,9 +854,9 @@ const restorePartyMaster = async (partyId) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const party = await trx('parties')
-            .where({ id: partyId, firm_id: firmId, is_active: false })
-            .first();
+        let partyQuery = trx('parties').where({ id: partyId, is_active: false });
+        if (firmId) partyQuery.andWhere('firm_id', firmId);
+        const party = await partyQuery.first();
 
         if (!party) {
             await trx.rollback();
@@ -769,7 +871,10 @@ const restorePartyMaster = async (partyId) => {
         await trx('party_bank_accounts').where({ party_id: partyId }).update({ is_active: true });
         await trx('party_contacts').where({ party_id: partyId }).update({ is_active: true });
         await trx('party_branches').where({ party_id: partyId }).update({ is_active: true });
-        const affectedRows = await trx('parties').where({ id: partyId, firm_id: firmId }).update({ is_active: true });
+        
+        let updatePartyQuery = trx('parties').where('id', partyId);
+        if (firmId) updatePartyQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updatePartyQuery.update({ is_active: true });
 
         await trx.commit();
         return affectedRows;
@@ -799,10 +904,12 @@ const bulkRestoreParties = async (partyIds = []) => {
         await trx('party_bank_accounts').whereIn('party_id', partyIds).update({ is_active: true });
         await trx('party_contacts').whereIn('party_id', partyIds).update({ is_active: true });
         await trx('party_branches').whereIn('party_id', partyIds).update({ is_active: true });
-        const affectedRows = await trx('parties')
+        
+        let updatePartiesQuery = trx('parties')
             .whereIn('id', partyIds)
-            .andWhere({ firm_id: firmId, is_active: false })
-            .update({ is_active: true });
+            .andWhere('is_active', false);
+        if (firmId) updatePartiesQuery.andWhere('firm_id', firmId);
+        const affectedRows = await updatePartiesQuery.update({ is_active: true });
 
         await trx.commit();
         return affectedRows;
@@ -823,12 +930,12 @@ const bulkRestoreParties = async (partyIds = []) => {
 
 // ==================== PARTY BRANCHES ====================
 
-// Fetch all branches for a given party
+// Fetch party branches for a given party
 const fetchAllPartyBranches = async (partyId) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const branches = await db('party_branches AS PB')
+        let branchQuery = db('party_branches AS PB')
             .leftJoin('city AS C', 'PB.city_id', 'C.id')
             .leftJoin('state AS S', 'PB.state_id', 'S.id')
             .select(
@@ -855,9 +962,14 @@ const fetchAllPartyBranches = async (partyId) => {
             )
             .where({
                 'PB.party_id': partyId,
-                'PB.firm_id': firmId,
                 'PB.is_active': true
-            })
+            });
+
+        if (firmId) {
+            branchQuery.andWhere('PB.firm_id', firmId);
+        }
+
+        const branches = await branchQuery
             .orderBy('PB.is_default', 'desc')
             .orderBy('PB.id', 'asc');
 
@@ -892,7 +1004,7 @@ const fetchPartyBranchById = async (branchId, partyId) => {
     try {
         const { firmId = 0 } = getContext();
 
-        const branch = await db('party_branches AS PB')
+        let branchQuery = db('party_branches AS PB')
             .leftJoin('city AS C', 'PB.city_id', 'C.id')
             .leftJoin('state AS S', 'PB.state_id', 'S.id')
             .select(
@@ -920,10 +1032,14 @@ const fetchPartyBranchById = async (branchId, partyId) => {
             .where({
                 'PB.id': branchId,
                 'PB.party_id': partyId,
-                'PB.firm_id': firmId,
                 'PB.is_active': true
-            })
-            .first();
+            });
+
+        if (firmId) {
+            branchQuery.andWhere('PB.firm_id', firmId);
+        }
+
+        const branch = await branchQuery.first();
 
         if (!branch) return null;
 
@@ -1502,10 +1618,13 @@ const insertPartyRoleMappings = async (partyId, partyRoleIds, externalTrx = null
         const { firmId = 0, userId = 0 } = getContext();
 
         // 1. Check if party exists
-        const partyExists = await trx('parties')
+        let partyExistsQuery = trx('parties')
             .select('id')
-            .where({ id: partyId, firm_id: firmId })
-            .first();
+            .where('id', partyId);
+        if (firmId) {
+            partyExistsQuery.andWhere('firm_id', firmId);
+        }
+        const partyExists = await partyExistsQuery.first();
 
         if (!partyExists) {
             throw new ApiError({
@@ -1583,22 +1702,28 @@ const insertPartyRoleMappings = async (partyId, partyRoleIds, externalTrx = null
 // Fetch parties by name
 const fetchPartiesByName = async (firmId, search) => {
     try {
-        const parties = await db('parties')
+        let partiesQuery = db('parties')
             .select(
                 'id',
+                'firm_id',
                 'party_code',
                 'legal_name',
-                'display_name'
+                'display_name',
+                'credit_period_days'
             )
-            .where({
-                firm_id: firmId,
-                is_active: true
-            })
-            .where((query) => {
-                query
-                    .whereILike('legal_name', `%${search}%`)
-                    .orWhereILike('display_name', `%${search}%`);
-            })
+            .where('is_active', true);
+
+        if (firmId) {
+            partiesQuery.andWhere('firm_id', firmId);
+        }
+
+        partiesQuery.where((query) => {
+            query
+                .whereILike('legal_name', `%${search}%`)
+                .orWhereILike('display_name', `%${search}%`);
+        });
+
+        const parties = await partiesQuery
             .orderBy('legal_name', 'asc')
             .limit(10);
 
@@ -1632,6 +1757,7 @@ const fetchPartyDetails = async (partyId) => {
                 'pan_number',
                 'website',
                 'remarks',
+                'credit_period_days',
                 'status'
             )
             .where({ id: partyId, is_active: true })
@@ -1752,6 +1878,7 @@ module.exports = {
     fetchPartiesByName,
     fetchPartyDetails,
     fetchAllPartyBranches,
+    fetchPartyBranches: fetchAllPartyBranches,
     fetchPartyBranchById,
     insertPartyBranch,
     updatePartyBranchById,
