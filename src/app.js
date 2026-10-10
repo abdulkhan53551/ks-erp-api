@@ -15,23 +15,66 @@ const { fetchChallanPOEwayBillsForInvoice } = require('./api/v1/models/invoice.m
 
 const app = express()
 app.get('/test-pdf', async (req, res, next) => {
-      const browser = await puppeteer.launch();
-      const page = await browser.newPage();
-      await page.setContent("<h1>Hello, World!</h1>");
-      const pdf = await page.pdf();
-      const pdfBuffer = Buffer.from(pdf);
+  // const browser = await puppeteer.launch({
+  //   executablePath: path.join(
+  //     process.cwd(),
+  //     ".cache/puppeteer/chrome/linux-150.0.7871.24/chrome-linux64/chrome"
+  //   ),
+  //   headless: true,
+  //   args: [
+  //     "--no-sandbox",
+  //     "--disable-setuid-sandbox",
+  //     "--disable-dev-shm-usage",
+  //   ],
+  // });
 
-      await browser.close();
-  
-      // Set the headers for the response as a PDF file
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
-      const fileName = 'test.pdf';
-      res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-      res.send(pdfBuffer);
+  const chromeRoot = path.join(
+    process.cwd(),
+    ".cache",
+    "puppeteer",
+    "chrome"
+  );
+
+  const version = fs.readdirSync(chromeRoot)[0];
+
+  const executablePath = path.join(
+    chromeRoot,
+    version,
+    "chrome-linux64",
+    "chrome"
+  );
+
+  const browser = await puppeteer.launch({
+    executablePath,
+    headless: true,
+    // args: [
+    //   "--no-sandbox",
+    //   "--disable-setuid-sandbox",
+    //   "--disable-dev-shm-usage",
+    // ],
+  });
+  const page = await browser.newPage();
+  await page.setContent("<h1>Hello, World!</h1>");
+  const pdf = await page.pdf();
+  const pdfBuffer = Buffer.from(pdf);
+
+  await browser.close();
+
+  // Set the headers for the response as a PDF file
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+  const fileName = 'test.pdf';
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(pdfBuffer);
 })
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
 app.use(cookieParser())
+
+// Lightweight health check (zero DB overhead for Render and React wakeup)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', uptime: process.uptime() });
+});
+
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
 app.use(express.static('public'))

@@ -800,7 +800,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         company: {
             logo: invoice.company_logo,
             name: invoice.company_name,
-            gstNo: invoice.firm_gstin || '',
+            gstNo: invoice.firm_gstin,
             address: companyAddress,
             mobile: invoice.company_phone_number,
             email: invoice.company_email
@@ -1107,7 +1107,16 @@ const getBrowser = async (puppeteer) => {
     }
 
     let executablePath;
-    if (process.env.NODE_ENV === 'production') {
+    try {
+        const defaultPath = await puppeteer.executablePath();
+        if (fs.existsSync(defaultPath)) {
+            executablePath = defaultPath;
+        }
+    } catch (e) {
+        // Fallback to searching the project cache directory
+    }
+
+    if (!executablePath) {
         const chromeRoot = path.join(
             process.cwd(),
             ".cache",
@@ -1115,14 +1124,25 @@ const getBrowser = async (puppeteer) => {
             "chrome"
         );
 
-        const version = fs.readdirSync(chromeRoot)[0];
+        if (fs.existsSync(chromeRoot)) {
+            const versions = fs.readdirSync(chromeRoot)
+                .filter(file => !file.startsWith('.'))
+                .sort()
+                .reverse(); // Ensures newest version is prioritized
 
-        executablePath = path.join(
-            chromeRoot,
-            version,
-            "chrome-linux64",
-            "chrome"
-        );
+            for (const ver of versions) {
+                const candidate = path.join(
+                    chromeRoot,
+                    ver,
+                    "chrome-linux64",
+                    "chrome"
+                );
+                if (fs.existsSync(candidate)) {
+                    executablePath = candidate;
+                    break;
+                }
+            }
+        }
     }
 
     browserInstance = await puppeteer.launch({
@@ -1221,6 +1241,12 @@ const generateInvoicePDF = async (invoiceData, puppeteer) => {
         }
     }
 };
+
+process.on("SIGTERM", async () => {
+    if (browserInstance) {
+        await browserInstance.close();
+    }
+});
 
 // Evaluate page
 const evaluatePage = async () => {

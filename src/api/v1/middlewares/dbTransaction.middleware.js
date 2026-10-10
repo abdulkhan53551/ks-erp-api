@@ -3,38 +3,43 @@
 const { db } = require("../database");
 
 async function dbTransaction(req, res, next) {
-    const trx = await db.transaction(); // start a transaction
-    req.trx = trx; // attach it to request
+    try {
+        const trx = await db.transaction(); // start a transaction
+        req.trx = trx; // attach it to request
 
-    res.on('finish', async () => {
-        // Commit if request succeeded
-        if (res.statusCode < 400) {
-            try {
-                await trx.commit();
-            } catch (error) {
-                console.error('Transaction commit error:', error);
+        res.on('finish', async () => {
+            // Commit if request succeeded
+            if (res.statusCode < 400) {
+                try {
+                    await trx.commit();
+                } catch (error) {
+                    console.error('Transaction commit error:', error);
+                }
+            } else {
+                // Rollback if request failed
+                try {
+                    await trx.rollback();
+                } catch (error) {
+                    console.error('Transaction rollback error:', error);
+                }
             }
-        } else {
-            // Rollback if request failed
-            try {
-                await trx.rollback();
-            } catch (error) {
-                console.error('Transaction rollback error:', error);
-            }
-        }
-    });
+        });
 
-    res.on('close', async () => {
-        if (!trx.isCompleted()) {
-            try {
-                await trx.rollback();
-            } catch (error) {
-                console.error('Transaction close rollback error:', error);
+        res.on('close', async () => {
+            if (!trx.isCompleted()) {
+                try {
+                    await trx.rollback();
+                } catch (error) {
+                    console.error('Transaction close rollback error:', error);
+                }
             }
-        }
-    });
+        });
 
-    next();
+        next();
+    } catch (error) {
+        console.error('Database transaction initialization error:', error);
+        next(error);
+    }
 }
 
 module.exports = dbTransaction;

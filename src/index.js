@@ -4,22 +4,27 @@ const { initCasbin } = require("./api/v1/services/casbin");
 const { app } = require('./app')
 const { PORT } = require('./config');
 
-// Listen for the SIGINT signal (e.g., Ctrl + C in the terminal)
-// process.on('SIGINT', async () => {
-//     try {
-//         const redisClient = getRedisClient()
-//         console.log('Closing database connection...');
-//         await db.destroy();
+// Graceful shutdown handling (SIGINT, SIGTERM)
+const shutdown = async (signal) => {
+    console.log(`\n🛑 Received ${signal}. Closing connections...`);
+    try {
+        console.log('Closing database connection pool...');
+        await db.destroy();
 
-//         console.log('Closing Redis connection...');
-//         await redisClient.disconnect(); // Optional if Redis needs cleanup
-
-//         process.exit(0);
-//     } catch (error) {
-//         console.error('Error during shutdown:', error);
-//         process.exit(1);
-//     }
-// });
+        // try {
+        //     const redisClient = getRedisClient();
+        //     if (redisClient) {
+        //         console.log('Closing Redis connection...');
+        //         await redisClient.disconnect();
+        //     }
+        // } catch (_) {}
+        console.log('✅ Connections closed. Exiting cleanly.');
+        process.exit(0);
+    } catch (error) {
+        console.error('❌ Error during shutdown:', error);
+        process.exit(1);
+    }
+};
 
 connectDB()
     .then(async () => {
@@ -42,3 +47,6 @@ connectDB()
         }
         process.exit(1);
     });
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
