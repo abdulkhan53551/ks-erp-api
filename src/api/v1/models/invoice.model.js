@@ -10,7 +10,16 @@ const { updateInvoicePurchaseOrderMapping } = require("./purchaseOrder.model");
 // Fetch all invoices
 const fetchAllInvoice = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const {
+            page = 1,
+            pageSize = 10,
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
@@ -71,6 +80,24 @@ const fetchAllInvoice = async (query) => {
             baseQuery.andWhere('I.firm_branch_id', branchId);
         }
 
+        if (paymentStatus) {
+            baseQuery.andWhere('PS.code', paymentStatus);
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
@@ -109,7 +136,16 @@ const fetchAllInvoice = async (query) => {
 // Fetch invoice meta data for pagination
 const fetchInvoiceMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const {
+            page = 1,
+            pageSize = 10,
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
@@ -130,6 +166,24 @@ const fetchInvoiceMeta = async (query) => {
         const { branchId = null } = getContext();
         if (branchId) {
             baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
+
+        if (paymentStatus) {
+            baseQuery.andWhere('PS.code', paymentStatus);
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
         }
 
         if (search) {
