@@ -11,7 +11,7 @@ const getInvoiceByIdValidationSchema = {
 // Create invoice validation schema
 const createInvoiceValidationSchema = {
   body: Joi.object({
-    invoiceNo: Joi.string().max(255).required(),
+    invoiceNo: Joi.string().max(255).allow(null, '').optional(),
     invoiceDate: Joi.date().required(),
 
     dueDays: Joi.number().integer().min(0).required(),
@@ -151,7 +151,7 @@ const updateInvoiceValidationSchema = {
     id: Joi.number().integer().required().label('Invoice ID'),
   }),
   body: Joi.object({
-    invoiceNo: Joi.string().max(255).required(),
+    invoiceNo: Joi.string().max(255).allow(null, '').optional(),
     invoiceDate: Joi.date().required(),
 
     dueDays: Joi.number().integer().min(0),

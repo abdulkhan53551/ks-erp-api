@@ -439,7 +439,6 @@ const fetchNextExpectedInvoiceNumber = async (firmId, trx = db) => {
 const insertInvoiceMaster = async (trx, data) => {
     // 1. Pessimistic Row Lock on Firm:
     // Serializes concurrent invoice creations for the same firm.
-    // If User A and User B click Save at the exact same millisecond,
     // PostgreSQL queues them sequentially, guaranteeing 100% race-condition safety.
     const firm = await trx('firms')
         .where({ id: data.firm_id })
@@ -453,53 +452,14 @@ const insertInvoiceMaster = async (trx, data) => {
         });
     }
 
-    // 2. Calculate next expected consecutive invoice number inside the lock
-    const nextExpectedInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
-    const incomingNum = extractInvoiceNumber(data.invoice_no);
-    const expectedNum = extractInvoiceNumber(nextExpectedInvoiceNo);
-
-    // Rule 1: STRICTLY BLOCK FUTURE SEQUENCE JUMPS (Anti-Gap / GST Rule 46 Guard)
-    if (incomingNum !== null && expectedNum !== null && incomingNum > expectedNum) {
-        throw new ApiError({
-            statusCode: 400,
-            message: `Invalid Invoice Number! Sequence jump is not allowed under GST compliance rules. Next expected invoice number is ${nextExpectedInvoiceNo}.`
-        });
-    }
-
-    // Rule 2: Check if invoice_no already exists (Handle Race Conditions & Duplicates)
-    const existingInvoice = await trx('invoices')
-        .select('id', 'is_active', 'invoice_no')
-        .where({ firm_id: data.firm_id, invoice_no: data.invoice_no })
-        .first();
-
-    let finalInvoiceNo = data.invoice_no;
-
-    if (existingInvoice) {
-        // Auto-healing for concurrent creations (e.g. User A & User B both loaded the same number):
-        // If the submitted number was claimed moments ago during concurrent entry,
-        // seamlessly assign the locked, freshly calculated nextExpectedInvoiceNo (no while-loop needed)!
-        if (incomingNum !== null && expectedNum !== null && incomingNum >= (expectedNum - 5)) {
-            finalInvoiceNo = nextExpectedInvoiceNo;
-            data.invoice_no = nextExpectedInvoiceNo;
-        } else {
-            // For deliberate duplicate backdated or specific manual entries that already exist:
-            if (existingInvoice.is_active) {
-                throw new ApiError({
-                    statusCode: 409,
-                    message: `Invoice number '${data.invoice_no}' already exists.`
-                });
-            } else {
-                throw new ApiError({
-                    statusCode: 409,
-                    message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
-                });
-            }
-        }
-    }
+    // 2. Pure Backend Auto-Assignment:
+    // Generate the true, guaranteed next consecutive invoice number under the lock
+    const nextInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
+    data.invoice_no = nextInvoiceNo;
 
     try {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
-        return { id, invoiceNo: finalInvoiceNo };
+        return { id, invoiceNo: nextInvoiceNo };
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({

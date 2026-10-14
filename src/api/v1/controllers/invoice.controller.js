@@ -101,7 +101,7 @@ const createInvoice = asyncHandler(async (req, res) => {
     const isPaid = Number(invoice.paymentStatusId) === statusMap['PAID'];
 
     const invoiceMaster = {
-        invoice_no: invoice.invoiceNo,
+        invoice_no: invoice.invoiceNo || null,
         invoice_date: invoice.invoiceDate,
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
