@@ -391,35 +391,115 @@ const insertInvoice = async (data) => {
 
         // Update billing & shipping address id into invoice
         await updateAddressIdInInvoice(trx, invoiceId, addressResult)
-        return invoiceId;
+        return { invoiceId, invoiceNo };
     });
 }
 
+// Helper to extract numeric suffix from invoice number string
+const extractInvoiceNumber = (invoiceNo) => {
+    const numberMatch = String(invoiceNo || '').match(/\d+$/);
+    return numberMatch ? parseInt(numberMatch[0], 10) : null;
+};
+
+// Calculate next sequential invoice number from existing invoice number string
+const calculateNextInvoiceNumber = (invoiceNo) => {
+    const numberMatch = String(invoiceNo || '').match(/\d+$/);
+    if (!numberMatch) {
+        return `${invoiceNo || ''}1`;
+    }
+    const number = numberMatch[0];
+    const prefix = invoiceNo.substring(0, invoiceNo.length - number.length);
+    const nextNumber = String(Number(number) + 1).padStart(number.length, "0");
+    return `${prefix}${nextNumber}`;
+};
+
+// Fetch next expected consecutive invoice number
+const fetchNextExpectedInvoiceNumber = async (firmId, trx = db) => {
+    const lastInvoice = await trx('invoices')
+        .select('invoice_no')
+        .where({ firm_id: firmId })
+        .orderBy('id', 'desc')
+        .first();
+
+    if (lastInvoice?.invoice_no) {
+        return calculateNextInvoiceNumber(lastInvoice.invoice_no);
+    }
+
+    const firm = await trx('firms')
+        .select('invoice_prefix', 'invoice_start_number')
+        .where({ id: firmId, is_active: true })
+        .first();
+
+    const prefix = firm?.invoice_prefix || 'INV';
+    const startNum = firm?.invoice_start_number || '1';
+    return `${prefix}${startNum}`;
+};
+
 // Insert invoice master data
 const insertInvoiceMaster = async (trx, data) => {
-    // 1. Check if invoice_no already exists in active or trashed state
+    // 1. Pessimistic Row Lock on Firm:
+    // Serializes concurrent invoice creations for the same firm.
+    // If User A and User B click Save at the exact same millisecond,
+    // PostgreSQL queues them sequentially, guaranteeing 100% race-condition safety.
+    const firm = await trx('firms')
+        .where({ id: data.firm_id })
+        .forUpdate()
+        .first();
+
+    if (!firm) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Firm not found.'
+        });
+    }
+
+    // 2. Calculate next expected consecutive invoice number inside the lock
+    const nextExpectedInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
+    const incomingNum = extractInvoiceNumber(data.invoice_no);
+    const expectedNum = extractInvoiceNumber(nextExpectedInvoiceNo);
+
+    // Rule 1: STRICTLY BLOCK FUTURE SEQUENCE JUMPS (Anti-Gap / GST Rule 46 Guard)
+    if (incomingNum !== null && expectedNum !== null && incomingNum > expectedNum) {
+        throw new ApiError({
+            statusCode: 400,
+            message: `Invalid Invoice Number! Sequence jump is not allowed under GST compliance rules. Next expected invoice number is ${nextExpectedInvoiceNo}.`
+        });
+    }
+
+    // Rule 2: Check if invoice_no already exists (Handle Race Conditions & Duplicates)
     const existingInvoice = await trx('invoices')
         .select('id', 'is_active', 'invoice_no')
         .where({ firm_id: data.firm_id, invoice_no: data.invoice_no })
         .first();
 
+    let finalInvoiceNo = data.invoice_no;
+
     if (existingInvoice) {
-        if (existingInvoice.is_active) {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Invoice number '${data.invoice_no}' already exists.`
-            });
+        // Auto-healing for concurrent creations (e.g. User A & User B both loaded the same number):
+        // If the submitted number was claimed moments ago during concurrent entry,
+        // seamlessly assign the locked, freshly calculated nextExpectedInvoiceNo (no while-loop needed)!
+        if (incomingNum !== null && expectedNum !== null && incomingNum >= (expectedNum - 5)) {
+            finalInvoiceNo = nextExpectedInvoiceNo;
+            data.invoice_no = nextExpectedInvoiceNo;
         } else {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
-            });
+            // For deliberate duplicate backdated or specific manual entries that already exist:
+            if (existingInvoice.is_active) {
+                throw new ApiError({
+                    statusCode: 409,
+                    message: `Invoice number '${data.invoice_no}' already exists.`
+                });
+            } else {
+                throw new ApiError({
+                    statusCode: 409,
+                    message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
+                });
+            }
         }
     }
 
     try {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
-        return id;
+        return { id, invoiceNo: finalInvoiceNo };
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -533,7 +613,9 @@ const updateInvoiceById = async (data) => {
 // Update invoice master data
 const updateInvoiceMaster = async (trx, invoiceId, data) => {
     try {
-        await trx('invoices').update(data).where({ id: invoiceId });
+        // Ensure invoice_no is immutable once created
+        const { invoice_no, ...safeData } = data;
+        await trx('invoices').update(safeData).where({ id: invoiceId });
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -938,5 +1020,8 @@ module.exports = {
     // fetchEwayBillsForInvoice,
     fetchChallanPOEwayBillsForInvoice,
     fetchLastInvoiceNumber,
-    fetchInvoiceSettings
+    fetchInvoiceSettings,
+    fetchNextExpectedInvoiceNumber,
+    calculateNextInvoiceNumber,
+    extractInvoiceNumber
 };
