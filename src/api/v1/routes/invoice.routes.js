@@ -9,6 +9,7 @@ const {
     updateInvoice, 
     deleteInvoice, 
     restoreInvoice, 
+    cancelInvoice,
     bulkDeleteInvoices, 
     bulkRestoreInvoices, 
     getInvoicePdf, 
@@ -22,7 +23,8 @@ const {
     restoreInvoiceValidationSchema, 
     bulkDeleteInvoicesValidationSchema, 
     bulkRestoreInvoicesValidationSchema, 
-    queryInvoicesSchema 
+    queryInvoicesSchema,
+    cancelInvoiceValidationSchema
 } = require('../validation/invoice.validation');
 
 const router = Router();
@@ -37,6 +39,7 @@ router.patch('/bulk-restore', requireFirmContext, checkPermission('invoices', 'd
 router.get('/:id/pdf', checkPermission('invoices', 'print'), validate(getInvoiceByIdValidationSchema), getInvoicePdf);
 router.get('/:id', checkPermission('invoices', 'read'), validate(getInvoiceByIdValidationSchema), getInvoiceById);
 router.patch('/:id', requireFirmContext, checkPermission('invoices', 'update'), validate(updateInvoiceValidationSchema), updateInvoice);
+router.patch('/:id/cancel', requireFirmContext, checkPermission('invoices', 'update'), validate(cancelInvoiceValidationSchema), cancelInvoice);
 router.patch('/:id/restore', requireFirmContext, checkPermission('invoices', 'delete'), validate(restoreInvoiceValidationSchema), restoreInvoice);
 router.delete('/:id', requireFirmContext, checkPermission('invoices', 'delete'), validate(deleteInvoiceValidationSchema), deleteInvoice);
 

@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -572,6 +572,23 @@ const restoreInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+// Cancel invoice by ID
+const cancelInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+    const { cancelReason = '' } = req.body || {};
+    const userId = req.user?.id || null;
+
+    const result = await cancelInvoiceById(Number(invoiceId), userId, cancelReason);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: `Invoice ${result.invoiceNo} cancelled successfully. Linked Challans, POs, and E-Way Bills have been released.`
+        })
+    );
+});
+
 // Bulk delete invoices
 const bulkDeleteInvoices = asyncHandler(async (req, res) => {
     const { ids = [], isPermanentDelete = false } = req.body;
@@ -781,6 +798,8 @@ const prepareInvoicePdfJsonData = async (invoice) => {
 
     const invoiceData = {
         id: invoice.id,
+        status: invoice.status || 'Final',
+        cancelReason: invoice.cancel_reason || '',
         customerName: invoice.customerName,
         isInterState: isInterState,
         company: {
@@ -1267,6 +1286,7 @@ module.exports = {
     updateInvoice,
     deleteInvoice,
     restoreInvoice,
+    cancelInvoice,
     bulkDeleteInvoices,
     bulkRestoreInvoices,
     getNextInvoiceNumber,

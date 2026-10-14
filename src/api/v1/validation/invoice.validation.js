@@ -419,6 +419,16 @@ const queryInvoicesSchema = {
   })
 };
 
+// Cancel invoice schema
+const cancelInvoiceValidationSchema = {
+  params: Joi.object({
+    id: Joi.number().integer().positive().required().label('Invoice ID'),
+  }),
+  body: Joi.object({
+    cancelReason: Joi.string().trim().max(500).allow('', null).optional()
+  })
+};
+
 module.exports = {
   getInvoiceByIdValidationSchema,
   createInvoiceValidationSchema,
@@ -427,5 +437,6 @@ module.exports = {
   restoreInvoiceValidationSchema,
   bulkDeleteInvoicesValidationSchema,
   bulkRestoreInvoicesValidationSchema,
-  queryInvoicesSchema
+  queryInvoicesSchema,
+  cancelInvoiceValidationSchema
 };

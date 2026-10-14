@@ -27,6 +27,8 @@ const fetchAllInvoice = async (query) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_date',
                 'I.party_id',
@@ -227,6 +229,8 @@ const fetchInvoiceById = async (id) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_days',
                 'I.due_date',
@@ -789,6 +793,64 @@ const bulkRestoreInvoices = async (invoiceIds = []) => {
     }
 };
 
+// Cancel invoice by ID
+const cancelInvoiceById = async (invoiceId, userId = null, cancelReason = '') => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return await db.transaction(async (trx) => {
+            const invQuery = trx('invoices').where({ id: invoiceId });
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+
+            const invoice = await invQuery.forUpdate().first();
+
+            if (!invoice) {
+                throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+            }
+
+            if (invoice.status === 'Cancelled') {
+                throw new ApiError({ statusCode: 400, message: 'This invoice is already cancelled.' });
+            }
+
+            if (Number(invoice.paid_amount || 0) > 0) {
+                throw new ApiError({
+                    statusCode: 400,
+                    message: `Cannot cancel invoice ${invoice.invoice_no} because payment receipts of ₹${Number(invoice.paid_amount).toFixed(2)} are active. Please cancel or roll back the attached payment receipts first in the Payments section.`
+                });
+            }
+
+            // 1. Mark status as Cancelled and record cancellation reason
+            await trx('invoices')
+                .where({ id: invoiceId })
+                .update({
+                    status: 'Cancelled',
+                    cancel_reason: cancelReason || null,
+                    updated_by: userId,
+                    updated_at: new Date()
+                });
+
+            // 2. Release linked dispatch documents (Challans, POs, E-Way bills)
+            await Promise.all([
+                trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
+                trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null })
+            ]);
+
+            return { invoiceId, invoiceNo: invoice.invoice_no };
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while cancelling invoice.',
+        });
+    }
+};
+
 // Fetch challans for invoice
 const fetchChallansForInvoice = async (invoiceId) => {
     try {
@@ -983,5 +1045,6 @@ module.exports = {
     fetchInvoiceSettings,
     fetchNextExpectedInvoiceNumber,
     calculateNextInvoiceNumber,
-    extractInvoiceNumber
+    extractInvoiceNumber,
+    cancelInvoiceById
 };
