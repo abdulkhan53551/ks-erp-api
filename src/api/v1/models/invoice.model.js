@@ -380,7 +380,7 @@ const insertInvoice = async (data) => {
     const { masterData, items, billing, shipping, document = {} } = data;
     return await db.transaction(async trx => {
         // 1. Insert master data
-        const invoiceId = await insertInvoiceMaster(trx, masterData);
+        const { id: invoiceId, invoiceNo } = await insertInvoiceMaster(trx, masterData);
 
         const address = [billing, shipping]
 
