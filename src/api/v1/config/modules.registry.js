@@ -7,6 +7,14 @@
 const MODULES_REGISTRY = [
     // 📊 SALES MANAGEMENT
     {
+        slug: 'quotations',
+        name: 'Quotations & Estimates',
+        category: 'Sales Management',
+        icon: 'file-text',
+        description: 'Commercial offers, dynamic engineering specs, dual templates & approvals',
+        actions: ['read', 'create', 'update', 'delete', 'approve', 'print']
+    },
+    {
         slug: 'invoices',
         name: 'Sales Invoices',
         category: 'Sales Management',

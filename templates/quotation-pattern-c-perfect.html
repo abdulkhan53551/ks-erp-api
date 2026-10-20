@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>K.S. Engineering Works - Enterprise Quotation & Pure Engineering Matrix</title>
+  <style>
+    
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  @page { size: A4 portrait; margin: 0; }
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    margin: 0; padding: 0; color: #1e293b; font-size: 8.5px; line-height: 1.35; background: #e2e8f0;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+  }
+  .page-sheet {
+    width: 210mm; height: 297mm; max-height: 297mm; margin: 0 auto 12mm auto; background: #ffffff;
+    padding: 7mm 8mm; display: flex; flex-direction: column; overflow: hidden; page-break-after: always; position: relative;
+  }
+  @media print { body { background: transparent; } .page-sheet { margin: 0; page-break-after: always; } }
+  
+  /* Outer Frame: Light, refined border with brand red top line accent */
+  .doc-frame {
+    border: 1.5px solid #e2e8f0; border-top: 3.5px solid #dc2626; border-radius: 4px;
+    display: flex; flex-direction: column; flex: 1; height: 100%; overflow: hidden; background: #ffffff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+  }
+  
+  /* Top Brand Header Bar: Ultra-Clean Executive Light Header with Brand Red Accents */
+  .top-bar {
+    background: #ffffff; color: #1e293b; padding: 6px 12px; display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1.5px solid #f1f5f9; flex-wrap: nowrap;
+  }
+  .top-left-group { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; }
+  .top-title { font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #0f172a; white-space: nowrap; }
+  .top-tag { background: #fef2f2; color: #dc2626; border: 1px solid #fecdd3; font-size: 7.5px; font-weight: 600; padding: 1.5px 6px; border-radius: 3px; letter-spacing: 0.2px; white-space: nowrap; }
+  .top-meta { font-size: 8px; color: #64748b; font-weight: 500; white-space: nowrap; }
+  .top-meta b { color: #0f172a; font-weight: 600; }
+
+  /* Company & Client Header Grid */
+  .header-grid { display: flex; border-bottom: 1px solid #e2e8f0; }
+  .co-box { flex: 1.35; padding: 6px 10px; border-right: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; }
+  .co-info { flex: 1; }
+  .co-name { font-size: 13px; font-weight: 700; color: #dc2626; letter-spacing: 0.3px; margin: 0; }
+  .co-sub { font-size: 7px; font-weight: 600; color: #475569; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.2px; }
+  .co-details { font-size: 8px; color: #475569; line-height: 1.35; }
+  .co-details b { font-weight: 600; color: #1e293b; }
+
+  .meta-box { flex: 0.85; padding: 6px 10px; font-size: 8px; background: #fafbfc; }
+  .meta-row { display: flex; justify-content: space-between; margin-bottom: 2.5px; }
+  .meta-lbl { color: #64748b; font-weight: 500; }
+  .meta-val { color: #0f172a; font-weight: 600; }
+
+  .client-grid { display: flex; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+  .client-box { flex: 1.35; padding: 6px 10px; border-right: 1px solid #e2e8f0; }
+  .terms-box { flex: 0.85; padding: 6px 10px; font-size: 8px; background: #fafbfc; line-height: 1.4; }
+  .sec-tag { font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #dc2626; letter-spacing: 0.3px; margin-bottom: 2.5px; }
+
+  /* Center & Right alignment utilities */
+  .center { text-align: center !important; }
+  .right { text-align: right !important; }
+  .left { text-align: left !important; }
+
+  /* Commercial Table - Light, clean, modern theme header */
+  .table-container { flex: 1; display: flex; flex-direction: column; }
+  .comm-table { width: 100%; border-collapse: collapse; }
+  .comm-table th {
+    background: #fef2f2; color: #991b1b; font-size: 7.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2px;
+    padding: 5px 6px; border-top: 1.5px solid #dc2626; border-bottom: 1.5px solid #dc2626; border-right: 1px solid #fee2e2; text-align: left;
+  }
+  .comm-table th.center, .comm-table td.center, .comm-row td.center { text-align: center !important; }
+  .comm-table th.right, .comm-table td.right, .comm-row td.right { text-align: right !important; }
+  .comm-table th.left, .comm-table td.left, .comm-row td.left { text-align: left !important; }
+  .comm-table th:last-child { border-right: none; }
+  
+  .comm-row td {
+    border: 1px solid #e2e8f0; padding: 3.5px 6px; font-size: 8px; vertical-align: middle; color: #1e293b;
+  }
+  .comm-row td.center { text-align: center !important; }
+  .comm-row td.right { text-align: right !important; }
+  .comm-row:nth-child(even) { background: #f8fafc; }
+  
+  .badge-red {
+    display: inline-block; padding: 1.5px 5px; border-radius: 2px; font-size: 7px; font-weight: 600; letter-spacing: 0.2px;
+    background: #fef2f2; color: #dc2626; border: 0.5px solid #fecdd3;
+  }
+
+  .filler-row { height: 100%; }
+  .filler-row td { border-bottom: none; border-color: #f1f5f9; background: #ffffff; }
+
+  /* Summary Section */
+  .summary-grid { display: flex; border-top: 1.5px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+  .words-box { flex: 1.25; padding: 6px 10px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; }
+  .calc-box { flex: 0.95; padding: 6px 10px; font-size: 8px; background: #fafbfc; }
+  .calc-row { display: flex; justify-content: space-between; margin-bottom: 2.5px; font-weight: 500; }
+  .calc-row.grand {
+    border-top: 1.5px solid #dc2626; margin-top: 4px; padding-top: 4px; font-size: 9.5px; font-weight: 700; color: #dc2626;
+  }
+
+  /* Pinned Footer with Light Branded T&C and Signature - Clean Text (Chip Removed) */
+  .footer-grid { display: flex; padding: 6px 10px; font-size: 7.5px; background: #ffffff; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; }
+  .terms-container { max-width: 68%; display: flex; flex-direction: column; gap: 2.5px; }
+  .terms-badge {
+    font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #dc2626; letter-spacing: 0.3px;
+    display: inline-block; margin-bottom: 2.5px; background: transparent; border: none; padding: 0;
+  }
+  .terms-list { display: flex; flex-direction: column; gap: 1.5px; }
+  .terms-item { font-size: 7.5px; color: #475569; line-height: 1.35; display: flex; gap: 4px; }
+  .terms-bullet { color: #dc2626; font-weight: 600; flex-shrink: 0; }
+
+  .sign-box { text-align: center; min-width: 160px; display: flex; flex-direction: column; align-items: center; }
+  .sign-company { font-size: 7.5px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.2px; }
+  .sign-firm-name { color: #dc2626; font-weight: 700; }
+  .sign-space { height: 22px; }
+  .sign-line { border-top: 1px dashed #ef4444; width: 100%; padding-top: 2px; font-size: 7.5px; font-weight: 600; color: #64748b; }
+
+
+    /* Annexure Pure Table Styling */
+    .annex-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .annex-table th {
+      background: #fef2f2; color: #991b1b; font-size: 7px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2px;
+      padding: 5px 5px; border-top: 1.5px solid #dc2626; border-bottom: 1.5px solid #dc2626; border-right: 1px solid #fee2e2; text-align: left; vertical-align: middle;
+    }
+    .annex-table th.center, .annex-table td.center, .annex-row td.center { text-align: center !important; }
+    .annex-table th.right, .annex-table td.right, .annex-row td.right { text-align: right !important; }
+    .annex-table th:last-child { border-right: none; }
+
+    .annex-row td {
+      border: 1px solid #e2e8f0; padding: 4px 5px; font-size: 7.5px; vertical-align: top; line-height: 1.35; color: #1e293b;
+    }
+    .annex-row:nth-child(even) td { background: #f8fafc; }
+
+    .lbl { color: #64748b; font-weight: 500; font-size: 7px; }
+    .val { color: #0f172a; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <!-- ================= PAGE 1: COMMERCIAL QUOTATION ================= -->
+  <div class="page-sheet">
+    <div class="doc-frame">
+      <div class="top-bar">
+        <div class="top-left-group">
+          <span class="top-title">COMMERCIAL QUOTATION / ESTIMATE</span>
+          <span class="top-tag">REV-02</span>
+        </div>
+        <div class="top-meta">Page 1 of 2 (Commercial Offer) | Original for Buyer</div>
+      </div>
+
+      <div class="header-grid">
+        <div class="co-box">
+          <div class="co-logo">
+<svg width="42" height="42" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <polygon points="50,4 88,26 88,74 50,96 12,74 12,26" fill="#fef2f2" stroke="#dc2626" stroke-width="5" stroke-linejoin="round"/>
+  <circle cx="50" cy="50" r="32" fill="#ffffff" stroke="#ef4444" stroke-width="2.5" stroke-dasharray="4 2"/>
+  <text x="50" y="57" font-family="'Segoe UI', -apple-system, sans-serif" font-weight="900" font-size="22" fill="#dc2626" text-anchor="middle" letter-spacing="1">KS</text>
+</svg>
+</div>
+          <div class="co-info">
+            <h1 class="co-name">K.S. ENGINEERING WORKS</h1>
+            <div class="co-sub">PRECISION MACHINING, TURNED COMPONENTS & FABRICATION</div>
+            <div class="co-details">
+              FA-3, Plot No 1, S.S.I Unit, MIDC, Ambad, Nashik, Maharashtra - 422010<br>
+              <b>GSTIN:</b> 27AQUPK5416E1ZM &nbsp;|&nbsp; <b>PAN:</b> AQUPK5416E<br>
+              <b>Ph:</b> +91 9890241776 &nbsp;|&nbsp; <b>Email:</b> ksengineeringworks2005@gmail.com
+            </div>
+          </div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-row"><span class="meta-lbl">Quotation No:</span><span class="meta-val" style="color:#dc2626;">QT-2026-0042/R2</span></div>
+          <div class="meta-row"><span class="meta-lbl">Quotation Date:</span><span class="meta-val">17-Oct-2026</span></div>
+          <div class="meta-row"><span class="meta-lbl">Client RFQ Ref:</span><span class="meta-val">TECNOTRANS/RFQ-9821</span></div>
+          <div class="meta-row"><span class="meta-lbl">Validity:</span><span class="meta-val" style="color:#047857;">30 Days (Upto 16-Nov-2026)</span></div>
+        </div>
+      </div>
+
+      <div class="client-grid">
+        <div class="client-box">
+          <div class="sec-tag">QUOTATION PREPARED FOR (BILLED TO)</div>
+          <div style="font-size:9px; font-weight:600; color:#0f172a;">TECNOTRANS ELECTRIC AND ENGINEERING SERVICES PRIVATE LIMITED</div>
+          <div style="font-size:8px; color:#334155; margin-top:2px; line-height:1.35;">
+            Plot No. 1388/3072, BS Bhawan, Balianta Bazar Road, Near Shakti Paradire Apartment, Hansapal, Bhubaneshwar, Khordha, Odisha - 752101<br>
+            <b>GSTIN:</b> 21AAMCT5739N1ZS &nbsp;|&nbsp; <b>Kind Attn:</b> Mr. P. K. Mohanty (DGM - Procurement & Quality)<br>
+            <b>Phone:</b> 7008342064 &nbsp;|&nbsp; <b>Email:</b> tecnotransele@gmail.com
+          </div>
+        </div>
+        <div class="terms-box">
+          <div class="sec-tag">COMMERCIAL DELIVERY & PAYMENT</div>
+          <div><b>Payment Terms:</b> 30 Days Credit from Delivery Date</div>
+          <div><b>Delivery Period:</b> 2-3 Weeks from Confirmed PO</div>
+          <div><b>Freight Basis:</b> Ex-Works Nashik (Freight extra at actuals)</div>
+          <div><b>Place of Supply:</b> Odisha (State Code: 21) - Interstate</div>
+        </div>
+      </div>
+
+      <!-- Commercial Table (6 items) -->
+      <div class="table-container">
+        <table class="comm-table">
+          <thead>
+            
+      <tr>
+        <th style="width: 3%;" class="center">#</th>
+        <th style="width: 37%;">DESCRIPTION OF GOODS & TECHNICAL DRAWING REF</th>
+        <th style="width: 7%;" class="center">HSN</th>
+        <th style="width: 6%;" class="center">QTY</th>
+        <th style="width: 6%;" class="center">UNIT</th>
+        <th style="width: 11%;" class="right">RATE (₹)</th>
+        <th style="width: 14%;" class="right">TAXABLE (₹)</th>
+        <th style="width: 5%;" class="center">IGST</th>
+        <th style="width: 11%;" class="right">AMOUNT (₹)</th>
+      </tr>
+    
+          </thead>
+          <tbody>
+            
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">1</td>
+        <td>
+          <b>Round Copper Terminal Block ø30x25xM12</b> &nbsp;<span class="badge-red">DWG: KS-2026-C01 Rev B</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">7407</td>
+        <td class="center" style="font-weight:700;">200</td>
+        <td class="center">NOS</td>
+        <td class="right">310.00</td>
+        <td class="right" style="font-weight:700;">62,000.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">73,160.00</td>
+      </tr>
+    
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">2</td>
+        <td>
+          <b>CNC Precision Rotor Turning Shaft OD 45x185mm</b> &nbsp;<span class="badge-red">DWG: KS-2026-S12 Rev C</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">8483</td>
+        <td class="center" style="font-weight:700;">50</td>
+        <td class="center">NOS</td>
+        <td class="right">2250.00</td>
+        <td class="right" style="font-weight:700;">1,12,500.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">1,32,750.00</td>
+      </tr>
+    
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">3</td>
+        <td>
+          <b>Laser Cut Transformer Mounting Bracket Plate</b> &nbsp;<span class="badge-red">DWG: BRK-SS-2026-09</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">7326</td>
+        <td class="center" style="font-weight:700;">120</td>
+        <td class="center">NOS</td>
+        <td class="right">750.00</td>
+        <td class="right" style="font-weight:700;">90,000.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">1,06,200.00</td>
+      </tr>
+    
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">4</td>
+        <td>
+          <b>Machined Phosphor Bronze Bush ID 35x50x60L</b> &nbsp;<span class="badge-red">DWG: BSH-PB-104 Rev A</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">8483</td>
+        <td class="center" style="font-weight:700;">40</td>
+        <td class="center">NOS</td>
+        <td class="right">1150.00</td>
+        <td class="right" style="font-weight:700;">46,000.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">54,280.00</td>
+      </tr>
+    
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">5</td>
+        <td>
+          <b>Copper Terminal Busbar Link 40x5x150mm Plated</b> &nbsp;<span class="badge-red">DWG: BUS-CU-55</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">7407</td>
+        <td class="center" style="font-weight:700;">100</td>
+        <td class="center">NOS</td>
+        <td class="right">442.00</td>
+        <td class="right" style="font-weight:700;">44,200.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">52,156.00</td>
+      </tr>
+    
+      <tr class="comm-row">
+        <td class="center" style="font-weight:700;">6</td>
+        <td>
+          <b>Hardened Pinion Gear Shaft OD 60x220mm</b> &nbsp;<span class="badge-red">DWG: SFT-EN24-88 Rev B</span>
+          <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for 8-Column Technical Specification Matrix</span>
+        </td>
+        <td class="center">8483</td>
+        <td class="center" style="font-weight:700;">30</td>
+        <td class="center">NOS</td>
+        <td class="right">3450.00</td>
+        <td class="right" style="font-weight:700;">1,03,500.00</td>
+        <td class="center">18%</td>
+        <td class="right" style="font-weight:700;">1,22,130.00</td>
+      </tr>
+    
+            
+    <tr class="filler-row">
+      <td style="border-right:1px solid #e2e8f0; border-left:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td><td style="border-right:1px solid #e2e8f0;"></td>
+    </tr>
+  
+          </tbody>
+        </table>
+      </div>
+
+      <div class="summary-grid">
+        <div class="words-box">
+          <div>
+            <div class="sec-tag">AMOUNT CHARGEABLE IN WORDS</div>
+            <div style="font-size:8.5px; font-weight:800; color:#0f172a;">Five Lakh Forty Thousand Six Hundred and Seventy-Six Rupees Only</div>
+          </div>
+          <div style="margin-top:6px; font-size:7.5px; color:#334155;">
+            <b>Bank Details:</b> YES BANK LTD &nbsp;|&nbsp; <b>A/C:</b> 00458900012345 &nbsp;|&nbsp; <b>IFSC:</b> YESB0000045 (Nashik)
+          </div>
+        </div>
+        <div class="calc-box">
+          <div class="calc-row"><span class="meta-lbl">Total Taxable Value:</span><span class="meta-val">₹4,58,200.00</span></div>
+          <div class="calc-row"><span class="meta-lbl">Integrated Tax (IGST @ 18%):</span><span class="meta-val">₹82,476.00</span></div>
+          <div class="calc-row grand"><span>NET QUOTATION TOTAL:</span><span>₹5,40,676.00</span></div>
+        </div>
+      </div>
+
+      <div class="footer-grid">
+        <div class="terms-container">
+          <div class="terms-label-group">
+            <span class="terms-badge">TERMS & CONDITIONS:</span>
+          </div>
+          <div class="terms-list">
+            <div class="terms-item"><span class="terms-bullet">1.</span> <span><b>Validity:</b> Rates valid for 30 days. Complete technical specifications in Annexure-I (Page 2) form an integral part of this offer.</span></div>
+            <div class="terms-item"><span class="terms-bullet">2.</span> <span><b>Quality & QA:</b> Inspection Report and Material Test Certificate (MTC 3.1) will be supplied along with finished materials.</span></div>
+            <div class="terms-item"><span class="terms-bullet">3.</span> <span><b>Jurisdiction:</b> Subject to Nashik (Maharashtra) jurisdiction.</span></div>
+          </div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-company">For <span class="sign-firm-name">K.S. ENGINEERING WORKS</span></div>
+          <div class="sign-space"></div>
+          <div class="sign-line">Authorized Signatory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ================= PAGE 2: ANNEXURE - I (PURE TABULAR MATRIX) ================= -->
+  <div class="page-sheet">
+    <div class="doc-frame">
+      <div class="top-bar">
+        <div class="top-left-group">
+          <span class="top-title">ANNEXURE - I : TECHNICAL SPECIFICATIONS & COSTING MATRIX</span>
+        </div>
+        <div class="top-meta">Ref: <b>QT-2026-0042/R2</b> | Page 2 of 2</div>
+      </div>
+
+      <div class="table-container">
+        <table class="annex-table">
+          <thead>
+            <tr>
+              <th style="width: 3%;" class="center">#</th>
+              <th style="width: 20%;">ITEM DESCRIPTION & DRAWING</th>
+              <th style="width: 14%;">MATERIAL GRADE & STANDARD</th>
+              <th style="width: 12%;">INPUT & NET WEIGHT</th>
+              <th style="width: 13%;">BASE METAL & ESCALATION</th>
+              <th style="width: 16%;">MACHINING & HEAT TREATMENT</th>
+              <th style="width: 14%;">SURFACE & TESTING NORMS</th>
+              <th style="width: 8%;" class="right">QUOTED RATE (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">1</td>
+              <td>
+                <b style="color:#0f172a;">Round Copper Terminal Block ø30x25xM12</b><br>
+                <span class="badge-red">DWG: KS-2026-C01 Rev B</span><br>
+                <span class="lbl">Size:</span> <span class="val">30mm x 25mm x M12 thk</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">EC Grade Copper 99.9% IS 1897</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">0.240 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">0.180 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">0.060 Kg @ ₹850/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹1,200.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹1,370.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹248.00 / pc</b>
+              </td>
+              <td>
+                <b>Precision CNC Facing & Chamfer</b><br>
+                <span class="lbl">HT:</span> <span class="val">Stress Relief Annealed</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹62.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">10µ Dull Silver (IS 1374)</span><br>
+                <span class="lbl">QA/MTC:</span> EN 10204 Type 3.1, 99.9% IACS<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">Anti-Tarnish Wrap + Heavy Box</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹310.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">2</td>
+              <td>
+                <b style="color:#0f172a;">CNC Precision Rotor Turning Shaft OD 45x185mm</b><br>
+                <span class="badge-red">DWG: KS-2026-S12 Rev C</span><br>
+                <span class="lbl">Size:</span> <span class="val">OD 45mm x 185mm L</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">EN8D Forged (BS 970 080M40)</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">4.40 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">3.850 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">0.55 Kg @ ₹32/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹280.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹320.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹1,408.00 / pc</b>
+              </td>
+              <td>
+                <b>4-Axis CNC Turning & Keyway</b><br>
+                <span class="lbl">HT:</span> <span class="val">Induction Hardened (Bearing)</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹842.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">Black Phosphated to IS 3618</span><br>
+                <span class="lbl">QA/MTC:</span> 100% UT Soundness & CMM<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">VCI Sleeve + Pallet Crate</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹2250.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">3</td>
+              <td>
+                <b style="color:#0f172a;">Laser Cut Transformer Mounting Bracket Plate</b><br>
+                <span class="badge-red">DWG: BRK-SS-2026-09</span><br>
+                <span class="lbl">Size:</span> <span class="val">120mm x 90mm x 6.0mm Thk</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">SS 304 Stainless (ASTM A240 2B)</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">2.10 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">1.650 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">0.45 Kg @ ₹120/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹310.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹355.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹445.00 / pc</b>
+              </td>
+              <td>
+                <b>High-Pressure CNC Fiber Laser & Bending</b><br>
+                <span class="lbl">HT:</span> <span class="val">Mill Annealed</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹305.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">ASTM A380 Passivation</span><br>
+                <span class="lbl">QA/MTC:</span> 96-Hr Salt Spray, MTC 3.1<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">Scratch-Proof Polyfilm Bundles</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹750.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">4</td>
+              <td>
+                <b style="color:#0f172a;">Machined Phosphor Bronze Bush ID 35x50x60L</b><br>
+                <span class="badge-red">DWG: BSH-PB-104 Rev A</span><br>
+                <span class="lbl">Size:</span> <span class="val">ID 35 (H7) x OD 50 x 60mm L</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">PB2 Centrifugal Cast (BS 1400)</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">1.20 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">0.820 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">0.38 Kg @ ₹620/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹1,050.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹1,180.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹920.00 / pc</b>
+              </td>
+              <td>
+                <b>Precision Boring (H7 Fit) & OD s6</b><br>
+                <span class="lbl">HT:</span> <span class="val">As Cast / Stress Relieved</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹230.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">Figure-8 Oil Grooved & Oiled</span><br>
+                <span class="lbl">QA/MTC:</span> 85 HB Min, H7 Plug Gauge<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">Wax Paper Sealed in Poly Bag</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹1150.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">5</td>
+              <td>
+                <b style="color:#0f172a;">Copper Terminal Busbar Link 40x5x150mm Plated</b><br>
+                <span class="badge-red">DWG: BUS-CU-55</span><br>
+                <span class="lbl">Size:</span> <span class="val">40mm x 5.0mm x 150mm L</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">EC Grade Copper Strip (IS 1897)</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">0.310 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">0.268 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">0.042 Kg @ ₹850/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹1,200.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹1,370.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹367.00 / pc</b>
+              </td>
+              <td>
+                <b>Hydraulic Shear Cut & 2 Holes ø10</b><br>
+                <span class="lbl">HT:</span> <span class="val">Half Hard (HB 75-85)</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹75.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">10µ Dull Silver (Anti-Tarnish)</span><br>
+                <span class="lbl">QA/MTC:</span> Silver Thk, 99.9% IACS Passed<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">Layered Corrugated Separator Box</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹442.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+            <tr class="annex-row">
+              <td class="center" style="font-weight:700;">6</td>
+              <td>
+                <b style="color:#0f172a;">Hardened Pinion Gear Shaft OD 60x220mm</b><br>
+                <span class="badge-red">DWG: SFT-EN24-88 Rev B</span><br>
+                <span class="lbl">Size:</span> <span class="val">OD 60mm x 220mm L</span>
+              </td>
+              <td>
+                <b style="color:#dc2626;">EN24 (817M40) Alloy Forged</b>
+              </td>
+              <td>
+                <span class="lbl">Gross In:</span> <span class="val">6.20 Kg</span><br>
+                <span class="lbl">Net Fin:</span> <b style="color:#047857;">4.950 Kg</b><br>
+                <span class="lbl">Scrap:</span> <span style="font-size:7px; color:#64748b;">1.25 Kg @ ₹45/kg</span>
+              </td>
+              <td>
+                <span class="lbl">Base:</span> ₹340.00/kg<br>
+                <span class="lbl">Curr:</span> <b style="color:#dc2626;">₹410.00/kg</b><br>
+                <span class="lbl">RM Cost:</span> <b>₹2,312.00 / pc</b>
+              </td>
+              <td>
+                <b>CNC Turning, Hobbing & Spline</b><br>
+                <span class="lbl">HT:</span> <span class="val">Hardened & Tempered 50-52 HRC</span><br>
+                <span class="lbl">Conversion:</span> <span class="val">₹1,138.00 / pc</span>
+              </td>
+              <td>
+                <span class="lbl">Surface:</span> <span class="val">Manganese Phosphated IS 3618</span><br>
+                <span class="lbl">QA/MTC:</span> 100% MPI Crack Detection, CMM<br>
+                <span class="lbl">Packing:</span> <span style="color:#64748b;">VCI Oil Dipped + Wooden Crate</span>
+              </td>
+              <td class="right" style="vertical-align:middle;">
+                <span style="font-size:9px; font-weight:700; color:#047857;">₹3450.00</span><br>
+                <span class="lbl">Ex-Works</span>
+              </td>
+            </tr>
+            
+
+            <tr class="filler-row">
+              <td style="border-right:1px solid #e2e8f0; border-left:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="footer-grid">
+        <div class="terms-container">
+          <div class="terms-label-group">
+            <span class="terms-badge">TERMS & SPECIAL TECHNICAL CLAUSES:</span>
+          </div>
+          <div class="terms-list">
+            <div class="terms-item"><span class="terms-bullet">•</span> <span><b>Commodity Price Variation Clause:</b> Metal prices linked to primary producer rates as on invoice date.</span></div>
+            <div class="terms-item"><span class="terms-bullet">•</span> <span><b>Quality Guarantee:</b> Manufacturing guarantee against metallurgical defects & dimensional deviations.</span></div>
+            <div class="terms-item"><span class="terms-bullet">•</span> <span><b>Certification:</b> 100% components inspected with MTC 3.1 & dimensional calibration reports.</span></div>
+          </div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-company">For <span class="sign-firm-name">K.S. ENGINEERING WORKS</span></div>
+          <div class="sign-space"></div>
+          <div class="sign-line">Technical & Works Manager</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
