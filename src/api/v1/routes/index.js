@@ -7,6 +7,7 @@ const purchaseOrderRoutes = require('./purchaseOrder.routes')
 const ewaybillRoutes = require('./ewaybill.routes')
 const invoiceRoutes = require('./invoice.routes');
 const quotationRoutes = require('./quotation.routes');
+const proformaInvoiceRoutes = require('./proformaInvoice.routes');
 const mastersRoutes = require('./masters.routes')
 const userRoutes = require('./user.routes')
 const demoRoutes = require('./demo.routes')
@@ -53,6 +54,7 @@ router.use('/purchase-order', purchaseOrderRoutes);
 router.use('/ewaybill', ewaybillRoutes);
 router.use('/invoice', invoiceRoutes);
 router.use('/quotations', quotationRoutes);
+router.use('/proforma-invoices', proformaInvoiceRoutes);
 router.use('/parties', partyRoutes);
 router.use('/uploads', uploadRoutes);
 router.use('/attachments', attachmentRoutes);

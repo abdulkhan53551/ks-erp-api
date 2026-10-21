@@ -1106,14 +1106,15 @@ const getCityAndStateMapping = async () => {
 
 let browserInstance = null;
 
-const getBrowser = async (puppeteer) => {
+const getBrowser = async (customPuppeteer) => {
+    const p = customPuppeteer || puppeteer;
     if (browserInstance && browserInstance.connected) {
         return browserInstance;
     }
 
     let executablePath;
     try {
-        const defaultPath = await puppeteer.executablePath();
+        const defaultPath = await p.executablePath();
         if (fs.existsSync(defaultPath)) {
             executablePath = defaultPath;
         }
@@ -1150,7 +1151,7 @@ const getBrowser = async (puppeteer) => {
         }
     }
 
-    browserInstance = await puppeteer.launch({
+    browserInstance = await p.launch({
         executablePath,
         headless: true,
         args: [

@@ -15,6 +15,14 @@ const MODULES_REGISTRY = [
         actions: ['read', 'create', 'update', 'delete', 'approve', 'print']
     },
     {
+        slug: 'proforma-invoices',
+        name: 'Proforma Invoices',
+        category: 'Sales Management',
+        icon: 'file-text',
+        description: 'Advance billing, commercial pre-invoices & tax invoice conversions',
+        actions: ['read', 'create', 'update', 'delete', 'print']
+    },
+    {
         slug: 'invoices',
         name: 'Sales Invoices',
         category: 'Sales Management',
