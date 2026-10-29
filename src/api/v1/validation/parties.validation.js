@@ -558,6 +558,31 @@ const setDefaultPartyBranchSchema = {
     })
 };
 
+// Validation schema for fetching party ledger statement
+const getPartyLedgerSchema = {
+    params: Joi.object({
+        partyId: Joi.number().integer().positive().required().messages({
+            'number.base': 'Party ID must be a number.',
+            'number.integer': 'Party ID must be an integer.',
+            'number.positive': 'Party ID must be a positive number.',
+            'any.required': 'Party ID is required.'
+        })
+    }),
+    query: Joi.object({
+        startDate: Joi.string().isoDate().allow('', null).optional().messages({
+            'string.isoDate': 'Start date must be in YYYY-MM-DD format.'
+        }),
+        endDate: Joi.string().isoDate().allow('', null).optional().messages({
+            'string.isoDate': 'End date must be in YYYY-MM-DD format.'
+        }),
+        branchId: Joi.number().integer().positive().allow('', null).optional().messages({
+            'number.base': 'Branch ID must be a number.',
+            'number.integer': 'Branch ID must be an integer.'
+        }),
+        firmId: Joi.number().integer().positive().allow('', null).optional()
+    })
+};
+
 module.exports = {
     getPartyRolesSchema,
     createPartyRolesSchema,
@@ -575,6 +600,7 @@ module.exports = {
     bulkRestorePartiesSchema,
     searchPartiesSchema,
     getPartyDetailsSchema,
+    getPartyLedgerSchema,
     getPartyBranchSchema,
     createPartyBranchSchema,
     updatePartyBranchSchema,
