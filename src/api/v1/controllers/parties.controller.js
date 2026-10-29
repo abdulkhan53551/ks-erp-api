@@ -266,6 +266,9 @@ const createParty = asyncHandler(async (req, res) => {
         logoPublicId,
         remarks,
         creditPeriodDays,
+        openingBalance,
+        openingBalanceType,
+        openingBalanceDate,
         status
     } = req.body;
 
@@ -286,6 +289,9 @@ const createParty = asyncHandler(async (req, res) => {
         logo_public_id: logoPublicId || null,
         remarks: remarks || null,
         credit_period_days: Number(creditPeriodDays) || 0,
+        opening_balance: openingBalance !== undefined && openingBalance !== null && openingBalance !== '' ? Number(openingBalance) : 0.00,
+        opening_balance_type: openingBalanceType ? (String(openingBalanceType).toUpperCase() === 'CR' ? 'Cr' : 'Dr') : 'Dr',
+        opening_balance_date: openingBalanceDate || null,
         status: status || 'ACTIVE'
     };
 
@@ -331,6 +337,9 @@ const updateParty = asyncHandler(async (req, res) => {
         logoPublicId,
         remarks,
         creditPeriodDays,
+        openingBalance,
+        openingBalanceType,
+        openingBalanceDate,
         status
     } = req.body;
 
@@ -350,6 +359,15 @@ const updateParty = asyncHandler(async (req, res) => {
     if (logoPublicId !== undefined) partyData.logo_public_id = logoPublicId || null;
     if (remarks !== undefined) partyData.remarks = remarks || null;
     if (creditPeriodDays !== undefined) partyData.credit_period_days = Number(creditPeriodDays) || 0;
+    if (openingBalance !== undefined) {
+        partyData.opening_balance = (openingBalance !== null && openingBalance !== '') ? Number(openingBalance) : 0.00;
+    }
+    if (openingBalanceType !== undefined) {
+        partyData.opening_balance_type = openingBalanceType ? (String(openingBalanceType).toUpperCase() === 'CR' ? 'Cr' : 'Dr') : 'Dr';
+    }
+    if (openingBalanceDate !== undefined) {
+        partyData.opening_balance_date = openingBalanceDate || null;
+    }
     if (status !== undefined) partyData.status = status;
 
     // Check if logo is being replaced or removed and clean up previous Cloudinary asset

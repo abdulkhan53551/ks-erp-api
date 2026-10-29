@@ -146,10 +146,21 @@ const getPartyLedgerStatement = async ({ partyId, firmId, startDate, endDate, br
   const masterOpeningBal = new Decimal(party.opening_balance || 0);
   const masterOpeningType = (party.opening_balance_type || 'Dr').toUpperCase();
 
-  if (masterOpeningType === 'DR') {
-    netOpening = netOpening.plus(masterOpeningBal);
-  } else {
-    netOpening = netOpening.minus(masterOpeningBal);
+  const obDate = party.opening_balance_date
+    ? (party.opening_balance_date instanceof Date
+        ? party.opening_balance_date.toISOString().split('T')[0]
+        : String(party.opening_balance_date).split('T')[0])
+    : null;
+
+  // If no obDate is set, or fromDate is on/after obDate, include masterOpeningBal in pre-range netOpening
+  let includeObInPreRange = false;
+  if (!obDate || fromDate >= obDate) {
+    includeObInPreRange = true;
+    if (masterOpeningType === 'DR') {
+      netOpening = netOpening.plus(masterOpeningBal);
+    } else {
+      netOpening = netOpening.minus(masterOpeningBal);
+    }
   }
 
   // Pre-range Invoices (Sales -> Debit)
@@ -287,6 +298,22 @@ const getPartyLedgerStatement = async ({ partyId, firmId, startDate, endDate, br
     .orderBy('created_at', 'asc')
     .timeout(8000, { cancel: true });
 
+  // If opening balance date falls WITHIN the selected range [fromDate, toDate],
+  // inject it as an onboarding opening voucher in chronological sequence
+  if (!includeObInPreRange && obDate && obDate >= fromDate && obDate <= toDate && !masterOpeningBal.isZero()) {
+    rawTransactions.push({
+      ref_id: party.id,
+      tx_date: obDate,
+      voucher_type: 'Opening Balance',
+      voucher_no: party.party_code ? `${party.party_code}-OB` : 'OB-001',
+      particulars: 'Party Opening Balance (Brought Forward)',
+      debit: masterOpeningType === 'DR' ? masterOpeningBal.toNumber() : 0.00,
+      credit: masterOpeningType === 'CR' ? masterOpeningBal.toNumber() : 0.00,
+      created_at: new Date(obDate)
+    });
+    rawTransactions.sort((a, b) => new Date(a.tx_date) - new Date(b.tx_date));
+  }
+
   // 5. STEP 3: Compute Cumulative Running Balance
   let runningBalance = new Decimal(netOpening);
   let totalDebitSum = new Decimal(0);
@@ -336,6 +363,9 @@ const getPartyLedgerStatement = async ({ partyId, firmId, startDate, endDate, br
       mobile: party.mobile || '',
       email: party.email || '',
       address: partyAddress || '',
+      masterOpeningBalance: masterOpeningBal.toNumber(),
+      masterOpeningBalanceType: masterOpeningType,
+      masterOpeningBalanceDate: obDate,
     },
     period: {
       startDate: fromDate,

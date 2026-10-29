@@ -330,6 +330,9 @@ const fetchAllParties = async (firmId, query) => {
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
                 'p.credit_period_days',
+                'p.opening_balance as openingBalance',
+                'p.opening_balance_type as openingBalanceType',
+                'p.opening_balance_date as openingBalanceDate',
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'p.created_at',
@@ -462,6 +465,9 @@ const fetchPartyById = async (partyId, firmId) => {
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
                 'p.credit_period_days',
+                'p.opening_balance as openingBalance',
+                'p.opening_balance_type as openingBalanceType',
+                'p.opening_balance_date as openingBalanceDate',
                 'p.status'
             )
             .leftJoin('firms as f', 'p.firm_id', 'f.id')
@@ -1790,6 +1796,9 @@ const fetchPartyDetails = async (partyId) => {
                 'website',
                 'remarks',
                 'credit_period_days',
+                'opening_balance as openingBalance',
+                'opening_balance_type as openingBalanceType',
+                'opening_balance_date as openingBalanceDate',
                 'status'
             )
             .where({ id: partyId, is_active: true })

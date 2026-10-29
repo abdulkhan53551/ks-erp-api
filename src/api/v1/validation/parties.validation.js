@@ -197,6 +197,28 @@ const createPartySchema = {
                 "number.min": "Credit period cannot be negative.",
                 "number.max": "Credit period cannot exceed 365 days."
             }),
+        openingBalance: Joi.number()
+            .precision(2)
+            .min(0)
+            .allow(null, '')
+            .default(0.00)
+            .messages({
+                "number.base": "Opening balance must be a valid number.",
+                "number.min": "Opening balance cannot be negative."
+            }),
+        openingBalanceType: Joi.string()
+            .valid('Dr', 'Cr', 'DR', 'CR')
+            .default('Dr')
+            .messages({
+                "any.only": "Opening balance type must be either Dr (Debit) or Cr (Credit)."
+            }),
+        openingBalanceDate: Joi.date()
+            .iso()
+            .allow(null, '')
+            .optional()
+            .messages({
+                "date.format": "Opening balance date must be a valid ISO date."
+            }),
         status: Joi.string()
             .valid('ACTIVE', 'INACTIVE')
             .default('ACTIVE'),
