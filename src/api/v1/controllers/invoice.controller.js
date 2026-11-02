@@ -134,7 +134,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: invoice.paymentStatusId ? Number(invoice.paymentStatusId) : pendingStatusId,
-        payment_mode_id: invoice.paymentModeId ? Number(invoice.paymentModeId) : null,
+        payment_mode_id: null,
         status: 'Final',
         firm_id: effectiveFirmId
     };
@@ -316,7 +316,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: autoPaymentStatusId,
-        payment_mode_id: invoice.paymentModeId ? Number(invoice.paymentModeId) : (existingInvoice.payment_mode_id || null),
+        payment_mode_id: (existingInvoice.payment_mode_id && existingInvoice.payment_mode_id !== 0) ? existingInvoice.payment_mode_id : null,
         status: 'Final',
         firm_id: firmId
     };
