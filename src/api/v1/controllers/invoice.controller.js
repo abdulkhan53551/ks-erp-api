@@ -98,7 +98,7 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // Create invoice
     const statusMap = await getPaymentStatusIds();
-    const isPaid = Number(invoice.paymentStatusId) === statusMap['PAID'];
+    const pendingStatusId = statusMap['PENDING'];
 
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo || null,
@@ -122,12 +122,12 @@ const createInvoice = asyncHandler(async (req, res) => {
         sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
         igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
         total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
-        paid_amount: isPaid ? new Decimal(invoice.total).toDecimalPlaces(2).toNumber() : 0.00,
-        balance_amount: isPaid ? 0.00 : new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        paid_amount: 0.00,
+        balance_amount: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
-        payment_status_id: invoice.paymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_status_id: invoice.paymentStatusId ? Number(invoice.paymentStatusId) : pendingStatusId,
+        payment_mode_id: invoice.paymentModeId ? Number(invoice.paymentModeId) : null,
         status: 'Final',
         firm_id: effectiveFirmId
     };
@@ -519,18 +519,28 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    // Guard: Check if invoice has active payments attached
-    const invoice = await fetchInvoiceById(invoiceId);
+    // Guard: Check if invoice has actual active payment receipts attached in database
+    // Pass permanent flag as includeInactive so trashed invoices can be looked up for permanent deletion
+    const invoice = await fetchInvoiceById(invoiceId, permanent);
     if (!invoice) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
     }
 
     verifyRecordOwnership(req.user, invoice, 'Invoice');
 
-    if (Number(invoice.paid_amount || 0) > 0) {
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .where('pa.invoice_id', invoiceId)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('pa.id', 'p.payment_no', 'pa.total_settled_amount');
+
+    if (activeAllocations.length > 0) {
+        const totalPaid = activeAllocations.reduce((sum, a) => sum + Number(a.total_settled_amount || 0), 0);
+        const receiptList = [...new Set(activeAllocations.map(a => a.payment_no).filter(Boolean))].join(', ');
         throw new ApiError({
             statusCode: 422,
-            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipts totaling ₹${Number(invoice.paid_amount).toFixed(2)} are attached to it. Please cancel or adjust the payment receipts first.`
+            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipt(s) totaling ₹${totalPaid.toFixed(2)}${receiptList ? ` (${receiptList})` : ''} are attached to it. Please cancel or roll back the payment receipts first in the Payments section.`
         });
     }
 
@@ -595,13 +605,16 @@ const bulkDeleteInvoices = asyncHandler(async (req, res) => {
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Guard: Check if any target invoice has active payments
-    const paidInvoices = await db('invoices')
-        .select('invoice_no', 'paid_amount')
-        .whereIn('id', ids)
-        .where('paid_amount', '>', 0);
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .join('invoices as i', 'pa.invoice_id', 'i.id')
+        .whereIn('pa.invoice_id', ids)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('i.invoice_no', 'p.payment_no', 'pa.total_settled_amount');
 
-    if (paidInvoices.length > 0) {
-        const list = paidInvoices.map(i => `${i.invoice_no} (₹${Number(i.paid_amount).toFixed(2)})`).join(', ');
+    if (activeAllocations.length > 0) {
+        const list = [...new Set(activeAllocations.map(a => `${a.invoice_no} [${a.payment_no}]`))].join(', ');
         throw new ApiError({
             statusCode: 422,
             message: `Cannot delete invoice(s) with active payment receipts: ${list}. Please cancel the payment receipts first.`

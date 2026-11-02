@@ -220,7 +220,7 @@ const fetchInvoiceMeta = async (query) => {
 };
 
 // Fetch invoice by ID
-const fetchInvoiceById = async (id) => {
+const fetchInvoiceById = async (id, includeInactive = false) => {
     try {
         const { firmId = 0 } = getContext();
 
@@ -307,8 +307,12 @@ const fetchInvoiceById = async (id) => {
                     .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
             })
             .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.firm_id')
-            .where('I.is_active', true)
-            .andWhere('I.id', id);
+            .where('I.id', id)
+            .modify((qb) => {
+                if (!includeInactive) {
+                    qb.where('I.is_active', true);
+                }
+            });
 
         if (firmId) {
             invQuery.andWhere('I.firm_id', firmId);
@@ -343,8 +347,12 @@ const fetchInvoiceById = async (id) => {
                 .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
                 .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
                 .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
-                .where('I.is_active', true)
                 .where('I.id', id)
+                .modify((qb) => {
+                    if (!includeInactive) {
+                        qb.where('I.is_active', true);
+                    }
+                })
                 .orderBy('II.id', 'ASC')
         ]);
 
@@ -640,14 +648,14 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
 
             const invWhere = firmId ? { id: invoiceId, firm_id: firmId } : { id: invoiceId };
             if (isPermanentDelete) {
-                // HARD DELETE - run in parallel
-                const [contacts, items, invoice] = await Promise.all([
+                // HARD DELETE - clean up foreign key references first
+                await Promise.all([
                     trx('invoice_contacts').where({ invoice_id: invoiceId }).del(),
                     trx('invoice_items').where({ invoice_id: invoiceId }).del(),
-                    trx('invoices').where(invWhere).del()
+                    trx('payment_allocations').where({ invoice_id: invoiceId }).del()
                 ]);
 
-                result = invoice; // number of affected invoice rows
+                result = await trx('invoices').where(invWhere).del(); // number of affected invoice rows
             } else {
                 // SOFT DELETE - run in parallel
                 const [contacts, items, mappings, challans, ewayBills, invoice] = await Promise.all([
@@ -691,9 +699,9 @@ const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) =>
                 await Promise.all([
                     trx('invoice_contacts').whereIn('invoice_id', invoiceIds).del(),
                     trx('invoice_items').whereIn('invoice_id', invoiceIds).del(),
-                    invQuery.del()
+                    trx('payment_allocations').whereIn('invoice_id', invoiceIds).del()
                 ]);
-                return invoiceIds.length;
+                return await invQuery.del();
             }
 
             // Soft delete (bulk move to trash)
@@ -814,10 +822,20 @@ const cancelInvoiceById = async (invoiceId, userId = null, cancelReason = '') =>
                 throw new ApiError({ statusCode: 400, message: 'This invoice is already cancelled.' });
             }
 
-            if (Number(invoice.paid_amount || 0) > 0) {
+            // Check if invoice has actual active payment receipts attached in database
+            const activeAllocations = await trx('payment_allocations as pa')
+                .join('payments as p', 'pa.payment_id', 'p.id')
+                .where('pa.invoice_id', invoiceId)
+                .where('p.status', 'COMPLETED')
+                .where('p.is_active', true)
+                .select('pa.id', 'p.payment_no', 'pa.total_settled_amount');
+
+            if (activeAllocations.length > 0) {
+                const totalPaid = activeAllocations.reduce((sum, a) => sum + Number(a.total_settled_amount || 0), 0);
+                const receiptList = [...new Set(activeAllocations.map(a => a.payment_no).filter(Boolean))].join(', ');
                 throw new ApiError({
                     statusCode: 400,
-                    message: `Cannot cancel invoice ${invoice.invoice_no} because payment receipts of ₹${Number(invoice.paid_amount).toFixed(2)} are active. Please cancel or roll back the attached payment receipts first in the Payments section.`
+                    message: `Cannot cancel invoice ${invoice.invoice_no} because active payment receipt(s) totaling ₹${totalPaid.toFixed(2)}${receiptList ? ` (${receiptList})` : ''} are active. Please cancel or roll back the attached payment receipts first in the Payments section.`
                 });
             }
 
