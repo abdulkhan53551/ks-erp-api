@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceSummary, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -21,9 +21,7 @@ const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
-
-    const result = await fetchAllInvoice({ page, pageSize, search, trash });
+    const result = await fetchAllInvoice(req.query);
 
     return res.status(200).json(
         new ApiResponse({
@@ -41,6 +39,15 @@ const getInvoiceMeta = asyncHandler(async (req, res) => {
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice pagination fetch successfully.' }));
+});
+
+// Fetch invoice financial KPI summary (database-wide, all pages matching active filters)
+const getInvoiceSummary = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceSummary(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice summary fetched successfully.' }));
 });
 
 // Fetch invoice by ID
@@ -309,7 +316,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: autoPaymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_mode_id: invoice.paymentModeId ? Number(invoice.paymentModeId) : (existingInvoice.payment_mode_id || null),
         status: 'Final',
         firm_id: firmId
     };
@@ -809,6 +816,19 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         totalAmountInWords: amountToWords(invoice.total || 0)
     };
 
+    // Determine professional Mode/Term of Payment (Standard Credit Terms when payment is pending)
+    const dueDays = Number(invoice.due_days);
+    let modeOfPayment = '';
+    if (!isNaN(dueDays) && dueDays > 0) {
+        modeOfPayment = `Credit (${dueDays} Days)`;
+    } else if (invoice.payment_label) {
+        modeOfPayment = invoice.payment_label;
+    } else if (!isNaN(dueDays) && dueDays === 0) {
+        modeOfPayment = 'Immediate / Due on Receipt';
+    } else {
+        modeOfPayment = 'Due on Receipt';
+    }
+
     const invoiceData = {
         id: invoice.id,
         status: invoice.status || 'Final',
@@ -844,7 +864,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             poNumber: invoice.po || 'NA',
             poDate: poDate,
             ewayBillNo: invoice.ewaybill || 'NA',
-            modeOfPayment: invoice.payment_label || ''
+            modeOfPayment: modeOfPayment
         },
         items: invoice.items?.map(item => ({
             id: item.id,
@@ -1295,6 +1315,7 @@ process.on("SIGTERM", async () => {
 module.exports = {
     getAllInvoice,
     getInvoiceMeta,
+    getInvoiceSummary,
     getInvoiceById,
     createInvoice,
     updateInvoice,

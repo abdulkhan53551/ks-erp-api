@@ -83,7 +83,11 @@ const fetchAllInvoice = async (query) => {
         }
 
         if (paymentStatus) {
-            baseQuery.andWhere('PS.code', paymentStatus);
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
         }
 
         if (startDate) {
@@ -171,7 +175,11 @@ const fetchInvoiceMeta = async (query) => {
         }
 
         if (paymentStatus) {
-            baseQuery.andWhere('PS.code', paymentStatus);
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
         }
 
         if (startDate) {
@@ -215,6 +223,110 @@ const fetchInvoiceMeta = async (query) => {
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while fetching invoice meta data.',
+        });
+    }
+};
+
+// Fetch financial summary across all matching invoices (respecting all active filters)
+const fetchInvoiceSummary = async (query = {}) => {
+    try {
+        const {
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
+        const isTrash = trash === true || trash === 'true';
+        const { firmId = 0 } = getContext();
+
+        const baseQuery = db('invoices AS I')
+            .leftJoin('eway_bills AS EB', function () {
+                this.on('I.id', '=', 'EB.invoice_id')
+                    .andOn('EB.is_active', '=', db.raw('true'));
+            })
+            .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
+            .leftJoin('users AS u', 'I.created_by', 'u.id')
+            .where('I.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('I.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
+
+        if (paymentStatus) {
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
+        }
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('I.invoice_no', 'ILIKE', `%${search}%`)
+                    .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`])
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('purchase_order_invoices AS poi')
+                            .join('purchase_orders AS po', 'poi.purchase_order_id', 'po.id')
+                            .whereRaw('"poi"."invoice_id" = "I"."id"')
+                            .andWhere('poi.is_active', true)
+                            .andWhere('po.is_active', true)
+                            .andWhere('po.po_no', 'ILIKE', `%${search}%`);
+                    });
+            });
+        }
+
+        const summaryRow = await baseQuery
+            .clearSelect()
+            .clearOrder()
+            .select(
+                db.raw('COUNT(DISTINCT "I"."id") as total_count'),
+                db.raw('COALESCE(SUM("I"."total"), 0) as total_invoiced'),
+                db.raw('COALESCE(SUM("I"."paid_amount"), 0) as total_paid'),
+                db.raw('COALESCE(SUM("I"."balance_amount"), 0) as total_balance'),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" = 'PAID' THEN "I"."id" END) as paid_count`),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" = 'PARTIAL' THEN "I"."id" END) as partial_count`),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" IN ('PENDING', 'FAILED', 'UNPAID') OR "PS"."code" IS NULL THEN "I"."id" END) as unpaid_count`)
+            )
+            .first();
+
+        return {
+            totalCount: parseInt(summaryRow?.total_count || 0),
+            totalInvoiced: parseFloat(summaryRow?.total_invoiced || 0),
+            totalPaid: parseFloat(summaryRow?.total_paid || 0),
+            totalBalance: parseFloat(summaryRow?.total_balance || 0),
+            fullyPaidCount: parseInt(summaryRow?.paid_count || 0),
+            partialCount: parseInt(summaryRow?.partial_count || 0),
+            unpaidCount: parseInt(summaryRow?.unpaid_count || 0)
+        };
+    } catch (error) {
+        console.log('error in fetchInvoiceSummary => ', error);
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching invoice financial summary.',
         });
     }
 };
@@ -473,6 +585,7 @@ const insertInvoiceMaster = async (trx, data) => {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
         return { id, invoiceNo: nextInvoiceNo };
     } catch (error) {
+        console.error('CRITICAL: insertInvoiceMaster failed:', error);
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
                 statusCode: 409,
@@ -481,7 +594,7 @@ const insertInvoiceMaster = async (trx, data) => {
         }
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while inserting invoice data.',
+            message: `Something went wrong while inserting invoice data: ${error.message || ''}`,
         });
     }
 };
@@ -492,6 +605,7 @@ const insertInvoiceItems = async (trx, invoiceId, items) => {
         const formattedItems = items.map(item => ({ ...item, invoice_id: invoiceId }));
         await trx('invoice_items').insert(formattedItems);
     } catch (error) {
+        console.error('CRITICAL: insertInvoiceItems failed:', error);
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while inserting invoice items.',
@@ -1048,6 +1162,7 @@ const fetchInvoiceSettings = async () => {
 module.exports = {
     fetchAllInvoice,
     fetchInvoiceMeta,
+    fetchInvoiceSummary,
     fetchInvoiceById,
     insertInvoice,
     updateInvoiceById,

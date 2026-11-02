@@ -3,6 +3,7 @@ const validate = require('../middlewares/validate');
 const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const { 
     getInvoiceMeta, 
+    getInvoiceSummary,
     getAllInvoice, 
     getInvoiceById, 
     createInvoice, 
@@ -32,6 +33,7 @@ const router = Router();
 // Invoice routes guarded by Casbin in-memory RBAC
 router.get('/next-invoice-number', checkPermission('invoices', 'read'), getNextInvoiceNumber);
 router.get('/pagination', checkPermission('invoices', 'read'), validate(queryInvoicesSchema), getInvoiceMeta);
+router.get('/summary', checkPermission('invoices', 'read'), validate(queryInvoicesSchema), getInvoiceSummary);
 router.get('/', checkPermission('invoices', 'read'), validate(queryInvoicesSchema), getAllInvoice);
 router.post('/', requireFirmContext, checkPermission('invoices', 'create'), validate(createInvoiceValidationSchema), createInvoice);
 router.post('/bulk-delete', requireFirmContext, checkPermission('invoices', 'delete'), validate(bulkDeleteInvoicesValidationSchema), bulkDeleteInvoices);
