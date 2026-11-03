@@ -21,14 +21,17 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 
 const router = Router();
 
+// Enforce firm context perimeter defense
+router.use(requireFirmContext);
+
 router.get('/', checkPermission('payroll', 'read'), validate(queryAdvancesSchema), getAdvancesController);
-router.post('/', requireFirmContext, checkPermission('payroll', 'create'), validate(createAdvanceSchema), createAdvanceController);
+router.post('/', checkPermission('payroll', 'create'), validate(createAdvanceSchema), createAdvanceController);
 
 router.get('/employee/:employeeId', checkPermission('payroll', 'read'), getEmployeeAdvanceSummaryController);
 
 router.get('/:id', checkPermission('payroll', 'read'), validate(advanceIdParamSchema), getAdvanceDetailController);
-router.put('/:id', requireFirmContext, checkPermission('payroll', 'update'), validate(updateAdvanceSchema), updateAdvanceController);
-router.patch('/:id/pause', requireFirmContext, checkPermission('payroll', 'update'), validate(togglePauseSchema), togglePauseController);
-router.post('/:id/repayments', requireFirmContext, checkPermission('payroll', 'create'), validate(manualRepaymentSchema), recordRepaymentController);
+router.put('/:id', checkPermission('payroll', 'update'), validate(updateAdvanceSchema), updateAdvanceController);
+router.patch('/:id/pause', checkPermission('payroll', 'update'), validate(togglePauseSchema), togglePauseController);
+router.post('/:id/repayments', checkPermission('payroll', 'create'), validate(manualRepaymentSchema), recordRepaymentController);
 
 module.exports = router;

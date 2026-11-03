@@ -801,34 +801,44 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
 const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) => {
     if (!invoiceIds || !invoiceIds.length) return 0;
     try {
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, isSuperAdmin = false } = getContext();
 
         return db.transaction(async trx => {
-            const invQuery = trx('invoices').whereIn('id', invoiceIds);
-            if (firmId) {
-                invQuery.andWhere({ firm_id: firmId });
-            }
+            // Pre-filter strictly to invoices belonging to caller's firm (unless super-admin without firm filter)
+            const targetInvoices = await trx('invoices')
+                .whereIn('id', invoiceIds)
+                .modify(qb => {
+                    if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                        qb.where({ firm_id: firmId });
+                    }
+                })
+                .select('id');
+
+            const validIds = targetInvoices.map(r => r.id);
+            if (!validIds.length) return 0;
+
+            const invQuery = trx('invoices').whereIn('id', validIds);
 
             if (isPermanentDelete) {
                 await Promise.all([
-                    trx('invoice_contacts').whereIn('invoice_id', invoiceIds).del(),
-                    trx('invoice_items').whereIn('invoice_id', invoiceIds).del(),
-                    trx('payment_allocations').whereIn('invoice_id', invoiceIds).del()
+                    trx('invoice_contacts').whereIn('invoice_id', validIds).del(),
+                    trx('invoice_items').whereIn('invoice_id', validIds).del(),
+                    trx('payment_allocations').whereIn('invoice_id', validIds).del()
                 ]);
                 return await invQuery.del();
             }
 
             // Soft delete (bulk move to trash)
             await Promise.all([
-                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('purchase_order_invoices').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('invoice_challans').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
-                trx('eway_bills').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
+                trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: false }),
+                trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: false }),
+                trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: false }),
+                trx('invoice_challans').whereIn('invoice_id', validIds).update({ invoice_id: null }),
+                trx('eway_bills').whereIn('invoice_id', validIds).update({ invoice_id: null }),
                 invQuery.update({ is_active: false })
             ]);
 
-            return invoiceIds.length;
+            return validIds.length;
         });
     } catch (error) {
         if (error instanceof ApiError) {
@@ -888,21 +898,32 @@ const restoreInvoiceById = async (invoiceId) => {
 const bulkRestoreInvoices = async (invoiceIds = []) => {
     if (!invoiceIds || !invoiceIds.length) return 0;
     try {
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, isSuperAdmin = false } = getContext();
 
         return db.transaction(async trx => {
-            const invQuery = trx('invoices').whereIn('id', invoiceIds).andWhere({ is_active: false });
-            if (firmId) {
-                invQuery.andWhere({ firm_id: firmId });
-            }
+            // Pre-filter strictly to invoices belonging to caller's firm (unless super-admin without firm filter)
+            const targetInvoices = await trx('invoices')
+                .whereIn('id', invoiceIds)
+                .andWhere({ is_active: false })
+                .modify(qb => {
+                    if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                        qb.where({ firm_id: firmId });
+                    }
+                })
+                .select('id');
+
+            const validIds = targetInvoices.map(r => r.id);
+            if (!validIds.length) return 0;
+
+            const invQuery = trx('invoices').whereIn('id', validIds).andWhere({ is_active: false });
 
             await Promise.all([
-                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
-                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
+                trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: true }),
+                trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: true }),
                 invQuery.update({ is_active: true })
             ]);
 
-            return invoiceIds.length;
+            return validIds.length;
         });
     } catch (error) {
         if (error instanceof ApiError) {

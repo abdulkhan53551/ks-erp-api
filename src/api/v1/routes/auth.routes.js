@@ -29,7 +29,8 @@ const {
     getPendingPasswordResetsList,
     approvePasswordResetRequest,
     rejectPasswordResetRequest,
-    getRoles
+    getRoles,
+    switchFirmContext
 } = require('../controllers/auth.controller.js')
 const { verifyAccessToken, authorizeAccess, requireSuperAdmin } = require('../middlewares/auth.middleware.js')
 const { checkPermission } = require('../middlewares/authorize.middleware.js')
@@ -52,6 +53,7 @@ const router = Router()
 // Auth
 router.get('/me', verifyAccessToken, getCurrentUser)
 router.post('/refresh-token', refreshUserToken)
+router.post('/switch-context', verifyAccessToken, switchFirmContext)
 router.post('/verify-access-token', verifyAccessToken, checkVerifyAccessToken)
 router.post('/check-authorize', authorizeAccess, checkIsAuthorizeAccess);
 router.post('/register', authRateLimiter, validate(registerValidationSchema), registerUser)

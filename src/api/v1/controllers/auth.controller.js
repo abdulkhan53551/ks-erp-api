@@ -274,18 +274,29 @@ const loginUser = asyncHandler(async (req, res) => {
     }
 
     // Determine default firm and branch
-    const defaultFirm = availableFirms.find(f => f.isDefault) || availableFirms[0] || null;
-    const firmId = defaultFirm?.id || null;
-    const defaultBranch = defaultFirm?.branches?.find(b => b.isHeadOffice) || defaultFirm?.branches?.[0] || null;
-    const branchId = defaultBranch?.id || null;
+    // For Super Admin: starts in Global Consolidated View ("All Firms") with firmId: null, branchId: null
+    // For Standard Users: starts in their primary assigned default firm
+    let defaultFirm = null;
+    let firmId = null;
+    let defaultBranch = null;
+    let branchId = null;
 
-    const roleSlug = defaultFirm?.role || user.role_slug || 'admin';
-    const roleName = defaultFirm?.roleName || user.role_name || 'Administrator';
-    const roleId = defaultFirm?.roleId || user.role_id;
+    if (!isSuperAdmin) {
+        defaultFirm = availableFirms.find(f => f.isDefault) || availableFirms[0] || null;
+        firmId = defaultFirm?.id || null;
+        defaultBranch = defaultFirm?.branches?.find(b => b.isHeadOffice) || defaultFirm?.branches?.[0] || null;
+        branchId = defaultBranch?.id || null;
+    }
 
-    // Access and refresh token generation
+    const roleSlug = isSuperAdmin ? 'super-admin' : (defaultFirm?.role || user.role_slug || 'admin');
+    const roleName = isSuperAdmin ? 'Super Administrator' : (defaultFirm?.roleName || user.role_name || 'Administrator');
+    const roleId = isSuperAdmin ? user.role_id : (defaultFirm?.roleId || user.role_id);
+    const isSuperAdminUser = isSuperAdmin;
+    const dataScope = isSuperAdminUser ? 'GLOBAL' : (defaultFirm?.dataScope || 'OWN');
+
+    // Access and refresh token generation (cryptographically bound to active tenant context)
     const tokenData = {
-        user: { ...user, role: roleSlug, roleId, firmId },
+        user: { ...user, role: roleSlug, roleId, firmId, branchId, isSuperAdmin: isSuperAdminUser, dataScope },
         ip: ipAddress,
         userAgent,
         deviceId: null
@@ -294,7 +305,6 @@ const loginUser = asyncHandler(async (req, res) => {
 
     const permissions = await getUserPermissions(roleSlug, roleId, firmId);
 
-    const isSuperAdminUser = (roleSlug || user.role_slug || '').toLowerCase() === 'super-admin';
     const userProfile = {
         id: user.id,
         firstName: user.first_name,
@@ -307,7 +317,7 @@ const loginUser = asyncHandler(async (req, res) => {
         firmId,
         branchId,
         isSuperAdmin: isSuperAdminUser,
-        dataScope: isSuperAdminUser ? 'GLOBAL' : (defaultFirm?.dataScope || 'OWN'),
+        dataScope,
         permissions
     };
 
@@ -347,6 +357,7 @@ const refreshUserToken = asyncHandler(async (req, res) => {
     const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     const ip = req.ip;
     const userAgent = req.get('User-Agent');
+    const { firmId, branchId } = req.body || {};
 
     let response = {
         statusCode: 500,
@@ -359,8 +370,13 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 400, message: 'Refresh token is required' });
     }
 
+    const preferredContext = {
+        firmId: firmId ? parseInt(firmId, 10) : null,
+        branchId: branchId ? parseInt(branchId, 10) : null
+    };
+
     // Get new refresh token
-    const { accessToken, newToken: newRefreshToken } = await rotateRefreshToken(refreshToken, ip, userAgent);
+    const { accessToken, newToken: newRefreshToken } = await rotateRefreshToken(refreshToken, ip, userAgent, null, preferredContext);
 
     // Get token data
     const tokens = { accessToken, ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}) };
@@ -395,15 +411,20 @@ const generateAccessAndRefreshTokens = async (tokenData) => {
     try {
         const { user, ip, userAgent, deviceId } = tokenData;
         const roleSlug = user.role || user.roleSlug || user.role_slug || null;
+        const isSuperAdmin = Boolean(user.isSuperAdmin) || (roleSlug || '').toLowerCase() === 'super-admin';
 
-        // Generate access token (clean identity payload)
+        // Generate access token (clean identity payload + cryptographically bound tenant context)
         const tokenPayload = {
             id: user.id,
             email: user.email,
             userName: user.user_name || user.userName,
             fullName: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
             role: roleSlug,
-            roleId: user.role_id || user.roleId
+            roleId: user.role_id || user.roleId,
+            firmId: user.firmId || null,
+            branchId: user.branchId || null,
+            isSuperAdmin,
+            dataScope: user.dataScope || (isSuperAdmin ? 'GLOBAL' : 'OWN')
         };
         const accessToken = generateAccessToken(tokenPayload);
 
@@ -417,6 +438,179 @@ const generateAccessAndRefreshTokens = async (tokenData) => {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' });
     }
 };
+
+/**
+ * Switch Active Firm and Branch Context
+ * Signs and issues a brand-new accessToken with updated firmId and branchId.
+ * Refresh token remains untouched in DB and client session.
+ * POST /api/v1/auth/switch-context
+ */
+const switchFirmContext = asyncHandler(async (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+        throw new ApiError({ statusCode: 401, message: 'Authentication required to switch firm context.' });
+    }
+
+    // Client must pass camelCase inputs
+    const { firmId, branchId } = req.body;
+
+    const user = await fetchUserById(userId);
+    if (!user || !user.is_active || user.deleted_at) {
+        throw new ApiError({ statusCode: 403, message: 'User account is not active.' });
+    }
+
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
+    const isAllFirms = firmId === 'all' || firmId === null || firmId === 'null' || firmId === 0 || firmId === '' || firmId === undefined;
+
+    // Handle Consolidated All Firms mode for Super Admin
+    if (isAllFirms) {
+        if (!isSuperAdmin) {
+            throw new ApiError({ statusCode: 403, message: 'Only Super Administrators can switch to consolidated All Firms view.' });
+        }
+
+        const roleSlug = 'super-admin';
+        const roleId = user.role_id;
+        const roleName = 'Super Administrator';
+        const dataScope = 'GLOBAL';
+        const permissions = ['*'];
+
+        const tokenPayload = {
+            id: user.id,
+            email: user.email,
+            userName: user.user_name,
+            fullName: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+            role: roleSlug,
+            roleId,
+            firmId: null,
+            branchId: null,
+            isSuperAdmin: true,
+            dataScope
+        };
+        const accessToken = generateAccessToken(tokenPayload);
+
+        const userProfile = {
+            id: user.id,
+            firstName: user.first_name,
+            lastName: user.last_name,
+            email: user.email,
+            userName: user.user_name,
+            roleId,
+            role: roleSlug,
+            roleName,
+            firmId: null,
+            branchId: null,
+            isSuperAdmin: true,
+            dataScope,
+            permissions
+        };
+
+        return res.status(200).json(
+            new ApiResponse({
+                statusCode: 200,
+                data: {
+                    accessToken,
+                    user: userProfile,
+                    defaultContext: {
+                        firmId: null,
+                        branchId: null
+                    }
+                },
+                message: 'Switched to Consolidated All Firms context.'
+            })
+        );
+    }
+
+    const targetFirmId = parseInt(firmId, 10);
+    if (isNaN(targetFirmId) || targetFirmId <= 0) {
+        throw new ApiError({ statusCode: 400, message: 'Valid firmId is required.' });
+    }
+    const targetBranchId = branchId ? parseInt(branchId, 10) : null;
+    let roleSlug = user.role_slug;
+    let roleId = user.role_id;
+    let roleName = user.role_name;
+    let dataScope = 'OWN';
+
+    if (isSuperAdmin) {
+        const targetFirm = await db('firms').where({ id: targetFirmId, is_active: true }).first();
+        if (!targetFirm) {
+            throw new ApiError({ statusCode: 404, message: 'Selected firm does not exist or is inactive.' });
+        }
+        roleSlug = 'super-admin';
+        roleName = 'Super Administrator';
+        dataScope = 'GLOBAL';
+    } else {
+        const { allowedFirmIds, assignments } = await firmPermissionCache.getUserAllowedFirms(userId);
+        if (!allowedFirmIds || !allowedFirmIds.has(targetFirmId)) {
+            throw new ApiError({ statusCode: 403, message: 'Access denied: You do not have access to the selected firm.' });
+        }
+
+        const firmAssignments = (assignments || []).filter(a => a.firm_id === targetFirmId);
+        let match = null;
+        if (targetBranchId) {
+            match = firmAssignments.find(a => a.firm_branch_id === targetBranchId) ||
+                    firmAssignments.find(a => a.firm_branch_id === null);
+        } else {
+            match = firmAssignments.find(a => a.firm_branch_id === null) || firmAssignments[0];
+        }
+
+        if (match) {
+            roleSlug = match.role_slug || user.role_slug;
+            roleId = match.role_id || user.role_id;
+            roleName = match.role_name || user.role_name;
+            dataScope = match.data_scope || (match.firm_branch_id ? 'BRANCH' : 'FIRM');
+        } else {
+            throw new ApiError({ statusCode: 403, message: 'Access denied: You do not have access to the selected branch.' });
+        }
+    }
+
+    const permissions = await getUserPermissions(roleSlug, roleId, targetFirmId);
+
+    // Sign new access token with updated firm and branch context
+    const tokenPayload = {
+        id: user.id,
+        email: user.email,
+        userName: user.user_name,
+        fullName: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+        role: roleSlug,
+        roleId,
+        firmId: targetFirmId,
+        branchId: targetBranchId,
+        isSuperAdmin,
+        dataScope
+    };
+    const accessToken = generateAccessToken(tokenPayload);
+
+    const userProfile = {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        userName: user.user_name,
+        roleId,
+        role: roleSlug,
+        roleName,
+        firmId: targetFirmId,
+        branchId: targetBranchId,
+        isSuperAdmin,
+        dataScope,
+        permissions
+    };
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: {
+                accessToken,
+                user: userProfile,
+                defaultContext: {
+                    firmId: targetFirmId,
+                    branchId: targetBranchId
+                }
+            },
+            message: 'Switched firm context successfully.'
+        })
+    );
+});
 
 // Get Current Authenticated User (/auth/me)
 const getCurrentUser = asyncHandler(async (req, res) => {
@@ -437,28 +631,15 @@ const getCurrentUser = asyncHandler(async (req, res) => {
         });
     }
 
-    let activeFirmId = null;
-    if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
-        const parsed = parseInt(req.headers['x-firm-id'], 10);
-        if (!isNaN(parsed) && parsed > 0) activeFirmId = parsed;
-    } else {
-        activeFirmId = req.user?.firmId || (isSuperAdminUser ? null : (availableFirms[0]?.id || null));
-    }
+    const activeFirmId = req.user?.firmId || (isSuperAdminUser ? null : (availableFirms[0]?.id || null));
+    const activeBranchId = req.user?.branchId || null;
 
-    let activeBranchId = null;
-    if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== 'all') {
-        const parsed = parseInt(req.headers['x-branch-id'], 10);
-        if (!isNaN(parsed) && parsed > 0) activeBranchId = parsed;
-    } else {
-        activeBranchId = req.user?.branchId || null;
-    }
-
-    const currentFirm = availableFirms.find(f => f.id === activeFirmId) || availableFirms[0] || null;
+    const currentFirm = activeFirmId ? (availableFirms.find(f => f.id === activeFirmId) || null) : (isSuperAdminUser ? null : (availableFirms[0] || null));
     const currentBranch = activeBranchId ? currentFirm?.branches?.find(b => b.id === activeBranchId) : null;
 
-    const roleSlug = currentBranch?.role || currentFirm?.role || user.role_slug || req.user?.role || 'admin';
-    const roleId = currentBranch?.roleId || currentFirm?.roleId || user.role_id || req.user?.roleId;
-    const roleName = currentBranch?.roleName || currentFirm?.roleName || user.role_name || 'Administrator';
+    const roleSlug = isSuperAdminUser ? 'super-admin' : (currentBranch?.role || currentFirm?.role || user.role_slug || req.user?.role || 'admin');
+    const roleId = isSuperAdminUser ? user.role_id : (currentBranch?.roleId || currentFirm?.roleId || user.role_id || req.user?.roleId);
+    const roleName = isSuperAdminUser ? 'Super Administrator' : (currentBranch?.roleName || currentFirm?.roleName || user.role_name || 'Administrator');
     const dataScope = isSuperAdminUser ? 'GLOBAL' : (currentBranch?.dataScope || currentFirm?.dataScope || req.user?.dataScope || 'OWN');
 
     const permissions = await getUserPermissions(roleSlug, roleId, activeFirmId);
@@ -1050,5 +1231,6 @@ module.exports = {
     getPendingPasswordResetsList,
     approvePasswordResetRequest,
     rejectPasswordResetRequest,
-    getRoles
+    getRoles,
+    switchFirmContext
 };

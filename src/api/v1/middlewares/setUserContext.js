@@ -13,25 +13,9 @@ module.exports = async (req, res, next) => {
         token = req.cookies.accessToken;
     }
 
-    let rawFirmHeader = req.headers['x-firm-id'];
-    let requestedFirmId = null;
-    if (rawFirmHeader && rawFirmHeader !== 'all') {
-        const parsed = parseInt(rawFirmHeader, 10);
-        if (!isNaN(parsed) && parsed > 0) {
-            requestedFirmId = parsed;
-        }
-    }
-
-    let branchId = null;
-    if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== 'all') {
-        const parsed = parseInt(req.headers['x-branch-id'], 10);
-        if (!isNaN(parsed) && parsed > 0) {
-            branchId = parsed;
-        }
-    }
-
     let userId = 0;
-    let firmId = requestedFirmId;
+    let firmId = null;
+    let branchId = null;
     let role = null;
     let roleId = null;
     let effectiveRole = null;
@@ -49,7 +33,12 @@ module.exports = async (req, res, next) => {
             role = decoded?.role || null;
             roleId = decoded?.roleId || null;
 
-            isSuperAdmin = (role || '').toLowerCase() === 'super-admin';
+            // Cryptographic JWT token is the single source of truth for tenant context
+            // Custom HTTP headers (x-firm-id, x-branch-id) are never accepted
+            firmId = decoded?.firmId ? parseInt(decoded.firmId, 10) : null;
+            branchId = decoded?.branchId ? parseInt(decoded.branchId, 10) : null;
+
+            isSuperAdmin = Boolean(decoded?.isSuperAdmin) || (role || '').toLowerCase() === 'super-admin';
 
             if (isSuperAdmin) {
                 effectiveRole = 'super-admin';
@@ -67,16 +56,13 @@ module.exports = async (req, res, next) => {
                     // User is not assigned to any active firm
                     tenantAccessDenied = true;
                     firmId = null;
-                } else if (!requestedFirmId) {
-                    // No firm specified by client: default strictly to user's primary assigned firm from DB
+                } else if (!firmId) {
+                    // Fallback to user's assigned default firm if firmId was not embedded
                     firmId = defaultFirmId;
-                } else if (!allowedFirmIds.has(requestedFirmId)) {
-                    // Client requested a firm that this user is not assigned to
+                } else if (!allowedFirmIds.has(firmId)) {
+                    // Firm in token is no longer assigned to user (revoked access)
                     tenantAccessDenied = true;
                     firmId = null;
-                } else {
-                    // Client requested a valid assigned firm
-                    firmId = requestedFirmId;
                 }
 
                 if (firmId && !tenantAccessDenied) {

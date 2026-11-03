@@ -25,26 +25,29 @@ const {
 
 const router = Router();
 
+// Enforce firm context perimeter defense (mutations & sequence generation strictly required)
+router.use(requireFirmContext);
+
 // Proforma Invoice routes guarded by Casbin RBAC & Firm Context
 router.get('/next-number', checkPermission('proforma-invoices', 'read'), getNextExpectedProformaNumberController);
 router.get('/pagination', checkPermission('proforma-invoices', 'read'), validate(queryProformaInvoicesSchema), getProformaInvoicePaginationController);
 router.get('/', checkPermission('proforma-invoices', 'read'), validate(queryProformaInvoicesSchema), getAllProformaInvoicesController);
 
 router.post('/preview-pdf', checkPermission('proforma-invoices', 'print'), previewProformaInvoicePdfController);
-router.post('/bulk-delete', requireFirmContext, checkPermission('proforma-invoices', 'delete'), bulkDeleteProformaInvoicesController);
-router.patch('/bulk-restore', requireFirmContext, checkPermission('proforma-invoices', 'delete'), bulkRestoreProformaInvoicesController);
+router.post('/bulk-delete', checkPermission('proforma-invoices', 'delete'), bulkDeleteProformaInvoicesController);
+router.patch('/bulk-restore', checkPermission('proforma-invoices', 'delete'), bulkRestoreProformaInvoicesController);
 
-router.post('/', requireFirmContext, checkPermission('proforma-invoices', 'create'), validate(createProformaInvoiceSchema), createProformaInvoiceController);
+router.post('/', checkPermission('proforma-invoices', 'create'), validate(createProformaInvoiceSchema), createProformaInvoiceController);
 
 router.get('/:id/pdf', checkPermission('proforma-invoices', 'print'), validate(getProformaInvoiceByIdSchema), generateProformaInvoicePdfController);
 router.get('/:id', checkPermission('proforma-invoices', 'read'), validate(getProformaInvoiceByIdSchema), getProformaInvoiceByIdController);
 
-router.put('/:id', requireFirmContext, checkPermission('proforma-invoices', 'update'), validate(updateProformaInvoiceSchema), updateProformaInvoiceController);
-router.patch('/:id/restore', requireFirmContext, checkPermission('proforma-invoices', 'delete'), validate(getProformaInvoiceByIdSchema), restoreProformaInvoiceController);
-router.patch('/:id', requireFirmContext, checkPermission('proforma-invoices', 'update'), validate(updateProformaInvoiceSchema), updateProformaInvoiceController);
+router.put('/:id', checkPermission('proforma-invoices', 'update'), validate(updateProformaInvoiceSchema), updateProformaInvoiceController);
+router.patch('/:id/restore', checkPermission('proforma-invoices', 'delete'), validate(getProformaInvoiceByIdSchema), restoreProformaInvoiceController);
+router.patch('/:id', checkPermission('proforma-invoices', 'update'), validate(updateProformaInvoiceSchema), updateProformaInvoiceController);
 
-router.post('/:id/convert-to-invoice', requireFirmContext, checkPermission('proforma-invoices', 'update'), convertProformaToTaxInvoiceController);
-router.delete('/:id', requireFirmContext, checkPermission('proforma-invoices', 'delete'), validate(getProformaInvoiceByIdSchema), deleteProformaInvoiceController);
+router.post('/:id/convert-to-invoice', checkPermission('proforma-invoices', 'update'), convertProformaToTaxInvoiceController);
+router.delete('/:id', checkPermission('proforma-invoices', 'delete'), validate(getProformaInvoiceByIdSchema), deleteProformaInvoiceController);
 
 module.exports = router;
 

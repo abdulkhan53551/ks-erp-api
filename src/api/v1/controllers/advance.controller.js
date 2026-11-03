@@ -14,21 +14,11 @@ const {
     fetchEmployeeActiveAdvanceSummary
 } = require('../models/advance.model');
 
-const getEffectiveFirmId = (req) => {
-    const context = getContext();
-    if (req.query?.firmId !== undefined) {
-        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
-        const parsed = parseInt(req.query.firmId, 10);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return context.firmId || req.user?.firmId || null;
-};
-
 /**
  * List all advances with filters and pagination
  */
 const getAdvancesController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
     const {
         employeeId,
         status,
@@ -229,7 +219,7 @@ const recordRepaymentController = asyncHandler(async (req, res) => {
  */
 const getEmployeeAdvanceSummaryController = asyncHandler(async (req, res) => {
     const { employeeId } = req.params;
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
 
     const summary = await fetchEmployeeActiveAdvanceSummary(employeeId, firmId);
 

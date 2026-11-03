@@ -22,7 +22,7 @@ async function createRefreshToken(userId, ip, userAgent, deviceId = null) {
     return { token, id: userTokenData?.id };
 }
 
-async function rotateRefreshToken(oldToken, ip, userAgent, deviceId = null) {
+async function rotateRefreshToken(oldToken, ip, userAgent, deviceId = null, preferredContext = {}) {
     try {
         const tokenHash = hashToken(oldToken);
 
@@ -55,15 +55,55 @@ async function rotateRefreshToken(oldToken, ip, userAgent, deviceId = null) {
         }
 
         const role = existing.role_slug || 'admin';
+        const isSuperAdmin = (role || '').toLowerCase() === 'super-admin';
 
-        // Generate access token (clean identity payload)
+        let firmId = null;
+        let branchId = null;
+        let dataScope = isSuperAdmin ? 'GLOBAL' : 'OWN';
+
+        if (isSuperAdmin) {
+            firmId = preferredContext.firmId || null;
+            branchId = preferredContext.branchId || null;
+        } else {
+            // Check if preferredContext firmId is valid for standard user
+            if (preferredContext.firmId) {
+                const mapping = await db('user_firm_branches')
+                    .where({ user_id: existing.user_id, firm_id: preferredContext.firmId, is_active: true })
+                    .first();
+                if (mapping) {
+                    firmId = preferredContext.firmId;
+                    branchId = preferredContext.branchId || mapping.firm_branch_id || null;
+                    dataScope = mapping.data_scope || (branchId ? 'BRANCH' : 'FIRM');
+                }
+            }
+
+            // Fallback to primary/default assignment if preferredContext was invalid or not provided
+            if (!firmId) {
+                const defaultMapping = await db('user_firm_branches')
+                    .where({ user_id: existing.user_id, is_active: true })
+                    .orderBy('is_default', 'desc')
+                    .orderBy('id', 'asc')
+                    .first();
+                if (defaultMapping) {
+                    firmId = defaultMapping.firm_id;
+                    branchId = defaultMapping.firm_branch_id || null;
+                    dataScope = defaultMapping.data_scope || (branchId ? 'BRANCH' : 'FIRM');
+                }
+            }
+        }
+
+        // Generate access token (clean identity + cryptographically bound tenant context)
         const tokenPayload = {
             id: existing.user_id,
             email: existing.email,
             userName: existing.user_name,
             fullName: `${existing.first_name} ${existing.last_name}`.trim(),
             role,
-            roleId: existing.role_id
+            roleId: existing.role_id,
+            firmId,
+            branchId,
+            isSuperAdmin,
+            dataScope
         };
 
         const accessToken = generateAccessToken(tokenPayload);
