@@ -30,10 +30,12 @@ const {
     approvePasswordResetRequest,
     rejectPasswordResetRequest,
     getRoles,
-    switchFirmContext
+    switchFirmContext,
+    getAuthPublicKey
 } = require('../controllers/auth.controller.js')
 const { verifyAccessToken, authorizeAccess, requireSuperAdmin } = require('../middlewares/auth.middleware.js')
 const { checkPermission } = require('../middlewares/authorize.middleware.js')
+const { decryptAuthPayload } = require('../middlewares/decryptAuth.middleware.js')
 const validate = require('../middlewares/validate.js')
 const { authRateLimiter } = require('../middlewares/security.middleware')
 const {
@@ -51,20 +53,21 @@ const {
 const router = Router()
 
 // Auth
+router.get('/public-key', getAuthPublicKey)
 router.get('/me', verifyAccessToken, getCurrentUser)
 router.post('/refresh-token', refreshUserToken)
 router.post('/switch-context', verifyAccessToken, switchFirmContext)
 router.post('/verify-access-token', verifyAccessToken, checkVerifyAccessToken)
 router.post('/check-authorize', authorizeAccess, checkIsAuthorizeAccess);
-router.post('/register', authRateLimiter, validate(registerValidationSchema), registerUser)
-router.post('/login', authRateLimiter, validate(loginValidationSchema), loginUser)
+router.post('/register', authRateLimiter, decryptAuthPayload, validate(registerValidationSchema), registerUser)
+router.post('/login', authRateLimiter, decryptAuthPayload, validate(loginValidationSchema), loginUser)
 router.post('/logout', verifyAccessToken, logout)
 router.post('/logout-all', verifyAccessToken, logoutAllSessions)
 
 // Password Recovery (Public)
 router.post('/forgot-password', authRateLimiter, validate(forgotPasswordValidationSchema), forgotPassword)
 router.get('/validate-reset-token', validateResetToken)
-router.post('/reset-password', authRateLimiter, validate(resetPasswordValidationSchema), resetPassword)
+router.post('/reset-password', authRateLimiter, decryptAuthPayload, validate(resetPasswordValidationSchema), resetPassword)
 
 // Super Admin Approval Workflows
 router.get('/admin/roles', verifyAccessToken, checkPermission('users', 'read'), getRoles)

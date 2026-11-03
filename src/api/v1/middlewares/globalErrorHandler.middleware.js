@@ -15,6 +15,20 @@ const globalErrorHandler = (err, req, res, next) => {
             message = safeError.message;
             errors = safeError.errors;
             errorCode = safeError.errorCode || ERROR_CODES.INTERNAL_ERROR;
+        } else if (safeError.type === 'entity.too.large' || safeError.statusCode === 413) {
+            statusCode = 413;
+            errorCode = ERROR_CODES.VALIDATION_ERROR;
+            message = 'Request payload too large. Maximum allowed size is 32kb.';
+        } else if (safeError.name === 'MulterError') {
+            statusCode = 400;
+            errorCode = ERROR_CODES.VALIDATION_ERROR;
+            if (safeError.code === 'LIMIT_FILE_SIZE') {
+                message = 'File size limit exceeded. Maximum allowed file size is 5MB.';
+            } else if (safeError.code === 'LIMIT_UNEXPECTED_FILE') {
+                message = `Unexpected file field: ${safeError.field || 'unknown'}`;
+            } else {
+                message = `File upload error: ${safeError.message}`;
+            }
         } else {
             // Default for other types of errors
             statusCode = safeError.status || 500;

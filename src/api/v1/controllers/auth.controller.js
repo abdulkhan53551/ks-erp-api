@@ -30,6 +30,7 @@ const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility
 
 const { db } = require('../database');
 const { getFirmRolePermissions } = require('../services/firmPermissionCache');
+const { getPublicKey } = require('../../../config/rsaKeys');
 
 // Convert to expiry days to number
 const REFRESH_TOKEN_EXPIRY_DAYS = Number(JWT.REFRESH_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
@@ -1202,6 +1203,18 @@ const getRoles = asyncHandler(async (req, res) => {
     }));
 });
 
+// Get RSA Public Key for client-side in-flight credential encryption
+const getAuthPublicKey = asyncHandler(async (req, res) => {
+    const publicKey = getPublicKey();
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: { publicKey },
+            message: 'Public key retrieved successfully.'
+        })
+    );
+});
+
 module.exports = {
     registerUser,
     loginUser,
@@ -1232,5 +1245,6 @@ module.exports = {
     approvePasswordResetRequest,
     rejectPasswordResetRequest,
     getRoles,
-    switchFirmContext
+    switchFirmContext,
+    getAuthPublicKey
 };

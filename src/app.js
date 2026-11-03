@@ -13,6 +13,7 @@ const routes = require('./api/v1/routes/index')
 const { ERROR_CODES } = require('./config/constants/statusCodeMap')
 const { fetchChallanPOEwayBillsForInvoice } = require('./api/v1/models/invoice.model')
 const { configuredHelmet, hppMiddleware, globalRateLimiter, authRateLimiter } = require('./api/v1/middlewares/security.middleware')
+const { sanitizeMiddleware } = require('./api/v1/middlewares/sanitize.middleware')
 
 const app = express()
 
@@ -74,7 +75,11 @@ app.get('/test-pdf', async (req, res, next) => {
   res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
   res.send(pdfBuffer);
 })
-app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
+app.use(cors({
+  origin: process.env.CORS_ORIGIN,
+  credentials: true,
+  maxAge: 86400 // Cache preflight OPTIONS for 24 hours to reduce latency
+}))
 app.use(cookieParser())
 
 // Lightweight health check (zero DB overhead for Render and React wakeup)
@@ -85,8 +90,12 @@ app.get('/health', (req, res) => {
 // Global DoS / DDoS Rate Limiter (Render /health is excluded)
 app.use(globalRateLimiter);
 
-app.use(express.json({ limit: '16kb' }));
-app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+// Payload size buffer limit tuned to 32kb
+app.use(express.json({ limit: '32kb' }));
+app.use(express.urlencoded({ extended: true, limit: '32kb' }));
+
+// Anti-XSS & Puppeteer PDF SSRF / Local File Inclusion defense
+app.use(sanitizeMiddleware);
 
 // HTTP Parameter Pollution protection
 app.use(hppMiddleware);
