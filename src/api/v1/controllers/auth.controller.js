@@ -238,15 +238,11 @@ const loginUser = asyncHandler(async (req, res) => {
     // Check if user already exist
     const user = await isUserExist(userName, email)
 
-    // Check if user exist
-    if (!user?.id) {
-        throw new ApiError({ statusCode: 404, message: 'User not found' })
-    }
-
-    // Check password
+    // Verify password in constant time (dummy comparison runs if user does not exist)
+    // Unified error message prevents username/email enumeration attacks
     const isPasswordValid = await isPasswordCorrect(password, user?.password);
-    if (!isPasswordValid) {
-        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' });
+    if (!user?.id || !isPasswordValid) {
+        throw new ApiError({ statusCode: 401, message: 'Invalid username/email or password' });
     }
 
     // Approval gate checks
@@ -888,6 +884,10 @@ const resetPassword = asyncHandler(async (req, res) => {
 
     const hashedPassword = await getHashedPassword(newPassword);
     await completePasswordReset(user.id, hashedPassword);
+
+    // Invalidate all active refresh tokens & sessions across all devices for this user
+    await deleteRefreshTokenByUserID(user.id);
+    clearAccessAndRefreshTokenCookie(res);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,

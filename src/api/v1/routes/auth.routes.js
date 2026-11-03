@@ -34,7 +34,19 @@ const {
 const { verifyAccessToken, authorizeAccess, requireSuperAdmin } = require('../middlewares/auth.middleware.js')
 const { checkPermission } = require('../middlewares/authorize.middleware.js')
 const validate = require('../middlewares/validate.js')
-const { addRolePermissionValidationSchema, removeRolePermissionValidationSchema, updateRolePermissionValidationSchema, createPolicyValidationSchema, deletePolicyValidationSchema, updatePolicyValidateSchema } = require('../validation/auth.validation.js')
+const { authRateLimiter } = require('../middlewares/security.middleware')
+const {
+    addRolePermissionValidationSchema,
+    removeRolePermissionValidationSchema,
+    updateRolePermissionValidationSchema,
+    createPolicyValidationSchema,
+    deletePolicyValidationSchema,
+    updatePolicyValidateSchema,
+    loginValidationSchema,
+    registerValidationSchema,
+    forgotPasswordValidationSchema,
+    resetPasswordValidationSchema
+} = require('../validation/auth.validation.js')
 const router = Router()
 
 // Auth
@@ -42,15 +54,15 @@ router.get('/me', verifyAccessToken, getCurrentUser)
 router.post('/refresh-token', refreshUserToken)
 router.post('/verify-access-token', verifyAccessToken, checkVerifyAccessToken)
 router.post('/check-authorize', authorizeAccess, checkIsAuthorizeAccess);
-router.post('/register', registerUser)
-router.post('/login', loginUser)
+router.post('/register', authRateLimiter, validate(registerValidationSchema), registerUser)
+router.post('/login', authRateLimiter, validate(loginValidationSchema), loginUser)
 router.post('/logout', verifyAccessToken, logout)
 router.post('/logout-all', verifyAccessToken, logoutAllSessions)
 
 // Password Recovery (Public)
-router.post('/forgot-password', forgotPassword)
+router.post('/forgot-password', authRateLimiter, validate(forgotPasswordValidationSchema), forgotPassword)
 router.get('/validate-reset-token', validateResetToken)
-router.post('/reset-password', resetPassword)
+router.post('/reset-password', authRateLimiter, validate(resetPasswordValidationSchema), resetPassword)
 
 // Super Admin Approval Workflows
 router.get('/admin/roles', verifyAccessToken, checkPermission('users', 'read'), getRoles)

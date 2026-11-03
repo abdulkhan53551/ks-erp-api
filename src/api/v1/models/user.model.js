@@ -86,8 +86,17 @@ const updatePassword = async (oldPassword, newPassword) => {
     }
 }
 
+// Pre-computed standard bcrypt hash used for constant-time comparisons when a user is not found
+// Prevents side-channel timing attacks that could reveal whether an account exists in the database
+const DUMMY_HASH = '$2b$10$wT8m9aU9o7L4sN8qE1v6ye7WjM.8Bq1v2K9F8c6y0D1Z2E3F4G5H6';
+
 const isPasswordCorrect = async (password, encryptedPassword) => {
-    return await bcrypt.compare(password, encryptedPassword)
+    if (!encryptedPassword) {
+        // Run full bcrypt comparison so request takes the exact same ~75ms as an existing user
+        await bcrypt.compare(password || '', DUMMY_HASH);
+        return false;
+    }
+    return await bcrypt.compare(password, encryptedPassword);
 }
 
 // Hash password

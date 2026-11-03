@@ -12,8 +12,15 @@ const setUserContext = require('./api/v1/middlewares/setUserContext')
 const routes = require('./api/v1/routes/index')
 const { ERROR_CODES } = require('./config/constants/statusCodeMap')
 const { fetchChallanPOEwayBillsForInvoice } = require('./api/v1/models/invoice.model')
+const { configuredHelmet, hppMiddleware, globalRateLimiter, authRateLimiter } = require('./api/v1/middlewares/security.middleware')
 
 const app = express()
+
+// Trust Render.com and Cloudflare reverse proxy headers (crucial for real client IP extraction & rate limiting)
+app.set('trust proxy', 1)
+
+// HTTP Security Headers (API-tuned Helmet)
+app.use(configuredHelmet)
 app.get('/test-pdf', async (req, res, next) => {
   // const browser = await puppeteer.launch({
   //   executablePath: path.join(
@@ -75,9 +82,19 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
 });
 
+// Global DoS / DDoS Rate Limiter (Render /health is excluded)
+app.use(globalRateLimiter);
+
 app.use(express.json({ limit: '16kb' }));
 app.use(express.urlencoded({ extended: true, limit: '16kb' }));
+
+// HTTP Parameter Pollution protection
+app.use(hppMiddleware);
 app.use(express.static('public'))
+
+// Strict Auth Rate Limiter applied early before DB transaction to shield PostgreSQL pool from brute-force
+app.use(['/auth/login', '/auth/register', '/auth/forgot-password', '/auth/reset-password'], authRateLimiter);
+
 app.use(setUserContext);
 app.use(dbTransaction); // <-- USE TRANSACTION MIDDLEWARE
 
