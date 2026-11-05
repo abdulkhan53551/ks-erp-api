@@ -1,16 +1,28 @@
 const { getContext } = require("../helpers/requestContext");
 const { db } = require("../database");
-const { insertInvoiceChallan, deleteInvoiceChallanById, bulkDeleteInvoiceChallans: bulkDeleteInvoiceChallansModel, restoreInvoiceChallanById, bulkRestoreInvoiceChallans: bulkRestoreInvoiceChallansModel, updateInvoiceChallanById, fetchInvoiceChallanById, fetchInvoiceChallansByInvoiceId, fetchInvoiceChallanMeta, fetchAllInvoiceChallans } = require("../models/invoiceChallan.model");
+const { 
+    insertInvoiceChallan, 
+    deleteInvoiceChallanById, 
+    bulkDeleteInvoiceChallans: bulkDeleteInvoiceChallansModel, 
+    restoreInvoiceChallanById, 
+    bulkRestoreInvoiceChallans: bulkRestoreInvoiceChallansModel, 
+    updateInvoiceChallanById, 
+    fetchInvoiceChallanById, 
+    fetchInvoiceChallansByInvoiceId, 
+    fetchInvoiceChallanMeta, 
+    fetchAllInvoiceChallans 
+} = require("../models/invoiceChallan.model");
+const { generateDeliveryChallanPdf } = require("../services/deliveryChallanPdf.service");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
 const { verifyRecordOwnership } = require("../middlewares/authorize.middleware");
 
-// Fetch all invoice challans with pagination and search
+// Fetch all invoice challans with pagination, search, and status filter
 const getAllInvoiceChallans = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
+    const { page = 1, pageSize = 10, search = '', trash = false, status = '' } = req.query;
 
-    const challans = await fetchAllInvoiceChallans({ page, pageSize, search, trash });
+    const challans = await fetchAllInvoiceChallans({ page, pageSize, search, trash, status });
 
     return res.status(200).json(
         new ApiResponse({
@@ -51,17 +63,17 @@ const getInvoiceChallanById = asyncHandler(async (req, res) => {
     );
 });
 
-// Fetch invoice challans by invoice ID
+// Fetch invoice challans by invoice ID (with optional customer scope)
 const getInvoiceChallansByInvoiceId = asyncHandler(async (req, res) => {
     const invoiceId = req.params.invoiceId;
-    const { includeUnmappedChallans } = req.query;
-    const challans = await fetchInvoiceChallansByInvoiceId(invoiceId, includeUnmappedChallans);
+    const { includeUnmappedChallans, partyId } = req.query;
+    const challans = await fetchInvoiceChallansByInvoiceId(invoiceId, includeUnmappedChallans, partyId);
 
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
             data: challans,
-            message:challans.length > 0 ? 'Invoice challans fetched successfully.' : 'No challans found for the given invoice ID.',
+            message: challans.length > 0 ? 'Invoice challans fetched successfully.' : 'No challans found.',
         })
     );
 });
@@ -80,7 +92,7 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
 
     let resolvedFirmBranchId = body.firmBranchId ? Number(body.firmBranchId) : (branchId ? Number(branchId) : null);
     if (!resolvedFirmBranchId && firmId) {
-        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true }).first();
         if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
     }
 
@@ -89,20 +101,32 @@ const createInvoiceChallan = asyncHandler(async (req, res) => {
         challan_no: body.challanNo,
         challan_date: body.challanDate,
         customer_name: body.customerName,
+        party_id: body.partyId || null,
+        party_branch_id: body.partyBranchId || null,
+        delivery_address: body.deliveryAddress || null,
+        transport_mode: body.transportMode || 'Road',
+        vehicle_no: body.vehicleNo || null,
+        transporter_name: body.transporterName || null,
+        lr_no: body.lrNo || null,
+        dispatch_reason: body.dispatchReason || 'Supply on Delivery',
+        status: body.status || (body.invoiceId ? 'BILLED' : 'DISPATCHED'),
+        notes: body.notes || null,
         firm_id: firmId,
         firm_branch_id: resolvedFirmBranchId
     };
 
-    const challanId = await insertInvoiceChallan(challanData);
+    const result = await insertInvoiceChallan(challanData, body.items || []);
 
-    // If challanId is not returned, throw an error
+    const challanId = typeof result === 'object' ? result.id : result;
+    const finalChallanNo = typeof result === 'object' ? result.challanNo : challanData.challan_no;
+
     if (!challanId) {
         throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating invoice challan' });
     }
 
-    // Response
     const response = {
-        id: challanId
+        id: challanId,
+        challanNo: finalChallanNo
     };
 
     return res.status(200).json(
@@ -124,22 +148,31 @@ const updateInvoiceChallan = asyncHandler(async (req, res) => {
     const updatedData = {
         invoice_id: body.invoiceId !== undefined ? body.invoiceId : undefined,
         firm_branch_id: body.firmBranchId !== undefined ? (body.firmBranchId ? Number(body.firmBranchId) : null) : undefined,
-        challan_no: body.challanNo,
+        party_id: body.partyId !== undefined ? (body.partyId ? Number(body.partyId) : null) : undefined,
+        party_branch_id: body.partyBranchId !== undefined ? (body.partyBranchId ? Number(body.partyBranchId) : null) : undefined,
         challan_date: body.challanDate,
-        customer_name: body.customerName
+        customer_name: body.customerName,
+        delivery_address: body.deliveryAddress,
+        transport_mode: body.transportMode,
+        vehicle_no: body.vehicleNo,
+        transporter_name: body.transporterName,
+        lr_no: body.lrNo,
+        dispatch_reason: body.dispatchReason,
+        status: body.status,
+        notes: body.notes
     };
 
     // Remove undefined values
     Object.keys(updatedData).forEach(key => updatedData[key] === undefined && delete updatedData[key]);
 
-    const affectedRows = await updateInvoiceChallanById(challanId, updatedData);
+    const affectedRows = await updateInvoiceChallanById(challanId, updatedData, body.items);
 
     if (!affectedRows) {
         throw new ApiError({ statusCode: 404, message: 'Invoice challan not found or update failed' });
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: [], message: 'Invoice challan updated successfully.' })
+        new ApiResponse({ statusCode: 200, data: { id: Number(challanId) }, message: 'Invoice challan updated successfully.' })
     );
 });
 
@@ -155,10 +188,8 @@ const deleteInvoiceChallan = asyncHandler(async (req, res) => {
     }
     verifyRecordOwnership(req.user, existing, 'Invoice Challan');
 
-    // delete invoice challan by ID
     const deleted = await deleteInvoiceChallanById(challanId, permanent);
 
-    // If no rows were affected, it means the invoice challan was not found or already deleted
     if (!deleted) {
         throw new ApiError({ statusCode: 404, message: 'Invoice challan not found or already deleted' });
     }
@@ -209,8 +240,8 @@ const bulkDeleteInvoiceChallans = asyncHandler(async (req, res) => {
             statusCode: 200,
             data: { affectedRows },
             message: permanent
-                ? `${affectedRows} invoice challans permanently deleted successfully.`
-                : `${affectedRows} invoice challans moved to Trash successfully.`
+                ? `${affectedRows} invoice challan(s) permanently deleted.`
+                : `${affectedRows} invoice challan(s) moved to trash.`
         })
     );
 });
@@ -225,9 +256,30 @@ const bulkRestoreInvoiceChallans = asyncHandler(async (req, res) => {
         new ApiResponse({
             statusCode: 200,
             data: { affectedRows },
-            message: `${affectedRows} invoice challans restored from Trash successfully.`
+            message: `${affectedRows} invoice challan(s) restored successfully.`
         })
     );
+});
+
+// Download / View Delivery Challan PDF
+const getDeliveryChallanPdf = asyncHandler(async (req, res) => {
+    const challanId = req.params.id;
+
+    const challan = await fetchInvoiceChallanById(challanId);
+    if (!challan) {
+        throw new ApiError({ statusCode: 404, message: 'Delivery Challan not found.' });
+    }
+    verifyRecordOwnership(req.user, challan, 'Invoice Challan');
+
+    const pdfBuffer = await generateDeliveryChallanPdf(challanId);
+
+    const fileName = `Delivery_Challan_${challan.challan_no || challanId}`.replace(/[<>:"/\\|?*]/g, '_') + '.pdf';
+
+    res.setHeader("Access-Control-Expose-Headers", "Content-Disposition");
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    return res.end(pdfBuffer);
 });
 
 module.exports = {
@@ -235,6 +287,7 @@ module.exports = {
     getInvoiceChallanMeta,
     getInvoiceChallanById,
     getInvoiceChallansByInvoiceId,
+    getDeliveryChallanPdf,
     createInvoiceChallan,
     updateInvoiceChallan,
     deleteInvoiceChallan,

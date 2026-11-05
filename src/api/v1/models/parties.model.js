@@ -1743,11 +1743,11 @@ const fetchPartiesByName = async (firmId, search) => {
         let partiesQuery = db('parties')
             .select(
                 'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
-                'credit_period_days'
+                'firm_id as firmId',
+                'party_code as partyCode',
+                'legal_name as legalName',
+                'display_name as displayName',
+                'credit_period_days as creditPeriodDays'
             )
             .where('is_active', true);
 
@@ -1782,20 +1782,20 @@ const fetchPartyDetails = async (partyId) => {
         const party = await db('parties')
             .select(
                 'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
+                'firm_id as firmId',
+                'party_code as partyCode',
+                'legal_name as legalName',
+                'display_name as displayName',
                 'mobile',
                 'email',
-                'gst_registered',
+                'gst_registered as gstRegistered',
                 'gstin',
-                'cin_number',
-                'tan_number',
-                'pan_number',
+                'cin_number as cinNumber',
+                'tan_number as tanNumber',
+                'pan_number as panNumber',
                 'website',
                 'remarks',
-                'credit_period_days',
+                'credit_period_days as creditPeriodDays',
                 'opening_balance as openingBalance',
                 'opening_balance_type as openingBalanceType',
                 'opening_balance_date as openingBalanceDate',

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><%= firm.name %> - Delivery Challan <%= challan.challan_no %></title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0; padding: 0; color: #1e293b; font-size: 8px; line-height: 1.35; background: #ffffff;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+    }
+    .page-sheet {
+      width: 210mm; min-height: 297mm; max-height: 297mm; margin: 0 auto; background: #ffffff;
+      padding: 6mm 7.5mm; display: flex; flex-direction: column; overflow: hidden; page-break-after: always; position: relative;
+    }
+    @media print { body { background: transparent; } .page-sheet { margin: 0; page-break-after: always; } }
+    
+    .doc-frame {
+      border: 1.5px solid #cbd5e1; border-top: 4px solid #0284c7; border-radius: 4px;
+      display: flex; flex-direction: column; flex: 1; height: 100%; overflow: hidden; background: #ffffff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+    
+    /* Top Bar */
+    .top-bar {
+      background: #f8fafc; color: #1e293b; padding: 6px 12px; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1.5px solid #e2e8f0;
+    }
+    .top-title { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: #0369a1; }
+    .top-tag { background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-size: 7px; font-weight: 600; padding: 1.5px 6px; border-radius: 3px; }
+    .top-meta { font-size: 8px; color: #64748b; font-weight: 500; }
+    .top-meta b { color: #0f172a; font-weight: 600; }
+
+    /* Header Grid */
+    .header-grid { display: flex; border-bottom: 1px solid #cbd5e1; }
+    .co-box { flex: 1.4; padding: 7px 12px; border-right: 1px solid #cbd5e1; }
+    .co-name { font-size: 14px; font-weight: 800; color: #0369a1; margin: 0 0 2px 0; letter-spacing: 0.3px; }
+    .co-sub { font-size: 7.5px; font-weight: 600; color: #475569; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.2px; }
+    .co-details { font-size: 8px; color: #475569; line-height: 1.4; }
+    .co-details b { font-weight: 600; color: #0f172a; }
+
+    .meta-box { flex: 0.9; padding: 7px 12px; font-size: 8px; background: #fafbfc; }
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+    .meta-lbl { color: #64748b; font-weight: 500; }
+    .meta-val { color: #0f172a; font-weight: 600; }
+
+    /* Client & Transport Grid */
+    .details-grid { display: flex; border-bottom: 1px solid #cbd5e1; background: #ffffff; }
+    .details-col { flex: 1; padding: 7px 12px; font-size: 8px; line-height: 1.4; }
+    .details-col.bordered { border-right: 1px solid #cbd5e1; }
+    .sec-title { font-size: 7.5px; font-weight: 700; color: #0284c7; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+    .party-name { font-size: 10px; font-weight: 700; color: #0f172a; margin-bottom: 2px; }
+
+    /* Table Section */
+    .table-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; }
+    table.data-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8px; }
+    table.data-table th {
+      background: #f1f5f9; color: #334155; font-weight: 700; text-transform: uppercase; font-size: 7px;
+      padding: 5px 6px; border-bottom: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1; text-align: left;
+    }
+    table.data-table th:last-child { border-right: none; }
+    table.data-table td {
+      padding: 5px 6px; border-bottom: 1px solid #e2e8f0; border-right: 1px solid #cbd5e1; vertical-align: top;
+      color: #1e293b;
+    }
+    table.data-table td:last-child { border-right: none; }
+    .text-center { text-align: center; }
+    .text-end { text-align: right; }
+
+    /* Summary & Bottom Bar */
+    .summary-grid { display: flex; border-top: 1.5px solid #cbd5e1; background: #f8fafc; }
+    .summary-left { flex: 1.3; padding: 7px 12px; border-right: 1px solid #cbd5e1; font-size: 7.5px; }
+    .summary-right { flex: 0.9; padding: 7px 12px; font-size: 8px; }
+    .statutory-note {
+      font-size: 7px; color: #64748b; font-style: italic; margin-top: 4px; line-height: 1.35;
+      border-left: 2px solid #0284c7; padding-left: 6px;
+    }
+
+    /* Signature Block */
+    .sign-grid { display: flex; border-top: 1px solid #cbd5e1; min-height: 70px; background: #ffffff; }
+    .sign-box { flex: 1; padding: 6px 12px; display: flex; flex-direction: column; justify-content: space-between; font-size: 7.5px; }
+    .sign-box.bordered { border-right: 1px solid #cbd5e1; }
+    .sign-title { font-weight: 600; color: #475569; }
+    .sign-space { height: 35px; }
+    .sign-label { font-weight: 700; color: #0f172a; text-transform: uppercase; font-size: 7px; }
+  </style>
+</head>
+<body>
+  <div class="page-sheet">
+    <div class="doc-frame">
+      
+      <!-- Top Bar -->
+      <div class="top-bar">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span class="top-title">DELIVERY CHALLAN</span>
+          <span class="top-tag">RULE 55 - CGST RULES</span>
+        </div>
+        <div class="top-meta">
+          Challan No: <b><%= challan.challan_no %></b> | Date: <b><%= challan.formatted_date %></b>
+        </div>
+      </div>
+
+      <!-- Header Grid: Consignor Details -->
+      <div class="header-grid">
+        <div class="co-box">
+          <div class="co-name"><%= firm.name %></div>
+          <div class="co-sub"><%= firm.subtitle || 'ENGINEERING & PRECISION MANUFACTURING' %></div>
+          <div class="co-details">
+            <b>Factory / Office:</b> <%= firm.address %><br/>
+            <b>GSTIN:</b> <%= firm.gstin %> &nbsp;|&nbsp; <b>State:</b> Maharashtra (27)<br/>
+            <% if (firm.phone) { %><b>Phone:</b> <%= firm.phone %> &nbsp;|&nbsp;<% } %>
+            <% if (firm.email) { %><b>Email:</b> <%= firm.email %><% } %>
+          </div>
+        </div>
+
+        <div class="meta-box">
+          <div class="meta-row">
+            <span class="meta-lbl">Challan Number:</span>
+            <span class="meta-val"><%= challan.challan_no %></span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-lbl">Challan Date:</span>
+            <span class="meta-val"><%= challan.formatted_date %></span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-lbl">Dispatch Reason:</span>
+            <span class="meta-val"><%= challan.dispatch_reason %></span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-lbl">Challan Status:</span>
+            <span class="meta-val"><%= challan.status %></span>
+          </div>
+          <% if (challan.invoice_no) { %>
+          <div class="meta-row">
+            <span class="meta-lbl">Mapped Invoice:</span>
+            <span class="meta-val">#<%= challan.invoice_no %></span>
+          </div>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- Client & Transport Logistics Details -->
+      <div class="details-grid">
+        <div class="details-col bordered">
+          <div class="sec-title">CONSIGNEE / DELIVER TO:</div>
+          <div class="party-name"><%= challan.customer_name %></div>
+          <% if (challan.party_gstin) { %>
+            <div><b>GSTIN:</b> <%= challan.party_gstin %></div>
+          <% } %>
+          <div><b>Delivery Site Address:</b></div>
+          <div style="color: #334155;"><%= challan.delivery_address || 'As per customer order / factory site.' %></div>
+        </div>
+
+        <div class="details-col">
+          <div class="sec-title">TRANSPORT & DISPATCH LOGISTICS:</div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+            <span style="color: #64748b;">Transport Mode:</span>
+            <b><%= challan.transport_mode || 'Road' %></b>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+            <span style="color: #64748b;">Vehicle Reg. No:</span>
+            <b style="font-family: monospace; text-transform: uppercase;"><%= challan.vehicle_no || '—' %></b>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+            <span style="color: #64748b;">Transporter Name:</span>
+            <b><%= challan.transporter_name || 'Self / Direct Transport' %></b>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: #64748b;">LR / Bilty No:</span>
+            <b><%= challan.lr_no || '—' %></b>
+          </div>
+        </div>
+      </div>
+
+      <!-- Particulars of Goods Table -->
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th style="width: 30px;" class="text-center">Sr.</th>
+              <th style="width: 45%;">Description of Goods / Fabricated Items</th>
+              <th style="width: 15%;" class="text-center">HSN Code</th>
+              <th style="width: 12%;" class="text-center">Qty</th>
+              <th style="width: 10%;" class="text-center">Unit</th>
+              <th style="width: 18%;" class="text-end">Approx Value (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (challan.items && challan.items.length > 0) { %>
+              <% challan.items.forEach(function(item, index) { %>
+                <tr>
+                  <td class="text-center" style="color: #64748b;"><%= index + 1 %></td>
+                  <td>
+                    <strong style="color: #0f172a;"><%= item.item_name %></strong>
+                    <% if (item.description) { %>
+                      <div style="font-size: 7px; color: #64748b;"><%= item.description %></div>
+                    <% } %>
+                  </td>
+                  <td class="text-center" style="font-family: monospace;"><%= item.hsn_sac_code || '—' %></td>
+                  <td class="text-center font-bold" style="font-weight: 700;"><%= item.qty %></td>
+                  <td class="text-center"><%= item.unit || 'Nos' %></td>
+                  <td class="text-end" style="font-family: monospace;"><%= item.formatted_total %></td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr>
+                <td class="text-center">1</td>
+                <td><strong>Dispatched Engineering Goods as per Delivery Challan Note</strong></td>
+                <td class="text-center">—</td>
+                <td class="text-center font-bold" style="font-weight: 700;"><%= challan.total_quantity || 1 %></td>
+                <td class="text-center">Lot</td>
+                <td class="text-end">—</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Summary & Statutory Notes -->
+      <div class="summary-grid">
+        <div class="summary-left">
+          <b>Special Notes & Instructions:</b>
+          <div><%= challan.notes || 'Materials dispatched in good condition. Receiver to inspect and sign proof of delivery.' %></div>
+          
+          <div class="statutory-note">
+            <b>Declaration (Rule 55, CGST Rules 2017):</b><br/>
+            Certified that the particulars given above are true and correct. These goods are dispatched for the purpose of <%= challan.dispatch_reason.toLowerCase() %> and not intended for immediate supply on tax invoice unless invoiced separately.
+          </div>
+        </div>
+
+        <div class="summary-right">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <span style="color: #64748b;">Total Packages / Qty:</span>
+            <b style="font-size: 9px; color: #0284c7;"><%= challan.total_quantity %> Units</b>
+          </div>
+          <div style="display: flex; justify-content: space-between; border-top: 1px dashed #cbd5e1; padding-top: 3px;">
+            <span style="color: #64748b;">Notional / Transit Value:</span>
+            <b>₹ <%= challan.formatted_approx_total %></b>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signature Blocks -->
+      <div class="sign-grid">
+        <div class="sign-box bordered">
+          <div class="sign-title">Receiver's Acknowledgment & Stamp:</div>
+          <div class="sign-space"></div>
+          <div class="sign-label">Receiver's Signature & Date</div>
+        </div>
+
+        <div class="sign-box" style="text-align: right;">
+          <div class="sign-title">For <%= firm.name %></div>
+          <div class="sign-space"></div>
+          <div class="sign-label">Authorized Signatory / Dispatch In-Charge</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</body>
+</html>
+

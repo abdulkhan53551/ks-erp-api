@@ -8,32 +8,50 @@ const { ApiResponse } = require("../services/ApiResponse");
 // Fetch all invoice challans
 const fetchAllInvoiceChallans = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', trash = false, status = '' } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
         const baseQuery = db('invoice_challans AS IC')
             .select(
-                'IC.id AS challan_id',
-                'IC.challan_no',
-                'IC.challan_date',
-                'IC.firm_id',
-                'F.firm_name',
-                'IC.firm_branch_id',
-                'FB.branch_name AS firm_branch_name',
-                'FB.branch_code AS firm_branch_code',
-                db.raw('("IC"."invoice_id" IS NOT NULL) AS is_invoiced'),
-                'I.invoice_no',
-                'IC.customer_name',
-                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
-                'IC.created_at',
-                'IC.updated_at',
-                'IC.deleted_at',
-                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS deleted_by`)
+                'IC.id AS challanId',
+                'IC.challan_no AS challanNo',
+                'IC.challan_date AS challanDate',
+                'IC.firm_id AS firmId',
+                'F.firm_name AS firmName',
+                'IC.firm_branch_id AS firmBranchId',
+                'FB.branch_name AS firmBranchName',
+                'FB.branch_code AS firmBranchCode',
+                'IC.party_id AS partyId',
+                'P.legal_name AS partyLegalName',
+                'P.display_name AS partyDisplayName',
+                'P.gstin AS partyGstin',
+                'IC.party_branch_id AS partyBranchId',
+                'PB.branch_name AS partyBranchName',
+                db.raw('("IC"."invoice_id" IS NOT NULL) AS "isInvoiced"'),
+                'IC.invoice_id AS invoiceId',
+                'I.invoice_no AS invoiceNo',
+                'IC.customer_name AS customerName',
+                'IC.transport_mode AS transportMode',
+                'IC.vehicle_no AS vehicleNo',
+                'IC.transporter_name AS transporterName',
+                'IC.lr_no AS lrNo',
+                'IC.dispatch_reason AS dispatchReason',
+                'IC.status AS status',
+                'IC.delivery_address AS deliveryAddress',
+                'IC.notes AS notes',
+                'IC.total_quantity AS totalQuantity',
+                db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS "createdBy"`),
+                'IC.created_at AS createdAt',
+                'IC.updated_at AS updatedAt',
+                'IC.deleted_at AS deletedAt',
+                db.raw(`CONCAT(du.first_name, ' ', du.last_name) AS "deletedBy"`)
             )
             .leftJoin('firms AS F', 'IC.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
             .leftJoin('firm_branches AS FB', 'IC.firm_branch_id', 'FB.id')
+            .leftJoin('parties AS P', 'IC.party_id', 'P.id')
+            .leftJoin('party_branches AS PB', 'IC.party_branch_id', 'PB.id')
             .leftJoin('users AS u', 'IC.created_by', 'u.id')
             .leftJoin('users AS du', 'IC.deleted_by', 'du.id')
             .where('IC.is_active', !isTrash);
@@ -47,10 +65,17 @@ const fetchAllInvoiceChallans = async (query) => {
             baseQuery.andWhere('IC.firm_branch_id', branchId);
         }
 
+        if (status) {
+            baseQuery.andWhere('IC.status', status);
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('IC.challan_no', 'ilike', `%${search}%`)
-                    .orWhere('IC.customer_name', 'ilike', `%${search}%`);
+                    .orWhere('IC.customer_name', 'ilike', `%${search}%`)
+                    .orWhere('P.legal_name', 'ilike', `%${search}%`)
+                    .orWhere('IC.vehicle_no', 'ilike', `%${search}%`)
+                    .orWhere('IC.transporter_name', 'ilike', `%${search}%`);
             });
         }
 
@@ -75,11 +100,12 @@ const fetchAllInvoiceChallans = async (query) => {
 // Fetch invoice challan meta data for pagination
 const fetchInvoiceChallanMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', trash = false, status = '' } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0, branchId = null } = getContext();
 
         const baseQuery = db('invoice_challans AS IC')
+            .leftJoin('parties AS P', 'IC.party_id', 'P.id')
             .where('IC.is_active', !isTrash);
 
         if (firmId) {
@@ -90,10 +116,17 @@ const fetchInvoiceChallanMeta = async (query) => {
             baseQuery.andWhere('IC.firm_branch_id', branchId);
         }
 
+        if (status) {
+            baseQuery.andWhere('IC.status', status);
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('IC.challan_no', 'ilike', `%${search}%`)
-                    .orWhere('IC.customer_name', 'ilike', `%${search}%`);
+                    .orWhere('IC.customer_name', 'ilike', `%${search}%`)
+                    .orWhere('P.legal_name', 'ilike', `%${search}%`)
+                    .orWhere('IC.vehicle_no', 'ilike', `%${search}%`)
+                    .orWhere('IC.transporter_name', 'ilike', `%${search}%`);
             });
         }
 
@@ -109,38 +142,82 @@ const fetchInvoiceChallanMeta = async (query) => {
 };
 
 // Fetch invoice challan by ID
-const fetchInvoiceChallanById = async (id) => {
+const fetchInvoiceChallanById = async (id, includeDeleted = false) => {
     try {
         const { firmId = 0 } = getContext();
 
         const challanQuery = db('invoice_challans AS IC')
             .select(
-                'IC.id AS challan_id',
-                'IC.challan_no',
-                'IC.challan_date',
-                'IC.firm_id',
-                'F.firm_name',
-                'IC.firm_branch_id',
-                'FB.branch_name AS firm_branch_name',
-                'FB.branch_code AS firm_branch_code',
-                db.raw('("IC"."invoice_id" IS NOT NULL) AS is_invoiced'),
-                'IC.invoice_id',
-                'IC.customer_name',
-                'I.invoice_no'
+                'IC.id AS challanId',
+                'IC.challan_no AS challanNo',
+                'IC.challan_date AS challanDate',
+                'IC.firm_id AS firmId',
+                'F.firm_name AS firmName',
+                'IC.firm_branch_id AS firmBranchId',
+                'FB.branch_name AS firmBranchName',
+                'FB.branch_code AS firmBranchCode',
+                'IC.party_id AS partyId',
+                'P.legal_name AS partyLegalName',
+                'P.display_name AS partyDisplayName',
+                'P.gstin AS partyGstin',
+                'IC.party_branch_id AS partyBranchId',
+                'PB.branch_name AS partyBranchName',
+                db.raw('("IC"."invoice_id" IS NOT NULL) AS "isInvoiced"'),
+                'IC.invoice_id AS invoiceId',
+                'I.invoice_no AS invoiceNo',
+                'IC.customer_name AS customerName',
+                'IC.transport_mode AS transportMode',
+                'IC.vehicle_no AS vehicleNo',
+                'IC.transporter_name AS transporterName',
+                'IC.lr_no AS lrNo',
+                'IC.dispatch_reason AS dispatchReason',
+                'IC.status AS status',
+                'IC.delivery_address AS deliveryAddress',
+                'IC.notes AS notes',
+                'IC.total_quantity AS totalQuantity'
             )
             .leftJoin('firms AS F', 'IC.firm_id', 'F.id')
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
             .leftJoin('firm_branches AS FB', 'IC.firm_branch_id', 'FB.id')
-            .where('IC.id', id)
-            .andWhere('IC.is_active', true);
+            .leftJoin('parties AS P', 'IC.party_id', 'P.id')
+            .leftJoin('party_branches AS PB', 'IC.party_branch_id', 'PB.id')
+            .where('IC.id', id);
+
+        if (!includeDeleted) {
+            challanQuery.andWhere('IC.is_active', true);
+        }
 
         if (firmId) {
             challanQuery.andWhere('IC.firm_id', firmId);
         }
 
         const challan = await challanQuery.first();
+        if (!challan) return null;
 
-        return challan || null;
+        // Fetch line items
+        const items = await db('invoice_challan_items AS ICI')
+            .select(
+                'ICI.id',
+                'ICI.challan_id AS challanId',
+                'ICI.product_id AS productId',
+                'PR.name AS productName',
+                'ICI.item_name AS itemName',
+                'ICI.description',
+                'ICI.hsn_sac_code AS hsnSacCode',
+                'ICI.qty',
+                'ICI.unit',
+                'ICI.rate',
+                'ICI.total',
+                'ICI.sort_order AS sortOrder'
+            )
+            .leftJoin('products AS PR', 'ICI.product_id', 'PR.id')
+            .where('ICI.challan_id', id)
+            .andWhere('ICI.is_active', true)
+            .orderBy('ICI.sort_order', 'asc')
+            .orderBy('ICI.id', 'asc');
+
+        challan.items = items || [];
+        return challan;
     } catch (err) {
         throw new ApiError({
             statusCode: 500,
@@ -150,17 +227,22 @@ const fetchInvoiceChallanById = async (id) => {
 };
 
 // Fetch invoice challans by invoice ID (for invoice selection list and invoice details)
-const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallans) => {
+const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallans, partyId = null) => {
     try {
         const { firmId = 0 } = getContext();
         const baseQuery = db('invoice_challans AS IC')
             .select(
-                'IC.id AS challan_id',
-                'IC.challan_no',
-                'IC.challan_date',
-                db.raw('("IC"."invoice_id" IS NOT NULL) AS is_invoiced'),
-                'IC.invoice_id',
-                'IC.customer_name'
+                'IC.id AS challanId',
+                'IC.challan_no AS challanNo',
+                'IC.challan_date AS challanDate',
+                db.raw('("IC"."invoice_id" IS NOT NULL) AS "isInvoiced"'),
+                'IC.invoice_id AS invoiceId',
+                'IC.party_id AS partyId',
+                'IC.customer_name AS customerName',
+                'IC.transport_mode AS transportMode',
+                'IC.vehicle_no AS vehicleNo',
+                'IC.total_quantity AS totalQuantity',
+                'IC.status'
             )
             .leftJoin('invoices AS I', 'IC.invoice_id', 'I.id')
             .where('IC.is_active', true);
@@ -176,6 +258,14 @@ const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallan
                     this.orWhere('IC.invoice_id', invoiceId);
                 }
             });
+
+            // If partyId is provided, filter for that customer (or challans without party assigned)
+            if (partyId && Number(partyId) > 0) {
+                baseQuery.andWhere(function () {
+                    this.where('IC.party_id', Number(partyId))
+                        .orWhereNull('IC.party_id');
+                });
+            }
         } else {
             baseQuery.where('IC.invoice_id', invoiceId);
         }
@@ -192,77 +282,185 @@ const fetchInvoiceChallansByInvoiceId = async (invoiceId, includeUnmappedChallan
     }
 };
 
-// Insert a new invoice challan
-const insertInvoiceChallan = async (data) => {
-    // 1. Check if challan_no already exists in active or trashed state
-    const existingChallan = await db('invoice_challans')
-        .select('id', 'is_active', 'challan_no')
-        .where({ firm_id: data.firm_id, challan_no: data.challan_no })
-        .first();
-
-    if (existingChallan) {
-        if (existingChallan.is_active) {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Challan '${data.challan_no}' already exists.`
-            });
-        } else {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Challan '${data.challan_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different challan number.`
-            });
-        }
-    }
-
-    try {
-        const [result] = await db('invoice_challans').insert(data).returning('id');
-        return result?.id || null;
-    } catch (err) {
-        if (err.constraint === 'unique_firm_challan_no') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'Duplicate challan number found in this firm.',
-            });
-        }
-        if (err.constraint === 'invoice_challans_invoice_id_foreign') {
-            throw new ApiError({
-                statusCode: 409,
-                message: 'Invoice not found to create invoice challan.',
-            });
-        }
-        if (err instanceof ApiError) {
-            throw err;
-        }
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Something went wrong while inserting invoice challan data.',
-        });
-    }
+// Helper to extract numeric suffix from challan number string
+const extractChallanNumber = (challanNo) => {
+    const numberMatch = String(challanNo || '').match(/\d+$/);
+    return numberMatch ? parseInt(numberMatch[0], 10) : null;
 };
 
-// Update invoice challan by ID
-const updateInvoiceChallanById = async (id, data) => {
-    try {
-        const affectedRows = await db('invoice_challans').where({ id }).update(data);
-        return affectedRows;
-    } catch (err) {
-        switch (err.constraint) {
-            case 'unique_firm_challan_no':
+// Calculate next sequential challan number from existing challan number string
+const calculateNextChallanNumber = (challanNo) => {
+    const numberMatch = String(challanNo || '').match(/\d+$/);
+    if (!numberMatch) {
+        return `${challanNo || 'DC-'}1`;
+    }
+    const number = numberMatch[0];
+    const prefix = challanNo.substring(0, challanNo.length - number.length);
+    const nextNumber = String(Number(number) + 1).padStart(number.length, "0");
+    return `${prefix}${nextNumber}`;
+};
+
+// Fetch next expected consecutive challan number with collision check
+const fetchNextExpectedChallanNumber = async (firmId, trx = db) => {
+    // 1. Get the latest created challan for this firm (including active and inactive to prevent collisions)
+    const lastChallan = await trx('invoice_challans')
+        .select('challan_no')
+        .where({ firm_id: firmId })
+        .orderBy('id', 'desc')
+        .first();
+
+    if (lastChallan?.challan_no) {
+        let candidateNo = calculateNextChallanNumber(lastChallan.challan_no);
+        while (await trx('invoice_challans').where({ firm_id: firmId, challan_no: candidateNo }).first()) {
+            candidateNo = calculateNextChallanNumber(candidateNo);
+        }
+        return candidateNo;
+    }
+
+    // Default starting delivery challan number
+    return 'DC-0001';
+};
+
+// Insert a new invoice challan
+const insertInvoiceChallan = async (headerData, items = []) => {
+    // Calculate total quantity from items if available
+    let totalQty = headerData.total_quantity || 0;
+    if (Array.isArray(items) && items.length > 0) {
+        totalQty = items.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+    }
+    headerData.total_quantity = totalQty;
+
+    return await db.transaction(async (trx) => {
+        try {
+            // 1. Pessimistic Row Lock on Firm:
+            // Serializes concurrent challan creations for the same firm.
+            // PostgreSQL queues them sequentially, guaranteeing 100% race-condition safety.
+            const firm = await trx('firms')
+                .where({ id: headerData.firm_id })
+                .forUpdate()
+                .first();
+
+            if (!firm) {
+                throw new ApiError({
+                    statusCode: 404,
+                    message: 'Firm not found.'
+                });
+            }
+
+            // 2. Pure Backend Auto-Assignment:
+            // Generate the true, guaranteed next consecutive challan number under the lock
+            const nextChallanNo = await fetchNextExpectedChallanNumber(headerData.firm_id, trx);
+            headerData.challan_no = nextChallanNo;
+
+            const [result] = await trx('invoice_challans').insert(headerData).returning(['id', 'challan_no']);
+            const challanId = result?.id || null;
+
+            if (!challanId) {
+                throw new ApiError({ statusCode: 500, message: 'Failed to insert delivery challan.' });
+            }
+
+            if (Array.isArray(items) && items.length > 0) {
+                const itemRecords = items.map((it, idx) => ({
+                    challan_id: challanId,
+                    product_id: it.productId || null,
+                    item_name: it.itemName,
+                    description: it.description || null,
+                    hsn_sac_code: it.hsnSacCode || null,
+                    qty: Number(it.qty) || 1,
+                    unit: it.unit || 'Nos',
+                    rate: Number(it.rate) || 0,
+                    total: Number(it.total) || ((Number(it.qty) || 1) * (Number(it.rate) || 0)),
+                    sort_order: it.sortOrder !== undefined ? it.sortOrder : idx
+                }));
+                await trx('invoice_challan_items').insert(itemRecords);
+            }
+
+            return { id: challanId, challanNo: nextChallanNo };
+        } catch (err) {
+            if (err.constraint === 'unique_firm_challan_no' || err.code === '23505') {
                 throw new ApiError({
                     statusCode: 409,
                     message: 'Duplicate challan number found in this firm.',
                 });
-            case 'invoice_challans_invoice_id_foreign':
+            }
+            if (err.constraint === 'invoice_challans_invoice_id_foreign') {
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Invoice not found to create invoice challan.',
+                });
+            }
+            if (err instanceof ApiError) {
+                throw err;
+            }
+            throw new ApiError({
+                statusCode: 500,
+                message: `Something went wrong while inserting invoice challan data: ${err.message || ''}`,
+            });
+        }
+    });
+};
+
+// Update invoice challan by ID
+const updateInvoiceChallanById = async (id, headerData, items) => {
+    // Delivery challan number is immutable once generated to maintain statutory compliance and audit integrity
+    delete headerData.challan_no;
+
+    return await db.transaction(async (trx) => {
+        try {
+            if (Array.isArray(items)) {
+                const totalQty = items.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+                headerData.total_quantity = totalQty;
+            }
+
+            let affectedRows = 0;
+            if (Object.keys(headerData).length > 0) {
+                affectedRows = await trx('invoice_challans').where({ id }).update(headerData);
+            }
+
+            if (Array.isArray(items)) {
+                // Delete previous items and insert new ones
+                await trx('invoice_challan_items').where({ challan_id: id }).del();
+
+                if (items.length > 0) {
+                    const itemRecords = items.map((it, idx) => ({
+                        challan_id: id,
+                        product_id: it.productId || null,
+                        item_name: it.itemName,
+                        description: it.description || null,
+                        hsn_sac_code: it.hsnSacCode || null,
+                        qty: Number(it.qty) || 1,
+                        unit: it.unit || 'Nos',
+                        rate: Number(it.rate) || 0,
+                        total: Number(it.total) || ((Number(it.qty) || 1) * (Number(it.rate) || 0)),
+                        sort_order: it.sortOrder !== undefined ? it.sortOrder : idx
+                    }));
+                    await trx('invoice_challan_items').insert(itemRecords);
+                }
+            }
+
+            return affectedRows || 1;
+        } catch (err) {
+            if (err.constraint === 'unique_firm_challan_no') {
+                throw new ApiError({
+                    statusCode: 409,
+                    message: 'Duplicate challan number found in this firm.',
+                });
+            }
+            if (err.constraint === 'invoice_challans_invoice_id_foreign') {
                 throw new ApiError({
                     statusCode: 409,
                     message: 'Invoice not found to update invoice challan.',
                 });
+            }
+            if (err instanceof ApiError) {
+                throw err;
+            }
+            throw new ApiError({
+                statusCode: 500,
+                message: 'Something went wrong while updating invoice challan data.',
+            });
         }
-        throw new ApiError({
-            statusCode: 500,
-            message: 'Something went wrong while updating invoice challan data.',
-        });
-    }
+    });
 };
 
 // Delete invoice challan by ID
@@ -275,18 +473,18 @@ const deleteInvoiceChallanById = async (id, isPermanentDelete) => {
             .join('invoices as i', 'ic.invoice_id', 'i.id')
             .select('i.invoice_no')
             .where('ic.id', id)
-            .andWhere('i.is_active', true)
-            .first();
+            .andWhere('i.is_active', true);
 
-        if (activeInvoice) {
+        if (activeInvoice.length > 0) {
             throw new ApiError({
                 statusCode: 409,
-                message: `Cannot delete Challan because it is linked to active Invoice '${activeInvoice.invoice_no}'. Please unlink it from the invoice first.`
+                message: `Cannot delete Challan because it is linked to active Invoice '${activeInvoice[0].invoice_no}'. Please unlink it from the invoice first.`
             });
         }
 
         // Hard delete
         if (isPermanentDelete) {
+            await db('invoice_challan_items').where('challan_id', id).del();
             const delQuery = db('invoice_challans').where('id', id);
             if (firmId) delQuery.andWhere('firm_id', firmId);
             const result = await delQuery.del();
@@ -297,6 +495,9 @@ const deleteInvoiceChallanById = async (id, isPermanentDelete) => {
         const updateQuery = db('invoice_challans').where('id', id);
         if (firmId) updateQuery.andWhere('firm_id', firmId);
         const updated = await updateQuery.update({ is_active: false });
+        if (updated > 0) {
+            await db('invoice_challan_items').where('challan_id', id).update({ is_active: false });
+        }
         return updated > 0;
     } catch (err) {
         if (err instanceof ApiError) {
@@ -331,16 +532,19 @@ const bulkDeleteInvoiceChallans = async (challanIds = [], isPermanentDelete = fa
         }
 
         if (isPermanentDelete) {
+            await db('invoice_challan_items').whereIn('challan_id', challanIds).del();
             const delQuery = db('invoice_challans').whereIn('id', challanIds);
             if (firmId) delQuery.andWhere('firm_id', firmId);
             return await delQuery.del();
         }
 
         // Soft delete (bulk move to trash)
-        const updateQuery = db('invoice_challans')
-            .whereIn('id', challanIds);
+        const updateQuery = db('invoice_challans').whereIn('id', challanIds);
         if (firmId) updateQuery.andWhere('firm_id', firmId);
         const affectedRows = await updateQuery.update({ is_active: false });
+        if (affectedRows > 0) {
+            await db('invoice_challan_items').whereIn('challan_id', challanIds).update({ is_active: false });
+        }
 
         return affectedRows;
     } catch (err) {
@@ -375,6 +579,9 @@ const restoreInvoiceChallanById = async (id) => {
             .where('id', id);
         if (firmId) updateQuery.andWhere('firm_id', firmId);
         const affectedRows = await updateQuery.update({ is_active: true });
+        if (affectedRows > 0) {
+            await db('invoice_challan_items').where('challan_id', id).update({ is_active: true });
+        }
 
         return affectedRows > 0;
     } catch (err) {
@@ -399,6 +606,9 @@ const bulkRestoreInvoiceChallans = async (challanIds = []) => {
             .andWhere('is_active', false);
         if (firmId) updateQuery.andWhere('firm_id', firmId);
         const affectedRows = await updateQuery.update({ is_active: true });
+        if (affectedRows > 0) {
+            await db('invoice_challan_items').whereIn('challan_id', challanIds).update({ is_active: true });
+        }
 
         return affectedRows;
     } catch (err) {
@@ -450,43 +660,30 @@ const updateInvoiceChallanMapping = async (trx, invoiceId, newChallanIds) => {
         const toAdd = uniqueNewIds.filter(id => !oldIds.includes(id));
         const toRemove = oldIds.filter(id => !uniqueNewIds.includes(id));
 
-        // 3️⃣ Ensure challans being newly added are not already linked to another invoice
+        // 3️⃣ Apply updates: Map to this invoice and mark as BILLED
         if (toAdd.length > 0) {
-            const alreadyLinkedOther = challans.filter(
-                c => toAdd.includes(c.id) && c.invoice_id && Number(c.invoice_id) !== Number(invoiceId)
-            );
-            if (alreadyLinkedOther.length > 0) {
-                throw new ApiError({
-                    statusCode: 400,
-                    message: 'One or more challans are already associated with another invoice.',
-                });
-            }
-
             await trx('invoice_challans')
                 .whereIn('id', toAdd)
-                .update({ invoice_id: invoiceId });
+                .update({ invoice_id: invoiceId, status: 'BILLED' });
         }
 
-        // 4️⃣ Unmap removed challans
+        // Unmap and restore to DISPATCHED
         if (toRemove.length > 0) {
             await trx('invoice_challans')
                 .whereIn('id', toRemove)
-                .update({ invoice_id: null });
+                .update({ invoice_id: null, status: 'DISPATCHED' });
         }
-
-        return { added: toAdd, removed: toRemove };
     } else {
-        // Unmap all existing challans for this invoice
-        const unmapQuery = trx('invoice_challans')
-            .where({ invoice_id: invoiceId, is_active: true });
-        if (firmId) unmapQuery.andWhere('firm_id', firmId);
-        await unmapQuery.update({ invoice_id: null });
-
-        return { added: [], removed: [] };
+        // No challans selected — clear all existing for this invoice
+        await trx('invoice_challans')
+            .where({ invoice_id: invoiceId })
+            .update({ invoice_id: null, status: 'DISPATCHED' });
     }
 };
 
 module.exports = {
+    calculateNextChallanNumber,
+    fetchNextExpectedChallanNumber,
     fetchAllInvoiceChallans,
     fetchInvoiceChallanMeta,
     fetchInvoiceChallanById,
