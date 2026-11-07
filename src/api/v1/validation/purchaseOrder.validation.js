@@ -14,17 +14,48 @@ const getPurchaseOrdersByInvoiceIdValidationSchema = {
     }),
     query: Joi.object({
         includeUnmappedPurchaseOrders: Joi.boolean().optional().default(false),
+        partyId: Joi.number().integer().positive().optional().allow(null),
     })
 };
+
+// Line item schema for Customer Purchase Order
+const purchaseOrderItemSchema = Joi.object({
+    id: Joi.number().integer().positive().optional(),
+    productId: Joi.number().integer().positive().allow(null).optional(),
+    itemName: Joi.string().max(255).required(),
+    description: Joi.string().allow('', null).optional(),
+    hsnSacCode: Joi.string().max(30).allow('', null).optional(),
+    qty: Joi.number().positive().required(),
+    invoicedQty: Joi.number().min(0).optional().default(0),
+    unit: Joi.string().max(50).optional().default('Nos'),
+    rate: Joi.number().min(0).optional().default(0),
+    gstRate: Joi.number().min(0).optional().default(0),
+    taxableAmount: Joi.number().min(0).optional().default(0),
+    cgst: Joi.number().min(0).optional().default(0),
+    sgst: Joi.number().min(0).optional().default(0),
+    igst: Joi.number().min(0).optional().default(0),
+    total: Joi.number().min(0).optional().default(0),
+    sortOrder: Joi.number().integer().min(0).optional().default(0)
+});
 
 // Validation schema for creating a new purchase order
 const createPurchaseOrderValidationSchema = {
     body: Joi.object({
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
+        partyId: Joi.number().integer().positive().allow(null).optional(),
+        partyBranchId: Joi.number().integer().positive().allow(null).optional(),
         poNo: Joi.string().max(50).required(),
         poDate: Joi.date().required(),
         customerName: Joi.string().max(255).required(),
-        status: Joi.string().valid('OPEN', 'COMPLETED', 'CANCELLED').default('OPEN')
+        billingAddress: Joi.string().allow('', null).optional(),
+        deliveryAddress: Joi.string().allow('', null).optional(),
+        deliveryDueDate: Joi.date().allow(null).optional(),
+        validUntil: Joi.date().allow(null).optional(),
+        paymentTerms: Joi.string().max(255).allow('', null).optional(),
+        advancePercentage: Joi.number().min(0).max(100).optional().default(0),
+        status: Joi.string().valid('OPEN', 'PARTIALLY_INVOICED', 'COMPLETED', 'CANCELLED').default('OPEN'),
+        notes: Joi.string().allow('', null).optional(),
+        items: Joi.array().items(purchaseOrderItemSchema).optional().default([])
     }),
 };
 
@@ -35,10 +66,20 @@ const updatePurchaseOrderValidationSchema = {
     }),
     body: Joi.object({
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
+        partyId: Joi.number().integer().positive().allow(null).optional(),
+        partyBranchId: Joi.number().integer().positive().allow(null).optional(),
         poNo: Joi.string().max(50).optional(),
         poDate: Joi.date().optional(),
         customerName: Joi.string().max(255).optional(),
-        status: Joi.string().valid('OPEN', 'COMPLETED', 'CANCELLED').optional()
+        billingAddress: Joi.string().allow('', null).optional(),
+        deliveryAddress: Joi.string().allow('', null).optional(),
+        deliveryDueDate: Joi.date().allow(null).optional(),
+        validUntil: Joi.date().allow(null).optional(),
+        paymentTerms: Joi.string().max(255).allow('', null).optional(),
+        advancePercentage: Joi.number().min(0).max(100).optional(),
+        status: Joi.string().valid('OPEN', 'PARTIALLY_INVOICED', 'COMPLETED', 'CANCELLED').optional(),
+        notes: Joi.string().allow('', null).optional(),
+        items: Joi.array().items(purchaseOrderItemSchema).optional()
     }).min(1), // Ensure at least one field is provided
 };
 
