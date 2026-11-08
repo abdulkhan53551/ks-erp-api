@@ -40,7 +40,7 @@ const startServer = async () => {
         await connectDB();
 
         // 2. Start HTTP server only AFTER database connection is verified
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`✅ Server listening on port ${PORT}`);
         });
     } catch (err) {
