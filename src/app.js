@@ -69,16 +69,6 @@ app.get('/test-pdf', async (req, res, next) => {
 })
 app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }))
 
-// Test route: Sabse pehle line par rakhein (CORS ke theek baad)
-app.get('/', (req, res) => {
-  res.status(200).send('API OK');
-});
-
-// Agar HEAD request bhi aati hai to safely handle karein
-app.head('/', (req, res) => {
-  res.status(200).end();
-});
-
 // Lightweight health check (zero DB overhead for Render and React wakeup)
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok', uptime: process.uptime() });
