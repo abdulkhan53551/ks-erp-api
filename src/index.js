@@ -37,7 +37,7 @@ const startServer = async () => {
     try {
         // 1. Connect to PostgreSQL
         // Knex pool automatically waits up to acquireTimeoutMillis (60s) for Neon to wake up
-        await connectDB();
+        // await connectDB();
 
         // 2. Start HTTP server only AFTER database connection is verified
         app.listen(PORT, () => {
