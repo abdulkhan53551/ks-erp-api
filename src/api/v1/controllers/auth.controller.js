@@ -3,17 +3,165 @@ const { ApiResponse } = require('../services/ApiResponse.js');
 const { ApiError } = require('../services/ApiError.js');
 const { rotateRefreshToken, createRefreshToken } = require('../services/tokenService.js');
 const { JWT } = require('../../../config/config.js');
-const { isUserExist, getHashedPassword, isPasswordCorrect } = require('../models/user.model.js');
+const {
+    isUserExist,
+    getHashedPassword,
+    isPasswordCorrect,
+    fetchUserById,
+    findUserById,
+    getPendingRegistrations,
+    getRejectedRegistrations,
+    approveUserRegistration,
+    rejectUserRegistration,
+    requestPasswordReset,
+    getPendingPasswordResets,
+    approvePasswordReset,
+    rejectPasswordReset,
+    findUserByResetToken,
+    completePasswordReset,
+    getAllRoles
+} = require('../models/user.model.js');
 const { createUser, deleteRefreshTokenByUserIDAndToken, deleteRefreshTokenByUserID, assignPermissionToRole, removeAssignedRolePermissionById, getResourcePermissionById, createAbacPolicy, deleteAbacPolicy, getAllAbacPolicy } = require('../models/auth.model.js');
-const { hashToken, generateAccessToken } = require('../helpers/token.js');
+const { hashToken, generateToken, generateAccessToken } = require('../helpers/token.js');
 const { clearAccessAndRefreshTokenCookie } = require('../../../utils/cookies.js');
 const casbinDb = require('../models/auth.model.js');
 const { getEnforcer } = require('../services/casbin.js');
 const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
 
+const { db } = require('../database');
+const { getFirmRolePermissions } = require('../services/firmPermissionCache');
+
 // Convert to expiry days to number
 const REFRESH_TOKEN_EXPIRY_DAYS = Number(JWT.REFRESH_TOKEN_EXPIRE?.match(/\d+/)?.[0]);
 const REFRESH_TOKEN_EXPIRY_IN_MS = REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000
+
+/**
+ * Helper to fetch permission strings for a user role, using the in-memory LRU cache
+ */
+const getUserPermissions = async (roleSlug, roleId, firmId = null) => {
+    if ((roleSlug || '').toLowerCase() === 'super-admin') return ['*'];
+    if (!roleId || !firmId) return [];
+    try {
+        const permSet = await getFirmRolePermissions(firmId, roleId);
+        return Array.from(permSet);
+    } catch (err) {
+        console.error('Error fetching user permissions:', err);
+        return [];
+    }
+};
+
+/**
+ * Helper to fetch all authorized firms and branches for a user.
+ * For Super Admin, returns all active firms and their active branches.
+ * For Standard Users, returns mappings from user_firm_branches with assigned roles.
+ */
+const getUserFirmsAndBranches = async (user) => {
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
+
+    let availableFirms = [];
+    if (isSuperAdmin) {
+        const firms = await db('firms')
+            .where({ is_active: true })
+            .select('id', 'firm_name as firmName', 'trade_name as tradeName', 'logo_url as logoUrl', 'gstin')
+            .orderBy('id', 'asc');
+
+        for (const f of firms) {
+            const branches = await db('firm_branches')
+                .where({ firm_id: f.id, is_active: true })
+                .select('id', 'branch_name as branchName', 'branch_code as branchCode', 'is_head_office as isHeadOffice', 'gstin')
+                .orderBy('is_head_office', 'desc')
+                .orderBy('id', 'asc');
+
+            availableFirms.push({
+                ...f,
+                role: user.role_slug || 'super-admin',
+                roleId: user.role_id || null,
+                roleName: user.role_name || 'Super Administrator',
+                branches
+            });
+        }
+    } else {
+        const mappings = await db('user_firm_branches as ufb')
+            .join('firms as f', 'ufb.firm_id', 'f.id')
+            .leftJoin('firm_branches as fb', 'ufb.firm_branch_id', 'fb.id')
+            .join('roles as r', 'ufb.role_id', 'r.id')
+            .where({
+                'ufb.user_id': user.id,
+                'ufb.is_active': true,
+                'f.is_active': true
+            })
+            .select(
+                'f.id as firm_id',
+                'f.firm_name as firm_name',
+                'f.trade_name as trade_name',
+                'f.logo_url as logo_url',
+                'f.gstin as firm_gstin',
+                'fb.id as branch_id',
+                'fb.branch_name as branch_name',
+                'fb.branch_code as branch_code',
+                'fb.is_head_office as is_head_office',
+                'fb.gstin as branch_gstin',
+                'r.id as role_id',
+                'r.name as role_name',
+                'r.slug as role_slug',
+                'ufb.data_scope as data_scope',
+                'ufb.is_default as is_default'
+            )
+            .orderBy('f.id', 'asc');
+
+        const firmMap = new Map();
+        for (const m of mappings) {
+            if (!firmMap.has(m.firm_id)) {
+                firmMap.set(m.firm_id, {
+                    id: m.firm_id,
+                    firmName: m.firm_name,
+                    tradeName: m.trade_name,
+                    logoUrl: m.logo_url,
+                    gstin: m.firm_gstin,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || (m.branch_id ? 'BRANCH' : 'FIRM'),
+                    isDefault: m.is_default,
+                    branches: []
+                });
+            }
+
+            const currentFirm = firmMap.get(m.firm_id);
+            if (m.branch_id) {
+                currentFirm.branches.push({
+                    id: m.branch_id,
+                    branchName: m.branch_name,
+                    branchCode: m.branch_code,
+                    isHeadOffice: m.is_head_office,
+                    gstin: m.branch_gstin,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'BRANCH'
+                });
+            } else {
+                // Wildcard access to all branches of this firm
+                const allBranches = await db('firm_branches')
+                    .where({ firm_id: m.firm_id, is_active: true })
+                    .select('id', 'branch_name as branchName', 'branch_code as branchCode', 'is_head_office as isHeadOffice', 'gstin')
+                    .orderBy('is_head_office', 'desc')
+                    .orderBy('id', 'asc');
+
+                currentFirm.branches = allBranches.map(b => ({
+                    ...b,
+                    role: m.role_slug,
+                    roleId: m.role_id,
+                    roleName: m.role_name,
+                    dataScope: m.data_scope || 'FIRM'
+                }));
+            }
+        }
+        availableFirms = Array.from(firmMap.values());
+    }
+
+    return availableFirms;
+};
 
 // Register user
 const registerUser = asyncHandler(async (req, res) => {
@@ -24,68 +172,53 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     // Get user detail
-    const { firstName, lastName, role, email, userName, password } = req.body
+    const { firstName, lastName, role, email, userName, password } = req.body;
 
     // Validation - not empty
     if (
-        [firstName, lastName, role, email, userName, password].some(field => !field?.trim())
+        [firstName, email, userName, password].some(field => !field?.trim())
     ) {
-        throw new ApiError({ statusCode: 400, message: 'All fields are required' });
+        throw new ApiError({ statusCode: 400, message: 'First name, email, username, and password are required' });
     }
 
     // Check if user already exist
-    const existedUser = await isUserExist(userName, email)
+    const existedUser = await isUserExist(userName, email);
 
     // Throw error if user exist
     if (existedUser?.id > 0) {
-        throw new ApiError({ statusCode: 409, message: 'User with email or username already exist' });
+        throw new ApiError({ statusCode: 409, message: 'User with email or username already exists' });
     }
 
     // Hashed password
-    const hashedPassword = await getHashedPassword(password)
-
-    // Check for image upload them to server
-    // const avatarLocalPath = req.files?.avatar?.[0]?.path
-    // const coverImageLocalPath = req.files?.coverImage?.[0]?.path
-
-    // if (!avatarLocalPath) {
-    //     throw new ApiError({statusCode: 400, message: 'Avatar local file is required'})
-    // }
-
-    // // Upload them to cloudanary, image
-    // const avatar = await uploadOnCloudinary(avatarLocalPath)
-    // const coverImage = await uploadOnCloudinary(coverImageLocalPath)
-
-    // if (!avatar) {
-    //     throw new ApiError({statusCode: 400, message: 'Avatar file is required'})
-    // }
+    const hashedPassword = await getHashedPassword(password);
 
     const userData = {
-        email: email,
+        email: email.trim().toLowerCase(),
         password: hashedPassword,
-        first_name: firstName,
-        last_name: lastName,
-        role_id: role,
-        user_name: userName.toLowerCase()
-    }
+        first_name: firstName.trim(),
+        last_name: (lastName || '').trim(),
+        role_id: role ? parseInt(role, 10) : null,
+        user_name: userName.trim().toLowerCase(),
+        approval_status: 'PENDING',
+        is_active: false
+    };
 
-    // Remove password & refresh token field from response
-    const newUser = await createUser(userData)
+    // Create user in pending state
+    const newUser = await createUser(userData);
 
-    // Check for user creation
     if (!newUser) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while registering user' });
     }
 
     // Prepare response
     response = {
         statusCode: 201,
         data: newUser,
-        message: 'User registered successfully.'
-    }
+        message: 'Registration submitted successfully. Your account is pending Super Admin approval.'
+    };
 
-    return res.status(response.statusCode).json(new ApiResponse(response))
-})
+    return res.status(response.statusCode).json(new ApiResponse(response));
+});
 
 const loginUser = asyncHandler(async (req, res) => {
     const { userName, email, password } = req.body;
@@ -111,14 +244,76 @@ const loginUser = asyncHandler(async (req, res) => {
     }
 
     // Check password
-    const isPasswordValid = await isPasswordCorrect(password, user?.password)
+    const isPasswordValid = await isPasswordCorrect(password, user?.password);
     if (!isPasswordValid) {
-        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' })
+        throw new ApiError({ statusCode: 401, message: 'Invalid user credential' });
     }
 
-    // Acess and refresh token generation
-    const tokenData = { user: user, ip: ipAddress, userAgent, deviceId: null }
-    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData)
+    // Approval gate checks
+    if (user.approval_status === 'PENDING') {
+        throw new ApiError({ statusCode: 403, message: 'Your account is pending Super Admin approval. Please contact administrator.' });
+    }
+
+    if (user.approval_status === 'REJECTED') {
+        throw new ApiError({ statusCode: 403, message: 'Your account registration has been rejected. Please contact administrator.' });
+    }
+
+    if (user.deleted_at) {
+        throw new ApiError({ statusCode: 403, message: 'Your account has been deleted. Please contact administrator.' });
+    }
+
+    if (!user.is_active) {
+        throw new ApiError({ statusCode: 403, message: 'Your account has been deactivated. Please contact administrator.' });
+    }
+
+    // Fetch user's authorized firms & branches
+    const availableFirms = await getUserFirmsAndBranches(user);
+
+    const isSuperAdmin = (user.role_slug || '').toLowerCase() === 'super-admin';
+    if (!isSuperAdmin && availableFirms.length === 0) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Your account is approved, but no firm has been assigned to you yet. Please contact your administrator.'
+        });
+    }
+
+    // Determine default firm and branch
+    const defaultFirm = availableFirms.find(f => f.isDefault) || availableFirms[0] || null;
+    const firmId = defaultFirm?.id || null;
+    const defaultBranch = defaultFirm?.branches?.find(b => b.isHeadOffice) || defaultFirm?.branches?.[0] || null;
+    const branchId = defaultBranch?.id || null;
+
+    const roleSlug = defaultFirm?.role || user.role_slug || 'admin';
+    const roleName = defaultFirm?.roleName || user.role_name || 'Administrator';
+    const roleId = defaultFirm?.roleId || user.role_id;
+
+    // Access and refresh token generation
+    const tokenData = {
+        user: { ...user, role: roleSlug, roleId, firmId },
+        ip: ipAddress,
+        userAgent,
+        deviceId: null
+    };
+    const { accessToken, refreshToken } = await generateAccessAndRefreshTokens(tokenData);
+
+    const permissions = await getUserPermissions(roleSlug, roleId, firmId);
+
+    const isSuperAdminUser = (roleSlug || user.role_slug || '').toLowerCase() === 'super-admin';
+    const userProfile = {
+        id: user.id,
+        firstName: user.first_name,
+        lastName: user.last_name,
+        email: user.email,
+        userName: user.user_name,
+        roleId,
+        role: roleSlug,
+        roleName,
+        firmId,
+        branchId,
+        isSuperAdmin: isSuperAdminUser,
+        dataScope: isSuperAdminUser ? 'GLOBAL' : (defaultFirm?.dataScope || 'OWN'),
+        permissions
+    };
 
     // Generate new access and refresh token
     const optionsCookie = {
@@ -126,24 +321,33 @@ const loginUser = asyncHandler(async (req, res) => {
         secure: true,
         sameSite: 'None',
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
-    }
+    };
 
     response = {
         statusCode: 200,
-        data: { accessToken, refreshToken },
+        data: {
+            accessToken,
+            refreshToken,
+            user: userProfile,
+            firms: availableFirms,
+            defaultContext: {
+                firmId,
+                branchId
+            }
+        },
         message: 'Successfully logged in'
-    }
+    };
 
     // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
         .cookie('refreshToken', refreshToken, optionsCookie)
-        .json(new ApiResponse(response))
+        .json(new ApiResponse(response));
 });
 
 // Generate refresh token
 const refreshUserToken = asyncHandler(async (req, res) => {
-    const refreshToken = req.cookies.refreshToken || req.body.refreshToken
+    const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
     const ip = req.ip;
     const userAgent = req.get('User-Agent');
 
@@ -151,18 +355,18 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         statusCode: 500,
         data: null,
         message: 'Something went wrong while generating refresh token'
-    }
+    };
 
     // Check if refresh token is present
     if (!refreshToken) {
-        throw new ApiError({ statusCode: 400, message: 'Refresh token is required' })
+        throw new ApiError({ statusCode: 400, message: 'Refresh token is required' });
     }
 
     // Get new refresh token
     const { accessToken, newToken: newRefreshToken } = await rotateRefreshToken(refreshToken, ip, userAgent);
 
     // Get token data
-    const tokens = { accessToken, refreshToken: newRefreshToken }
+    const tokens = { accessToken, ...(newRefreshToken ? { refreshToken: newRefreshToken } : {}) };
 
     // Generate new access and refresh token
     const optionsCookie = {
@@ -170,52 +374,127 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         secure: true,
         sameSite: 'None',
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
-    }
+    };
 
     response = {
         statusCode: 200,
         data: tokens,
         message: 'Successfully generated access and refreshed token'
+    };
+
+    // Set refresh token as HTTP-only cookie if rotated
+    if (newRefreshToken) {
+        res.cookie('refreshToken', newRefreshToken, optionsCookie);
     }
 
-    // Set access & refresh token as HTTP-only cookie
     return res
         .status(response.statusCode)
-        .cookie('refreshToken', newRefreshToken, optionsCookie)
-        .json(new ApiResponse(response))
-})
+        .json(new ApiResponse(response));
+});
 
 // Generate access and refresh token
 const generateAccessAndRefreshTokens = async (tokenData) => {
     try {
-        const { user, ip, userAgent, deviceId } = tokenData
+        const { user, ip, userAgent, deviceId } = tokenData;
+        const roleSlug = user.role || user.roleSlug || user.role_slug || null;
 
-        // Generate access token
+        // Generate access token (clean identity payload)
         const tokenPayload = {
             id: user.id,
             email: user.email,
-            userName: user.user_name,
-            fullName: `${user.first_name} ${user.last_name}`
-        }
-        const accessToken = generateAccessToken(tokenPayload)
+            userName: user.user_name || user.userName,
+            fullName: `${user.first_name || user.firstName || ''} ${user.last_name || user.lastName || ''}`.trim(),
+            role: roleSlug,
+            roleId: user.role_id || user.roleId
+        };
+        const accessToken = generateAccessToken(tokenPayload);
 
         // Generate refresh token
         const { token: refreshToken } = await createRefreshToken(user.id, ip, userAgent, deviceId);
 
-        return { accessToken, refreshToken }
+        return { accessToken, refreshToken };
     } catch (error) {
         console.log('Error generating access and refresh token:', error);
 
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' })
+        throw new ApiError({ statusCode: 500, message: 'Something went wrong while generating refresh and access token.' });
     }
-}
+};
+
+// Get Current Authenticated User (/auth/me)
+const getCurrentUser = asyncHandler(async (req, res) => {
+    const userId = req.user.id;
+    const user = await fetchUserById(userId);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    const availableFirms = await getUserFirmsAndBranches(user);
+    const isSuperAdminUser = (user.role_slug || '').toLowerCase() === 'super-admin';
+
+    if (!isSuperAdminUser && availableFirms.length === 0) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Your account is approved, but no firm has been assigned to you yet. Please contact your administrator.'
+        });
+    }
+
+    let activeFirmId = null;
+    if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
+        const parsed = parseInt(req.headers['x-firm-id'], 10);
+        if (!isNaN(parsed) && parsed > 0) activeFirmId = parsed;
+    } else {
+        activeFirmId = req.user?.firmId || (isSuperAdminUser ? null : (availableFirms[0]?.id || null));
+    }
+
+    let activeBranchId = null;
+    if (req.headers['x-branch-id'] && req.headers['x-branch-id'] !== 'all') {
+        const parsed = parseInt(req.headers['x-branch-id'], 10);
+        if (!isNaN(parsed) && parsed > 0) activeBranchId = parsed;
+    } else {
+        activeBranchId = req.user?.branchId || null;
+    }
+
+    const currentFirm = availableFirms.find(f => f.id === activeFirmId) || availableFirms[0] || null;
+    const currentBranch = activeBranchId ? currentFirm?.branches?.find(b => b.id === activeBranchId) : null;
+
+    const roleSlug = currentBranch?.role || currentFirm?.role || user.role_slug || req.user?.role || 'admin';
+    const roleId = currentBranch?.roleId || currentFirm?.roleId || user.role_id || req.user?.roleId;
+    const roleName = currentBranch?.roleName || currentFirm?.roleName || user.role_name || 'Administrator';
+    const dataScope = isSuperAdminUser ? 'GLOBAL' : (currentBranch?.dataScope || currentFirm?.dataScope || req.user?.dataScope || 'OWN');
+
+    const permissions = await getUserPermissions(roleSlug, roleId, activeFirmId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: {
+            user: {
+                id: user.id,
+                firstName: user.first_name,
+                lastName: user.last_name,
+                email: user.email,
+                userName: user.user_name,
+                roleId,
+                role: roleSlug,
+                roleName,
+                firmId: activeFirmId,
+                branchId: activeBranchId,
+                isSuperAdmin: isSuperAdminUser,
+                dataScope,
+                permissions
+            },
+            firms: availableFirms
+        },
+        message: 'Current user profile fetched successfully'
+    }));
+});
 
 // Check verify access token
 const checkVerifyAccessToken = asyncHandler(async (req, res, next) => {
     return res
         .status(200)
-        .json(new ApiResponse({ statusCode: 200, message: 'Access token is valid' }))
-})
+        .json(new ApiResponse({ statusCode: 200, message: 'Access token is valid' }));
+});
 
 // Check verify access token
 const checkIsAuthorizeAccess = asyncHandler(async (req, res, next) => {
@@ -552,10 +831,199 @@ const clearAllPolicies = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Successfully deleted all policies' }))
 })
 
+// ========== FORGOT & RESET PASSWORD ==========
+const forgotPassword = asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    if (!email?.trim()) {
+        throw new ApiError({ statusCode: 400, message: 'Email is required' });
+    }
+
+    const user = await isUserExist('', email.trim());
+    if (user?.id) {
+        await requestPasswordReset(email.trim());
+    }
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password reset request submitted. Awaiting Super Admin approval.'
+    }));
+});
+
+const validateResetToken = asyncHandler(async (req, res) => {
+    const { token } = req.query;
+    if (!token) {
+        throw new ApiError({ statusCode: 400, message: 'Token is required' });
+    }
+
+    const tokenHash = hashToken(token);
+    const user = await findUserByResetToken(tokenHash);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid or expired password reset link' });
+    }
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: { valid: true, email: user.email },
+        message: 'Reset token is valid'
+    }));
+});
+
+const resetPassword = asyncHandler(async (req, res) => {
+    const token = req.body.token;
+    const newPassword = req.body.newPassword || req.body.password;
+    if (!token || !newPassword) {
+        throw new ApiError({ statusCode: 400, message: 'Token and new password are required' });
+    }
+
+    const tokenHash = hashToken(token);
+    const user = await findUserByResetToken(tokenHash);
+
+    if (!user) {
+        throw new ApiError({ statusCode: 400, message: 'Invalid or expired password reset link' });
+    }
+
+    const hashedPassword = await getHashedPassword(newPassword);
+    await completePasswordReset(user.id, hashedPassword);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password has been reset successfully. You can now sign in.'
+    }));
+});
+
+// ========== SUPER ADMIN APPROVAL ACTIONS ==========
+const getPendingRegistrationsList = asyncHandler(async (req, res) => {
+    const users = await getPendingRegistrations();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: users,
+        message: 'Pending registrations fetched successfully'
+    }));
+});
+
+const approveRegistration = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { roleId } = req.body;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await approveUserRegistration(id, roleId);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'User registration approved successfully'
+    }));
+});
+
+const rejectRegistration = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await rejectUserRegistration(id);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'User registration rejected'
+    }));
+});
+
+const getRejectedRegistrationsList = asyncHandler(async (req, res) => {
+    const requests = await getRejectedRegistrations();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: requests,
+        message: 'Rejected registrations fetched successfully'
+    }));
+});
+
+const getPendingPasswordResetsList = asyncHandler(async (req, res) => {
+    const requests = await getPendingPasswordResets();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: requests,
+        message: 'Pending password reset requests fetched successfully'
+    }));
+});
+
+const approvePasswordResetRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    const cryptoToken = generateToken(32);
+    const tokenHash = hashToken(cryptoToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await approvePasswordReset(id, tokenHash, expiresAt);
+
+    const frontendBase = process.env.FRONTEND_URL || req.headers.origin || (req.headers.referer ? req.headers.referer.replace(/\/$/, '') : null) || 'http://localhost:5173';
+    const resetLink = `${frontendBase}/auth/reset-password?token=${cryptoToken}`;
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: {
+            token: cryptoToken,
+            resetToken: cryptoToken,
+            resetLink,
+            expiresAt,
+            user: {
+                id: user.id,
+                email: user.email,
+                userName: user.userName || user.user_name,
+                firstName: user.firstName || user.first_name,
+                lastName: user.lastName || user.last_name
+            }
+        },
+        message: 'Password reset approved. Reset link generated successfully.'
+    }));
+});
+
+const rejectPasswordResetRequest = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const user = await findUserById(id);
+    if (!user) {
+        throw new ApiError({ statusCode: 404, message: 'User not found' });
+    }
+
+    await rejectPasswordReset(id);
+
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: null,
+        message: 'Password reset request rejected'
+    }));
+});
+
+const getRoles = asyncHandler(async (req, res) => {
+    const roles = await getAllRoles();
+    return res.status(200).json(new ApiResponse({
+        statusCode: 200,
+        data: roles,
+        message: 'Roles fetched successfully'
+    }));
+});
+
 module.exports = {
     registerUser,
     loginUser,
     refreshUserToken,
+    getCurrentUser,
     checkVerifyAccessToken,
     checkIsAuthorizeAccess,
     logout,
@@ -569,5 +1037,16 @@ module.exports = {
     clearAllPolicies,
     createPolicy,
     deletePolicy,
-    updatePolicy
-}
+    updatePolicy,
+    forgotPassword,
+    validateResetToken,
+    resetPassword,
+    getPendingRegistrationsList,
+    getRejectedRegistrationsList,
+    approveRegistration,
+    rejectRegistration,
+    getPendingPasswordResetsList,
+    approvePasswordResetRequest,
+    rejectPasswordResetRequest,
+    getRoles
+};

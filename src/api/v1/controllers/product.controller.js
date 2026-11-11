@@ -86,9 +86,18 @@ const getProductById = asyncHandler(async (req, res) => {
  */
 const createProduct = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
+    const effectiveFirmId = req.body.firmId || firmId;
+
+    if (!effectiveFirmId) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Firm ID is required to create a product.'
+        });
+    }
+
     const userId = req.user?.id || 1;
 
-    const newProduct = await insertProduct(firmId, userId, req.body);
+    const newProduct = await insertProduct(effectiveFirmId, userId, req.body);
 
     return res.status(201).json(
         new ApiResponse({

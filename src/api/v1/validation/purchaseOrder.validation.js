@@ -20,6 +20,7 @@ const getPurchaseOrdersByInvoiceIdValidationSchema = {
 // Validation schema for creating a new purchase order
 const createPurchaseOrderValidationSchema = {
     body: Joi.object({
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         poNo: Joi.string().max(50).required(),
         poDate: Joi.date().required(),
         customerName: Joi.string().max(255).required(),
@@ -33,6 +34,7 @@ const updatePurchaseOrderValidationSchema = {
         id: Joi.number().integer().required().label('Purchase Order ID'),
     }),
     body: Joi.object({
+        firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         poNo: Joi.string().max(50).optional(),
         poDate: Joi.date().optional(),
         customerName: Joi.string().max(255).optional(),

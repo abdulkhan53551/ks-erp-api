@@ -55,11 +55,38 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
 
     try {
         const decoded = jwt.verify(token, JWT.ACCESS_TOKEN_SECRET);
-        req.user = {
-            id: decoded.id, // or whatever you encoded in the token
-        };
+
+        const isSuperAdmin = Boolean(req.user?.isSuperAdmin) ||
+            (decoded?.role || '').toLowerCase() === 'super-admin';
+
+        if (req.tenantAccessDenied && !isSuperAdmin) {
+            throw new ApiError({ statusCode: 403, message: 'Access denied: You do not have access to this firm or branch.' });
+        }
+
+        if (!req.user) {
+            let firmId = null;
+            if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
+                const parsed = parseInt(req.headers['x-firm-id'], 10);
+                if (!isNaN(parsed) && parsed > 0) firmId = parsed;
+            } else if (!isSuperAdmin) {
+                firmId = null;
+            }
+
+            req.user = {
+                id: decoded.id,
+                email: decoded.email,
+                userName: decoded.userName,
+                fullName: decoded.fullName,
+                role: decoded.role,
+                roleId: decoded.roleId,
+                firmId,
+                isSuperAdmin,
+                dataScope: isSuperAdmin ? 'GLOBAL' : 'OWN'
+            };
+        }
         next();
     } catch (err) {
+        if (err instanceof ApiError) throw err;
         throw new ApiError({ statusCode: 401, message: 'Access token expired or invalid' })
     }
 });
@@ -83,7 +110,7 @@ const authorizeAccess = asyncHandler(async (req, res, next) => {
     console.log('sub: ', sub);
     console.log('obj_rule: ', obj_rule);
     console.log('act: ', act);
-    
+
 
     const enforcer = await getEnforcer();
     const allowed = await enforcer.enforce(sub, obj_rule, act);
@@ -95,8 +122,17 @@ const authorizeAccess = asyncHandler(async (req, res, next) => {
     next();
 });
 
+// Ensure caller is Super Admin
+const requireSuperAdmin = asyncHandler(async (req, res, next) => {
+    if (!req.user?.isSuperAdmin) {
+        throw new ApiError({ statusCode: 403, message: 'Access denied. Super Admin privileges required.' });
+    }
+    next();
+});
+
 module.exports = {
     verifyJWT,  // Remove this line. This is not needed anymore
     verifyAccessToken,
-    authorizeAccess
+    authorizeAccess,
+    requireSuperAdmin
 };

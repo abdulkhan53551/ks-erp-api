@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Salary Wage Muster - <%= monthName %></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    @page {
+      size: A3 landscape;
+      margin: 8mm 10mm;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 8px;
+      line-height: 1.25;
+      color: #0f172a;
+      background: #ffffff;
+      padding: 6mm 8mm;
+    }
+    .company-header {
+      text-align: center;
+      border-bottom: 2px solid #16a34a;
+      padding-bottom: 8px;
+      margin-bottom: 10px;
+    }
+    .company-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .company-meta {
+      font-size: 8.5px;
+      color: #475569;
+      margin-top: 2px;
+    }
+    .form-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #15803d;
+      margin-top: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .doc-meta {
+      font-size: 8.5px;
+      color: #64748b;
+      margin-top: 2px;
+    }
+
+    table.wage-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 7.5px;
+    }
+    table.wage-table th,
+    table.wage-table td {
+      border: 1px solid #cbd5e1;
+      padding: 3px 3px;
+      text-align: center;
+      vertical-align: middle;
+    }
+    table.wage-table th.super-header {
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 7.5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    table.wage-table th.sub-header {
+      background: #f1f5f9;
+      color: #1e293b;
+      font-weight: 700;
+      font-size: 7px;
+    }
+    .bg-dark { background: #1e293b !important; }
+    .bg-slate { background: #334155 !important; }
+    .bg-success { background: #15803d !important; }
+    .bg-danger { background: #b91c1c !important; }
+    .bg-primary { background: #0284c7 !important; }
+
+    .amount {
+      text-align: right !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      padding-right: 4px !important;
+    }
+    .text-success { color: #15803d; font-weight: 700; }
+    .text-danger { color: #b91c1c; font-weight: 700; }
+    .text-net { color: #0284c7; font-weight: 800; background: #ecfdf5; }
+
+    tr.totals-row td {
+      background: #f8fafc;
+      font-weight: 800;
+      border-top: 2px solid #0f172a;
+      border-bottom: 2px solid #0f172a;
+    }
+
+    .sig-table {
+      width: 100%;
+      margin-top: 30px;
+      border: none;
+    }
+    .sig-table td {
+      border: none;
+      text-align: center;
+      width: 33.33%;
+      vertical-align: bottom;
+      padding: 0 30px;
+    }
+    .sig-line {
+      border-top: 1px solid #475569;
+      padding-top: 4px;
+      font-size: 8.5px;
+      font-weight: 700;
+      color: #334155;
+      text-transform: uppercase;
+    }
+
+    .footer-note {
+      text-align: center;
+      font-size: 7.5px;
+      color: #94a3b8;
+      margin-top: 16px;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <!-- Header -->
+    <div class="company-header">
+      <div class="company-name"><%= firm.firm_name || 'KS ENGINEERING WORKS' %></div>
+      <div class="company-meta">
+        <% if (firm.branch_name) { %><%= firm.branch_name %> • <% } %>
+        <% if (firm.gstin) { %>GSTIN: <%= firm.gstin %> • <% } %>
+        <% if (firm.phone) { %>Phone: <%= firm.phone %> • <% } %>
+        <% if (firm.email) { %>Email: <%= firm.email %><% } %>
+      </div>
+      <div class="form-title">FORM T — WAGE REGISTER / SALARY MUSTER (COMBINED STATUTORY REGISTER)</div>
+      <div class="doc-meta">
+        Wage Period: <strong><%= monthName.toUpperCase() %></strong> • Headcount: <strong><%= slips.length %> Staff</strong> • Total Net Disbursement: <strong>₹<%= totalNet.toLocaleString('en-IN', { minimumFractionDigits: 2 }) %></strong>
+      </div>
+    </div>
+
+    <!-- Wage Table -->
+    <table class="wage-table">
+      <thead>
+        <tr>
+          <th colspan="6" class="super-header bg-dark">Employee Particulars</th>
+          <th colspan="3" class="super-header bg-slate">Attendance</th>
+          <th colspan="<%= earningHeads.length + 2 %>" class="super-header bg-success">Earnings Breakdown (₹)</th>
+          <th colspan="<%= deductionHeads.length + 1 %>" class="super-header bg-danger">Deductions Breakdown (₹)</th>
+          <th class="super-header bg-primary">Net Payable</th>
+          <th colspan="2" class="super-header bg-dark">Settlement</th>
+        </tr>
+        <tr>
+          <th class="sub-header" style="width: 22px;">#</th>
+          <th class="sub-header" style="width: 50px;">Code</th>
+          <th class="sub-header" style="width: 100px; text-align: left; padding-left: 4px;">Employee Name</th>
+          <th class="sub-header" style="width: 70px;">Designation</th>
+          <th class="sub-header" style="width: 65px;">Department</th>
+          <th class="sub-header" style="width: 75px;">Bank A/C No.</th>
+          <th class="sub-header" style="width: 26px;">Days</th>
+          <th class="sub-header" style="width: 24px;">Pres</th>
+          <th class="sub-header" style="width: 24px;">OT(h)</th>
+
+          <!-- Earnings -->
+          <% earningHeads.forEach(function(eh) { %>
+            <th class="sub-header amount" style="width: 48px;"><%= eh %></th>
+          <% }); %>
+          <th class="sub-header amount" style="width: 42px;">OT Pay</th>
+          <th class="sub-header amount text-success" style="width: 52px; background: #dcfce7;">Gross (A)</th>
+
+          <!-- Deductions -->
+          <% deductionHeads.forEach(function(dh) { %>
+            <th class="sub-header amount" style="width: 45px;"><%= dh %></th>
+          <% }); %>
+          <th class="sub-header amount text-danger" style="width: 52px; background: #fee2e2;">Total Ded (B)</th>
+
+          <!-- Net Pay -->
+          <th class="sub-header amount text-net" style="width: 60px;">Net Pay (A-B)</th>
+
+          <!-- Settlement -->
+          <th class="sub-header" style="width: 42px;">Status</th>
+          <th class="sub-header" style="width: 80px;">Acknowledgment</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (slips.length === 0) { %>
+          <tr>
+            <td colspan="<%= 13 + earningHeads.length + deductionHeads.length %>" style="padding: 20px; color: #94a3b8; font-size: 10px;">
+              No payroll salary slip records found for this period.
+            </td>
+          </tr>
+        <% } %>
+
+        <% slips.forEach(function(s, idx) { 
+             const comp = compMap[s.id] || {};
+             const grossVal = parseFloat(s.gross_earnings || s.grossEarnings || 0) + parseFloat(s.overtime_pay || s.overtimePay || 0);
+             const dedVal = parseFloat(s.total_deductions || s.totalDeductions || 0);
+             const netVal = parseFloat(s.net_salary || s.netSalary || 0);
+        %>
+          <tr>
+            <td><%= idx + 1 %></td>
+            <td style="font-family: monospace; font-weight: 700; color: #0284c7;"><%= s.empCode %></td>
+            <td style="text-align: left; font-weight: 600; padding-left: 4px;"><%= s.firstName %> <%= s.lastName || '' %></td>
+            <td style="text-align: left; padding-left: 3px;"><%= s.designation || '—' %></td>
+            <td style="text-align: left; padding-left: 3px;"><%= s.department || '—' %></td>
+            <td style="font-family: monospace;"><%= s.accountNumber || '—' %></td>
+            <td><%= s.total_working_days || s.totalWorkingDays || 26 %></td>
+            <td style="font-weight: 700; color: #15803d;"><%= s.present_days || s.presentDays || 0 %></td>
+            <td><%= s.overtime_hours || s.overtimeHours || 0 %></td>
+
+            <!-- Earning component values -->
+            <% earningHeads.forEach(function(eh) { %>
+              <td class="amount">₹<%= (comp[eh] || 0).toLocaleString('en-IN') %></td>
+            <% }); %>
+            <td class="amount">₹<%= parseFloat(s.overtime_pay || s.overtimePay || 0).toLocaleString('en-IN') %></td>
+            <td class="amount text-success" style="background: #f0fdf4;">₹<%= grossVal.toLocaleString('en-IN') %></td>
+
+            <!-- Deduction component values -->
+            <% deductionHeads.forEach(function(dh) { %>
+              <td class="amount">₹<%= (comp[dh] || 0).toLocaleString('en-IN') %></td>
+            <% }); %>
+            <td class="amount text-danger" style="background: #fef2f2;">₹<%= dedVal.toLocaleString('en-IN') %></td>
+
+            <!-- Net Pay -->
+            <td class="amount text-net">₹<%= netVal.toLocaleString('en-IN') %></td>
+
+            <!-- Status & Signature -->
+            <td>
+              <span style="font-weight: 700; font-size: 6.5px; color: <%= s.status === 'PAID' ? '#15803d' : '#0284c7' %>;">
+                <%= s.status %>
+              </span>
+            </td>
+            <td></td>
+          </tr>
+        <% }); %>
+
+        <!-- Grand Totals Row -->
+        <% if (slips.length > 0) { %>
+          <tr class="totals-row">
+            <td colspan="6" style="text-align: right; padding-right: 6px;">GRAND TOTALS:</td>
+            <td>—</td>
+            <td>—</td>
+            <td>—</td>
+            <% earningHeads.forEach(function(eh) { %>
+              <td class="amount">₹<%= (earningTotals[eh] || 0).toLocaleString('en-IN') %></td>
+            <% }); %>
+            <td class="amount">₹<%= totalOTPay.toLocaleString('en-IN') %></td>
+            <td class="amount text-success" style="background: #dcfce7;">₹<%= totalGross.toLocaleString('en-IN') %></td>
+
+            <% deductionHeads.forEach(function(dh) { %>
+              <td class="amount">₹<%= (deductionTotals[dh] || 0).toLocaleString('en-IN') %></td>
+            <% }); %>
+            <td class="amount text-danger" style="background: #fee2e2;">₹<%= totalDeductions.toLocaleString('en-IN') %></td>
+
+            <td class="amount text-net" style="font-size: 8.5px;">₹<%= totalNet.toLocaleString('en-IN') %></td>
+            <td colspan="2"></td>
+          </tr>
+        <% } %>
+      </tbody>
+    </table>
+
+    <!-- Signatures -->
+    <table class="sig-table">
+      <tr>
+        <td>
+          <div class="sig-line">Prepared By (Payroll Accountant)</div>
+        </td>
+        <td>
+          <div class="sig-line">Verified By (Internal Auditor / Finance)</div>
+        </td>
+        <td>
+          <div class="sig-line">Authorized Signatory / Partner</div>
+        </td>
+      </tr>
+    </table>
+
+    <div class="footer-note">
+      Certified statutory wage register under Form T of the Payment of Wages Rules. Generated by KS Engineering Works ERP software.
+    </div>
+  </div>
+</body>
+</html>

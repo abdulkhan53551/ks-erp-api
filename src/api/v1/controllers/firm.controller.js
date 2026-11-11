@@ -1,4 +1,4 @@
-const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmtById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById, fetchFirmMeta } = require("../models/firm.model");
+const { isFirmExistWithGst, isFirmExistWithNameAndPhone, insertFirm, insertAddress, insertBankAccount, updateFirmById, updateAddressByEntity, updateBankAccountByFirmId, deleteFirmById, restoreFirmById, deleteAddressByFirmId, deleteBankAccountByFirmId, fetchFirmTypes, fetchAllFirm, fetchFirmById, fetchFirmMeta } = require("../models/firm.model");
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
@@ -41,7 +41,7 @@ const getFirmById = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: firm, message: 'Firm fetched successfully.' }));
 });
 
-// Create firm
+// Create firm (wrapped in database transaction)
 const createFirm = asyncHandler(async (req, res) => {
     const body = req.body;
 
@@ -53,77 +53,78 @@ const createFirm = asyncHandler(async (req, res) => {
         if (exists) throw new ApiError({ statusCode: 409, message: 'Firm with same name and phone already exists.' });
     }
 
-    // Create firm
-    const firmData = {
-        firm_name: body.firmName,
-        trade_name: body.tradeName,
-        firm_type: body.firmType,
-        business_activity: body.businessActivity,
-        logo_url: body.logoUrl || null,
-        logo_public_id: body.logoPublicId || null,
-        gstin: body.gstin,
-        pan_number: body.panNumber,
-        cin_number: body.cinNumber,
-        tan_number: body.tanNumber,
-        invoice_prefix: body.invoicePrefix,
-        invoice_start_number: body.invoiceStartNumber,
-        notes_footer: body.notesFooter,
-    };
-    const firmId = await insertFirm(firmData);
+    const response = await db.transaction(async (trx) => {
+        // Create firm
+        const firmData = {
+            firm_name: body.firmName,
+            trade_name: body.tradeName,
+            firm_type: body.firmType,
+            business_activity: body.businessActivity,
+            logo_url: body.logoUrl || null,
+            logo_public_id: body.logoPublicId || null,
+            gstin: body.gstin,
+            pan_number: body.panNumber,
+            cin_number: body.cinNumber,
+            tan_number: body.tanNumber,
+            invoice_prefix: body.invoicePrefix,
+            invoice_start_number: body.invoiceStartNumber,
+            notes_footer: body.notesFooter,
+            created_by: req.user?.id || null,
+        };
+        const firmId = await insertFirm(firmData, trx);
 
-    // When firm is not created
-    if (!firmId) {
-        throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating firm' })
-    }
+        // When firm is not created
+        if (!firmId) {
+            throw new ApiError({ statusCode: 500, message: 'Something went wrong while creating firm' })
+        }
 
-    // Create address
-    const firmAddress = {
-        entity_type: 'firm',
-        entity_id: firmId,
-        email: body.email,
-        phone_number: body.phoneNumber,
-        website: body.website,
-        address_line1: body.addressLine1,
-        city_id: body.cityId,
-        state_id: body.stateId,
-        pincode: body.pincode,
-        country: body.country,
-    }
-    const addressId = await insertAddress(firmAddress);
+        // Create address
+        const firmAddress = {
+            entity_type: 'firm',
+            entity_id: firmId,
+            email: body.email,
+            phone_number: body.phoneNumber,
+            website: body.website,
+            address_line1: body.addressLine1,
+            city_id: body.cityId,
+            state_id: body.stateId,
+            pincode: body.pincode,
+            country: body.country,
+        }
+        const addressId = await insertAddress(firmAddress, trx);
 
-    // When address is not created
-    if (!addressId) {
-        throw new ApiError({ statusCode: 500, message: 'Unable to create address for firm' })
-    }
+        // When address is not created
+        if (!addressId) {
+            throw new ApiError({ statusCode: 500, message: 'Unable to create address for firm' })
+        }
 
-    // Create bank account
-    const bankAccount = {
-        firm_id: firmId,
-        upi_id: body.upiId,
-        account_holder_name: body.accountHolderName,
-        account_number: body.accountNumber,
-        ifsc_code: body.ifscCode,
-        bank_name: body.bankName,
-        branch_name: body.branchName,
-        account_type: body.accountType,
-    }
-    const bankAccountId = await insertBankAccount(bankAccount);
+        // Create bank account
+        const bankAccount = {
+            firm_id: firmId,
+            upi_id: body.upiId,
+            account_holder_name: body.accountHolderName,
+            account_number: body.accountNumber,
+            ifsc_code: body.ifscCode,
+            bank_name: body.bankName,
+            branch_name: body.branchName,
+            account_type: body.accountType,
+        }
+        const bankAccountId = await insertBankAccount(bankAccount, trx);
 
-    // When bank account is not created
-    if (!bankAccountId) {
-        throw new ApiError({ statusCode: 500, message: 'Unable to create bank account for firm' })
-    }
+        // When bank account is not created
+        if (!bankAccountId) {
+            throw new ApiError({ statusCode: 500, message: 'Unable to create bank account for firm' })
+        }
 
-    const response = {
-        id: firmId
-    }
+        return { id: firmId };
+    });
 
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: response, message: 'Firm created successfully.' }))
 });
 
-// Update firm
+// Update firm (wrapped in database transaction)
 const updateFirm = asyncHandler(async (req, res) => {
     const { id: firmId } = req.params;
     const body = req.body;
@@ -148,24 +149,6 @@ const updateFirm = asyncHandler(async (req, res) => {
         }
     }
 
-    // Prepare firm update data
-    const firmData = {
-        firm_name: body.firmName,
-        trade_name: body.tradeName,
-        firm_type: body.firmType,
-        business_activity: body.businessActivity,
-        gstin: body.gstin,
-        pan_number: body.panNumber,
-        cin_number: body.cinNumber,
-        tan_number: body.tanNumber,
-        invoice_prefix: body.invoicePrefix,
-        invoice_start_number: body.invoiceStartNumber,
-        notes_footer: body.notesFooter,
-    };
-
-    if (body.logoUrl !== undefined) firmData.logo_url = body.logoUrl || null;
-    if (body.logoPublicId !== undefined) firmData.logo_public_id = body.logoPublicId || null;
-
     // Check if logo is being replaced or removed and clean up previous Cloudinary asset
     const existingLogoPublicId = firmExist.logoPublicId || firmExist.logo_public_id;
     if (existingLogoPublicId) {
@@ -180,53 +163,74 @@ const updateFirm = asyncHandler(async (req, res) => {
         }
     }
 
-    // Update firm by ID
-    const updated = await updateFirmById(firmId, firmData);
-    if (!updated) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to update firm.' });
-    }
+    await db.transaction(async (trx) => {
+        // Prepare firm update data
+        const firmData = {
+            firm_name: body.firmName,
+            trade_name: body.tradeName,
+            firm_type: body.firmType,
+            business_activity: body.businessActivity,
+            gstin: body.gstin,
+            pan_number: body.panNumber,
+            cin_number: body.cinNumber,
+            tan_number: body.tanNumber,
+            invoice_prefix: body.invoicePrefix,
+            invoice_start_number: body.invoiceStartNumber,
+            notes_footer: body.notesFooter,
+            updated_by: req.user?.id || null,
+        };
 
-    // Prepare address update data
-    const firmAddress = {
-        email: body.email,
-        phone_number: body.phoneNumber,
-        website: body.website,
-        address_line1: body.addressLine1,
-        city_id: body.cityId,
-        state_id: body.stateId,
-        pincode: body.pincode,
-        country: body.country,
-    }
+        if (body.logoUrl !== undefined) firmData.logo_url = body.logoUrl || null;
+        if (body.logoPublicId !== undefined) firmData.logo_public_id = body.logoPublicId || null;
 
-    // Update address or contact details
-    const updatedAddress = await updateAddressByEntity(addressId, firmAddress);
-    if (!updatedAddress) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to update address.' });
-    }
+        // Update firm by ID
+        const updated = await updateFirmById(firmId, firmData, trx);
+        if (!updated) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to update firm.' });
+        }
 
-    // Prepare bank account update data
-    const bankAccount = {
-        upi_id: body.upiId,
-        account_holder_name: body.accountHolderName,
-        account_number: body.accountNumber,
-        ifsc_code: body.ifscCode,
-        bank_name: body.bankName,
-        branch_name: body.branchName,
-        account_type: body.accountType,
-    }
+        // Prepare address update data
+        const firmAddress = {
+            email: body.email,
+            phone_number: body.phoneNumber,
+            website: body.website,
+            address_line1: body.addressLine1,
+            city_id: body.cityId,
+            state_id: body.stateId,
+            pincode: body.pincode,
+            country: body.country,
+        }
 
-    // Update bank account
-    const updatedBank = await updateBankAccountByFirmId(bankAccountId, bankAccount);
-    if (!updatedBank) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to update bank account.' });
-    }
+        // Update address or contact details
+        const updatedAddress = await updateAddressByEntity(addressId, firmAddress, trx);
+        if (!updatedAddress) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to update address.' });
+        }
+
+        // Prepare bank account update data
+        const bankAccount = {
+            upi_id: body.upiId,
+            account_holder_name: body.accountHolderName,
+            account_number: body.accountNumber,
+            ifsc_code: body.ifscCode,
+            bank_name: body.bankName,
+            branch_name: body.branchName,
+            account_type: body.accountType,
+        }
+
+        // Update bank account
+        const updatedBank = await updateBankAccountByFirmId(bankAccountId, bankAccount, trx);
+        if (!updatedBank) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to update bank account.' });
+        }
+    });
 
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: [], message: 'Firm updated successfully.' }));
 });
 
-// Delete firm
+// Delete firm (wrapped in database transaction)
 const deleteFirm = asyncHandler(async (req, res) => {
     const { id: firmId } = req.params;
     const { isPermanentDelete } = req.query;
@@ -268,23 +272,25 @@ const deleteFirm = asyncHandler(async (req, res) => {
         }
     }
 
-    // Delete bank account associated with the firm
-    const deleteBankAccount = await deleteBankAccountByFirmId(firmId, permanent);
-    if (!deleteBankAccount) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to delete firm bank account.' });
-    }
+    await db.transaction(async (trx) => {
+        // Delete bank account associated with the firm
+        const deleteBankAccount = await deleteBankAccountByFirmId(firmId, permanent, trx);
+        if (!deleteBankAccount) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to delete firm bank account.' });
+        }
 
-    // Delete address associated with the firm
-    const deleteAddress = await deleteAddressByFirmId(firmId, permanent);
-    if (!deleteAddress) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to delete firm address.' });
-    }
+        // Delete address associated with the firm
+        const deleteAddress = await deleteAddressByFirmId(firmId, permanent, trx);
+        if (!deleteAddress) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to delete firm address.' });
+        }
 
-    // Delete firm by ID
-    const deleted = await deleteFirmtById(firmId, permanent);
-    if (!deleted) {
-        throw new ApiError({ statusCode: 500, message: 'Failed to delete firm.' });
-    }
+        // Delete firm by ID
+        const deleted = await deleteFirmById(firmId, permanent, trx);
+        if (!deleted) {
+            throw new ApiError({ statusCode: 500, message: 'Failed to delete firm.' });
+        }
+    });
 
     return res
         .status(200)
@@ -343,17 +349,19 @@ const uploadFirmLogo = asyncHandler(async (req, res) => {
     }
 
     // Delete old logo if exists
-    // if (firm.logo_url) {
-    //     try {
-    //         await deleteFromCloudinary(firm.logo_url);
-    //     } catch (err) {
-    //         console.error("Old logo deletion failed:", err.message);
-    //     }
-    // }
+    const existingLogoPublicId = firm.logoPublicId || firm.logo_public_id;
+    if (existingLogoPublicId) {
+        try {
+            await deleteFromCloudinary(existingLogoPublicId, 'image');
+        } catch (err) {
+            console.warn("Old logo deletion failed:", err.message);
+        }
+    }
 
-    // Save new logo
+    // Save new logo URL and public_id
     const updated = await updateFirmById(firmId, {
         logo_url: uploadedLogo.url,
+        logo_public_id: uploadedLogo.public_id,
     });
 
     if (!updated) {
@@ -368,6 +376,7 @@ const uploadFirmLogo = asyncHandler(async (req, res) => {
             statusCode: 200,
             data: {
                 logoUrl: uploadedLogo.url,
+                logoPublicId: uploadedLogo.public_id,
             },
             message: "Firm logo uploaded successfully.",
         })
@@ -387,9 +396,11 @@ const deleteFirmLogo = asyncHandler(async (req, res) => {
         });
     }
 
-    if (firm.logo_url) {
+    // Use logo_public_id for Cloudinary deletion (not logo_url)
+    const logoPublicId = firm.logoPublicId || firm.logo_public_id;
+    if (logoPublicId) {
         try {
-            await deleteFromCloudinary(firm.logo_url);
+            await deleteFromCloudinary(logoPublicId, 'image');
         } catch (err) {
             console.error(err);
         }
@@ -397,6 +408,7 @@ const deleteFirmLogo = asyncHandler(async (req, res) => {
 
     await updateFirmById(firmId, {
         logo_url: null,
+        logo_public_id: null,
     });
 
     return res.status(200).json(
@@ -408,6 +420,25 @@ const deleteFirmLogo = asyncHandler(async (req, res) => {
     );
 });
 
+// Restore firm from recycle bin
+const restoreFirm = asyncHandler(async (req, res) => {
+    const { id: firmId } = req.params;
+
+    const firmExist = await fetchFirmById(firmId);
+    if (!firmExist) {
+        throw new ApiError({ statusCode: 404, message: 'Firm with this ID does not exist.' });
+    }
+
+    const restored = await restoreFirmById(firmId);
+    if (!restored) {
+        throw new ApiError({ statusCode: 500, message: 'Failed to restore firm.' });
+    }
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: [], message: 'Firm restored successfully.' }));
+});
+
 module.exports = {
     getAllFirm,
     getFirmMeta,
@@ -415,6 +446,7 @@ module.exports = {
     createFirm,
     updateFirm,
     deleteFirm,
+    restoreFirm,
     getFirmType,
     uploadFirmLogo,
     deleteFirmLogo

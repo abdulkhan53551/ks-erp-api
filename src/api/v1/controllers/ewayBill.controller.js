@@ -68,6 +68,14 @@ const getEwayBillByInvoiceId = asyncHandler(async (req, res) => {
 const createEwayBill = asyncHandler(async (req, res) => {
     const { firmId = 0 } = getContext();
     const body = req.body;
+    const effectiveFirmId = body.firmId ? Number(body.firmId) : firmId;
+
+    if (!effectiveFirmId) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Firm ID is required to create an E-Way Bill.'
+        });
+    }
 
     const data = {
         invoice_id: body.invoiceId || null,
@@ -75,7 +83,7 @@ const createEwayBill = asyncHandler(async (req, res) => {
         eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
-        firm_id: firmId
+        firm_id: effectiveFirmId
     };
 
     const ewayBillId = await insertEwayBill(data);

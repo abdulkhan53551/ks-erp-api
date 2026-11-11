@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Salary Slip - <%= slip.empCode %> - <%= monthName %></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.4;
+      color: #1e293b;
+      background: #ffffff;
+      padding: 10mm 12mm;
+    }
+    .slip-container {
+      width: 100%;
+      border: 1.5px solid #cbd5e1;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+
+    /* Header */
+    .header-box {
+      text-align: center;
+      padding: 16px 20px 12px 20px;
+      background: #f8fafc;
+      border-bottom: 2px solid #0284c7;
+    }
+    .company-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: #0f172a;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 3px;
+    }
+    .company-meta {
+      font-size: 9.5px;
+      color: #475569;
+      line-height: 1.35;
+    }
+    .slip-heading-badge {
+      display: inline-block;
+      margin-top: 8px;
+      background: #0284c7;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 3px 14px;
+      border-radius: 12px;
+    }
+
+    /* Info Table */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 10px;
+    }
+    .info-table td {
+      padding: 5px 10px;
+      vertical-align: top;
+      border: 1px solid #f1f5f9;
+    }
+    .label {
+      font-weight: 600;
+      color: #64748b;
+      width: 25%;
+    }
+    .val {
+      font-weight: 700;
+      color: #0f172a;
+      width: 25%;
+    }
+
+    /* Attendance Bar */
+    .att-box {
+      width: 100%;
+      border-collapse: collapse;
+      background: #f1f5f9;
+      border-bottom: 1.5px solid #cbd5e1;
+      font-size: 9.5px;
+      text-align: center;
+    }
+    .att-box td {
+      padding: 6px 4px;
+      border-right: 1px solid #e2e8f0;
+    }
+    .att-box td:last-child {
+      border-right: none;
+    }
+    .att-label {
+      color: #64748b;
+      font-size: 9px;
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .att-value {
+      font-size: 11px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-top: 1px;
+    }
+
+    /* Breakdown Table */
+    .breakdown-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+    .breakdown-table th {
+      background: #f8fafc;
+      padding: 7px 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      border-bottom: 1.5px solid #cbd5e1;
+    }
+    .breakdown-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+    }
+    .earnings-col {
+      width: 50%;
+      border-right: 1.5px solid #cbd5e1;
+      padding: 0;
+      vertical-align: top;
+    }
+    .deductions-col {
+      width: 50%;
+      padding: 0;
+      vertical-align: top;
+    }
+    .inner-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .inner-table th {
+      padding: 6px 10px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 9.5px;
+    }
+    .inner-table td {
+      padding: 4px 10px;
+      border-bottom: 1px solid #f8fafc;
+    }
+    .amount-cell {
+      text-align: right;
+      font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    }
+    .total-row {
+      background: #f1f5f9;
+      font-weight: 700;
+      border-top: 1.5px solid #cbd5e1;
+      border-bottom: 1.5px solid #cbd5e1;
+    }
+    .total-row td {
+      padding: 6px 10px;
+    }
+
+    /* Net Pay Section */
+    .netpay-box {
+      padding: 10px 16px;
+      background: #ecfdf5;
+      border-bottom: 1px solid #a7f3d0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .netpay-words {
+      font-size: 10px;
+      color: #065f46;
+      margin-top: 2px;
+      font-weight: 600;
+    }
+    .netpay-amount {
+      font-size: 18px;
+      font-weight: 800;
+      color: #047857;
+      text-align: right;
+    }
+
+    /* Signatures Section */
+    .sig-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 35px;
+      margin-bottom: 20px;
+    }
+    .sig-table td {
+      width: 50%;
+      text-align: center;
+      vertical-align: bottom;
+      padding: 0 40px;
+    }
+    .sig-line {
+      border-top: 1px solid #94a3b8;
+      padding-top: 5px;
+      font-size: 9.5px;
+      font-weight: 600;
+      color: #475569;
+    }
+
+    /* Footer */
+    .slip-footer {
+      text-align: center;
+      font-size: 8.5px;
+      color: #94a3b8;
+      padding: 8px;
+      background: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="slip-container">
+    <!-- Header -->
+    <div class="header-box">
+      <div class="company-title"><%= slip.firmName || 'KS ENGINEERING WORKS' %></div>
+      <div class="company-meta">
+        <% if (slip.branchName) { %><%= slip.branchName %> • <% } %>
+        <% if (slip.firmGstin) { %>GSTIN: <%= slip.firmGstin %> • <% } %>
+        <% if (slip.firmPhone) { %>Phone: <%= slip.firmPhone %> • <% } %>
+        <% if (slip.firmEmail) { %>Email: <%= slip.firmEmail %><% } %>
+      </div>
+      <div class="slip-heading-badge">
+        Salary Payslip — <%= monthName %>
+      </div>
+    </div>
+
+    <!-- Employee Information -->
+    <table class="info-table">
+      <tr>
+        <td class="label">Employee Code</td>
+        <td class="val"><%= slip.empCode %></td>
+        <td class="label">Bank Name</td>
+        <td class="val"><%= slip.bankName || '—' %></td>
+      </tr>
+      <tr>
+        <td class="label">Employee Name</td>
+        <td class="val"><%= slip.firstName %> <%= slip.lastName || '' %></td>
+        <td class="label">Bank A/C No.</td>
+        <td class="val"><%= slip.accountNumber || '—' %></td>
+      </tr>
+      <tr>
+        <td class="label">Department</td>
+        <td class="val"><%= slip.department || '—' %></td>
+        <td class="label">IFSC Code</td>
+        <td class="val"><%= slip.ifscCode || '—' %></td>
+      </tr>
+      <tr>
+        <td class="label">Designation</td>
+        <td class="val"><%= slip.designation || '—' %></td>
+        <td class="label">PAN Number</td>
+        <td class="val"><%= slip.panNumber || '—' %></td>
+      </tr>
+      <tr>
+        <td class="label">Employment Type</td>
+        <td class="val"><%= slip.employmentType || '—' %></td>
+        <td class="label">UAN / ESI No.</td>
+        <td class="val"><%= slip.uanNumber || '—' %> / <%= slip.esiNumber || '—' %></td>
+      </tr>
+    </table>
+
+    <!-- Attendance Summary -->
+    <table class="att-box">
+      <tr>
+        <td>
+          <div class="att-label">Total Days</div>
+          <div class="att-value"><%= slip.total_working_days || slip.totalWorkingDays || 0 %></div>
+        </td>
+        <td>
+          <div class="att-label">Present</div>
+          <div class="att-value" style="color: #15803d;"><%= slip.present_days || slip.presentDays || 0 %></div>
+        </td>
+        <td>
+          <div class="att-label">Absent</div>
+          <div class="att-value" style="color: #b91c1c;"><%= slip.absent_days || slip.absentDays || 0 %></div>
+        </td>
+        <td>
+          <div class="att-label">Half Days</div>
+          <div class="att-value" style="color: #b45309;"><%= slip.half_days || slip.halfDays || 0 %></div>
+        </td>
+        <td>
+          <div class="att-label">Paid Leaves</div>
+          <div class="att-value" style="color: #0369a1;"><%= slip.paid_leave_days || slip.paidLeaveDays || 0 %></div>
+        </td>
+        <td>
+          <div class="att-label">Overtime</div>
+          <div class="att-value"><%= slip.overtime_hours || slip.overtimeHours || 0 %> hrs</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Earnings & Deductions Breakdown -->
+    <table class="breakdown-table">
+      <tr>
+        <!-- Earnings Column -->
+        <td class="earnings-col">
+          <table class="inner-table">
+            <thead>
+              <tr>
+                <th style="color: #15803d;">Earnings Description</th>
+                <th class="amount-cell" style="color: #15803d;">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (slip.earnings && slip.earnings.length > 0) { %>
+                <% slip.earnings.forEach(function(e) { %>
+                  <tr>
+                    <td><%= e.component_name %></td>
+                    <td class="amount-cell">₹<%= parseFloat(e.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+                  </tr>
+                <% }); %>
+              <% } %>
+              <% if (parseFloat(slip.overtime_pay || slip.overtimePay || 0) > 0) { %>
+                <tr>
+                  <td>Overtime Pay (<%= slip.overtime_hours || slip.overtimeHours || 0 %> hrs)</td>
+                  <td class="amount-cell">₹<%= parseFloat(slip.overtime_pay || slip.overtimePay || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+                </tr>
+              <% } %>
+              <% if ((!slip.earnings || slip.earnings.length === 0) && !(parseFloat(slip.overtime_pay || slip.overtimePay || 0) > 0)) { %>
+                <tr>
+                  <td colspan="2" style="text-align: center; color: #94a3b8; padding: 12px;">No earnings recorded</td>
+                </tr>
+              <% } %>
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td style="color: #15803d;">Gross Earnings (A)</td>
+                <td class="amount-cell" style="color: #15803d;">
+                  ₹<%= (parseFloat(slip.gross_earnings || slip.grossEarnings || 0) + parseFloat(slip.overtime_pay || slip.overtimePay || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </td>
+
+        <!-- Deductions Column -->
+        <td class="deductions-col">
+          <table class="inner-table">
+            <thead>
+              <tr>
+                <th style="color: #b91c1c;">Deductions Description</th>
+                <th class="amount-cell" style="color: #b91c1c;">Amount (₹)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <% if (slip.deductions && slip.deductions.length > 0) { %>
+                <% slip.deductions.forEach(function(d) { %>
+                  <tr>
+                    <td><%= d.component_name %></td>
+                    <td class="amount-cell">₹<%= parseFloat(d.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %></td>
+                  </tr>
+                <% }); %>
+              <% } else { %>
+                <tr>
+                  <td colspan="2" style="text-align: center; color: #94a3b8; padding: 12px;">No deductions applied</td>
+                </tr>
+              <% } %>
+            </tbody>
+            <tfoot>
+              <tr class="total-row">
+                <td style="color: #b91c1c;">Total Deductions (B)</td>
+                <td class="amount-cell" style="color: #b91c1c;">
+                  ₹<%= parseFloat(slip.total_deductions || slip.totalDeductions || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Net Salary Payable Box -->
+    <div class="netpay-box">
+      <div>
+        <div style="font-size: 9px; font-weight: 700; color: #065f46; text-transform: uppercase; letter-spacing: 0.5px;">Net Salary Payable (A - B)</div>
+        <div class="netpay-words">Amount in words: <%= netSalaryInWords %></div>
+        <div style="font-size: 8.5px; color: #047857; margin-top: 3px;">
+          Status: <strong><%= slip.status %></strong>
+          <% if (slip.payment_date) { %> • Paid On: <%= new Date(slip.payment_date).toLocaleDateString('en-IN') %><% } %>
+          <% if (slip.payment_mode) { %> • Mode: <%= slip.payment_mode %><% } %>
+          <% if (slip.payment_reference) { %> • Ref: <%= slip.payment_reference %><% } %>
+        </div>
+      </div>
+      <div>
+        <div class="netpay-amount">
+          ₹<%= parseFloat(slip.net_salary || slip.netSalary || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+        </div>
+      </div>
+    </div>
+
+    <!-- Signatures -->
+    <table class="sig-table">
+      <tr>
+        <td>
+          <div class="sig-line">Employee Signature</div>
+        </td>
+        <td>
+          <div class="sig-line">Authorized Signatory / Employer</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Footer -->
+    <div class="slip-footer">
+      Generated on <%= generatedAt %> • System generated document.
+    </div>
+  </div>
+</body>
+</html>
