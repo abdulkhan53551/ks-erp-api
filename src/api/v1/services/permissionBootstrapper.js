@@ -45,6 +45,8 @@ async function bootstrapPermissions() {
         const rolePermCount = await db('role_permissions').count('id as count').first();
         if (parseInt(rolePermCount?.count || 0) === 0) {
             console.log('🌱 Seeding baseline role-permission matrix for 7 default roles...');
+            const firstFirm = await db('firms').orderBy('id', 'asc').first();
+            const defaultFirmId = firstFirm?.id || 1;
             const defaultAssignments = [];
 
             const getPermId = (obj, act) => {
@@ -59,23 +61,23 @@ async function bootstrapPermissions() {
 
                     // Administrator: Gets all actions on all modules
                     if (roleBySlug['administrator']) {
-                        defaultAssignments.push({ role_id: roleBySlug['administrator'].id, permission_id: permId });
+                        defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['administrator'].id, permission_id: permId });
                     }
 
                     // Manager
                     if (roleBySlug['manager'] && mod.slug !== 'users') {
-                        defaultAssignments.push({ role_id: roleBySlug['manager'].id, permission_id: permId });
+                        defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['manager'].id, permission_id: permId });
                     }
 
                     // Supervisor
                     if (roleBySlug['supervisor']) {
                         if (['invoices', 'challans', 'eway-bills', 'purchase-orders'].includes(mod.slug)) {
                             if (['read', 'create', 'update', 'print'].includes(act)) {
-                                defaultAssignments.push({ role_id: roleBySlug['supervisor'].id, permission_id: permId });
+                                defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['supervisor'].id, permission_id: permId });
                             }
                         } else if (['vendor-bills', 'payments', 'products', 'parties', 'firms', 'masters'].includes(mod.slug)) {
                             if (act === 'read') {
-                                defaultAssignments.push({ role_id: roleBySlug['supervisor'].id, permission_id: permId });
+                                defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['supervisor'].id, permission_id: permId });
                             }
                         }
                     }
@@ -84,20 +86,20 @@ async function bootstrapPermissions() {
                     if (roleBySlug['employee']) {
                         if (['invoices', 'challans', 'eway-bills'].includes(mod.slug)) {
                             if (['read', 'create', 'print'].includes(act)) {
-                                defaultAssignments.push({ role_id: roleBySlug['employee'].id, permission_id: permId });
+                                defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['employee'].id, permission_id: permId });
                             }
                         } else if (['products', 'parties'].includes(mod.slug) && act === 'read') {
-                            defaultAssignments.push({ role_id: roleBySlug['employee'].id, permission_id: permId });
+                            defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['employee'].id, permission_id: permId });
                         }
                     }
 
                     // Auditor & Viewer: Read and Print only across all operational modules
                     if (['read', 'print'].includes(act) && mod.slug !== 'users') {
                         if (roleBySlug['auditor']) {
-                            defaultAssignments.push({ role_id: roleBySlug['auditor'].id, permission_id: permId });
+                            defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['auditor'].id, permission_id: permId });
                         }
                         if (roleBySlug['viewer']) {
-                            defaultAssignments.push({ role_id: roleBySlug['viewer'].id, permission_id: permId });
+                            defaultAssignments.push({ firm_id: defaultFirmId, role_id: roleBySlug['viewer'].id, permission_id: permId });
                         }
                     }
                 }
