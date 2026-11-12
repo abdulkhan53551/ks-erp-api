@@ -11,7 +11,7 @@ const getInvoiceByIdValidationSchema = {
 // Create invoice validation schema
 const createInvoiceValidationSchema = {
   body: Joi.object({
-    invoiceNo: Joi.string().max(255).required(),
+    invoiceNo: Joi.string().max(255).allow(null, '').optional(),
     invoiceDate: Joi.date().required(),
 
     dueDays: Joi.number().integer().min(0).required(),
@@ -151,7 +151,7 @@ const updateInvoiceValidationSchema = {
     id: Joi.number().integer().required().label('Invoice ID'),
   }),
   body: Joi.object({
-    invoiceNo: Joi.string().max(255).required(),
+    invoiceNo: Joi.string().max(255).allow(null, '').optional(),
     invoiceDate: Joi.date().required(),
 
     dueDays: Joi.number().integer().min(0),
@@ -419,6 +419,16 @@ const queryInvoicesSchema = {
   })
 };
 
+// Cancel invoice schema
+const cancelInvoiceValidationSchema = {
+  params: Joi.object({
+    id: Joi.number().integer().positive().required().label('Invoice ID'),
+  }),
+  body: Joi.object({
+    cancelReason: Joi.string().trim().max(500).allow('', null).optional()
+  })
+};
+
 module.exports = {
   getInvoiceByIdValidationSchema,
   createInvoiceValidationSchema,
@@ -427,5 +437,6 @@ module.exports = {
   restoreInvoiceValidationSchema,
   bulkDeleteInvoicesValidationSchema,
   bulkRestoreInvoicesValidationSchema,
-  queryInvoicesSchema
+  queryInvoicesSchema,
+  cancelInvoiceValidationSchema
 };

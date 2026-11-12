@@ -27,6 +27,8 @@ const fetchAllInvoice = async (query) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_date',
                 'I.party_id',
@@ -227,6 +229,8 @@ const fetchInvoiceById = async (id) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_days',
                 'I.due_date',
@@ -376,7 +380,7 @@ const insertInvoice = async (data) => {
     const { masterData, items, billing, shipping, document = {} } = data;
     return await db.transaction(async trx => {
         // 1. Insert master data
-        const invoiceId = await insertInvoiceMaster(trx, masterData);
+        const { id: invoiceId, invoiceNo } = await insertInvoiceMaster(trx, masterData);
 
         const address = [billing, shipping]
 
@@ -439,7 +443,6 @@ const fetchNextExpectedInvoiceNumber = async (firmId, trx = db) => {
 const insertInvoiceMaster = async (trx, data) => {
     // 1. Pessimistic Row Lock on Firm:
     // Serializes concurrent invoice creations for the same firm.
-    // If User A and User B click Save at the exact same millisecond,
     // PostgreSQL queues them sequentially, guaranteeing 100% race-condition safety.
     const firm = await trx('firms')
         .where({ id: data.firm_id })
@@ -453,53 +456,14 @@ const insertInvoiceMaster = async (trx, data) => {
         });
     }
 
-    // 2. Calculate next expected consecutive invoice number inside the lock
-    const nextExpectedInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
-    const incomingNum = extractInvoiceNumber(data.invoice_no);
-    const expectedNum = extractInvoiceNumber(nextExpectedInvoiceNo);
-
-    // Rule 1: STRICTLY BLOCK FUTURE SEQUENCE JUMPS (Anti-Gap / GST Rule 46 Guard)
-    if (incomingNum !== null && expectedNum !== null && incomingNum > expectedNum) {
-        throw new ApiError({
-            statusCode: 400,
-            message: `Invalid Invoice Number! Sequence jump is not allowed under GST compliance rules. Next expected invoice number is ${nextExpectedInvoiceNo}.`
-        });
-    }
-
-    // Rule 2: Check if invoice_no already exists (Handle Race Conditions & Duplicates)
-    const existingInvoice = await trx('invoices')
-        .select('id', 'is_active', 'invoice_no')
-        .where({ firm_id: data.firm_id, invoice_no: data.invoice_no })
-        .first();
-
-    let finalInvoiceNo = data.invoice_no;
-
-    if (existingInvoice) {
-        // Auto-healing for concurrent creations (e.g. User A & User B both loaded the same number):
-        // If the submitted number was claimed moments ago during concurrent entry,
-        // seamlessly assign the locked, freshly calculated nextExpectedInvoiceNo (no while-loop needed)!
-        if (incomingNum !== null && expectedNum !== null && incomingNum >= (expectedNum - 5)) {
-            finalInvoiceNo = nextExpectedInvoiceNo;
-            data.invoice_no = nextExpectedInvoiceNo;
-        } else {
-            // For deliberate duplicate backdated or specific manual entries that already exist:
-            if (existingInvoice.is_active) {
-                throw new ApiError({
-                    statusCode: 409,
-                    message: `Invoice number '${data.invoice_no}' already exists.`
-                });
-            } else {
-                throw new ApiError({
-                    statusCode: 409,
-                    message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
-                });
-            }
-        }
-    }
+    // 2. Pure Backend Auto-Assignment:
+    // Generate the true, guaranteed next consecutive invoice number under the lock
+    const nextInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
+    data.invoice_no = nextInvoiceNo;
 
     try {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
-        return { id, invoiceNo: finalInvoiceNo };
+        return { id, invoiceNo: nextInvoiceNo };
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -829,6 +793,64 @@ const bulkRestoreInvoices = async (invoiceIds = []) => {
     }
 };
 
+// Cancel invoice by ID
+const cancelInvoiceById = async (invoiceId, userId = null, cancelReason = '') => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return await db.transaction(async (trx) => {
+            const invQuery = trx('invoices').where({ id: invoiceId });
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+
+            const invoice = await invQuery.forUpdate().first();
+
+            if (!invoice) {
+                throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+            }
+
+            if (invoice.status === 'Cancelled') {
+                throw new ApiError({ statusCode: 400, message: 'This invoice is already cancelled.' });
+            }
+
+            if (Number(invoice.paid_amount || 0) > 0) {
+                throw new ApiError({
+                    statusCode: 400,
+                    message: `Cannot cancel invoice ${invoice.invoice_no} because payment receipts of ₹${Number(invoice.paid_amount).toFixed(2)} are active. Please cancel or roll back the attached payment receipts first in the Payments section.`
+                });
+            }
+
+            // 1. Mark status as Cancelled and record cancellation reason
+            await trx('invoices')
+                .where({ id: invoiceId })
+                .update({
+                    status: 'Cancelled',
+                    cancel_reason: cancelReason || null,
+                    updated_by: userId,
+                    updated_at: new Date()
+                });
+
+            // 2. Release linked dispatch documents (Challans, POs, E-Way bills)
+            await Promise.all([
+                trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
+                trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null })
+            ]);
+
+            return { invoiceId, invoiceNo: invoice.invoice_no };
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while cancelling invoice.',
+        });
+    }
+};
+
 // Fetch challans for invoice
 const fetchChallansForInvoice = async (invoiceId) => {
     try {
@@ -1023,5 +1045,6 @@ module.exports = {
     fetchInvoiceSettings,
     fetchNextExpectedInvoiceNumber,
     calculateNextInvoiceNumber,
-    extractInvoiceNumber
+    extractInvoiceNumber,
+    cancelInvoiceById
 };
