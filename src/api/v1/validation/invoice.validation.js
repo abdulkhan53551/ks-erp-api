@@ -138,8 +138,7 @@ const createInvoiceValidationSchema = {
     roundOff: Joi.number().precision(2).default(0).allow(0),
     other: Joi.number().precision(2).default(0).allow(0),
 
-    paymentStatusId: Joi.number().integer().min(1).required(),
-    paymentModeId: Joi.number().integer().min(1).required()
+    paymentStatusId: Joi.number().integer().min(1).allow(null, '').optional()
   })
     .custom(validateCreateOrUpdateCustom)
     .messages({ 'any.invalid': '{{#customMessage}}' })
@@ -291,8 +290,7 @@ const updateInvoiceValidationSchema = {
     roundOff: Joi.number().precision(2).allow(0),
     other: Joi.number().precision(2).default(0).allow(0),
 
-    paymentStatusId: Joi.number().integer().min(1),
-    paymentModeId: Joi.number().integer().min(1)
+    paymentStatusId: Joi.number().integer().min(1).allow(null, '').optional()
   })
     .custom(validateCreateOrUpdateCustom)
     .messages({ 'any.invalid': '{{#customMessage}}' })

@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceSummary, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -21,9 +21,7 @@ const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
-
-    const result = await fetchAllInvoice({ page, pageSize, search, trash });
+    const result = await fetchAllInvoice(req.query);
 
     return res.status(200).json(
         new ApiResponse({
@@ -41,6 +39,15 @@ const getInvoiceMeta = asyncHandler(async (req, res) => {
     return res
         .status(200)
         .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice pagination fetch successfully.' }));
+});
+
+// Fetch invoice financial KPI summary (database-wide, all pages matching active filters)
+const getInvoiceSummary = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceSummary(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice summary fetched successfully.' }));
 });
 
 // Fetch invoice by ID
@@ -98,7 +105,7 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // Create invoice
     const statusMap = await getPaymentStatusIds();
-    const isPaid = Number(invoice.paymentStatusId) === statusMap['PAID'];
+    const pendingStatusId = statusMap['PENDING'];
 
     const invoiceMaster = {
         invoice_no: invoice.invoiceNo || null,
@@ -122,12 +129,12 @@ const createInvoice = asyncHandler(async (req, res) => {
         sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
         igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
         total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
-        paid_amount: isPaid ? new Decimal(invoice.total).toDecimalPlaces(2).toNumber() : 0.00,
-        balance_amount: isPaid ? 0.00 : new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        paid_amount: 0.00,
+        balance_amount: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
-        payment_status_id: invoice.paymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_status_id: invoice.paymentStatusId ? Number(invoice.paymentStatusId) : pendingStatusId,
+        payment_mode_id: null,
         status: 'Final',
         firm_id: effectiveFirmId
     };
@@ -309,7 +316,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: autoPaymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_mode_id: (existingInvoice.payment_mode_id && existingInvoice.payment_mode_id !== 0) ? existingInvoice.payment_mode_id : null,
         status: 'Final',
         firm_id: firmId
     };
@@ -519,18 +526,28 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    // Guard: Check if invoice has active payments attached
-    const invoice = await fetchInvoiceById(invoiceId);
+    // Guard: Check if invoice has actual active payment receipts attached in database
+    // Pass permanent flag as includeInactive so trashed invoices can be looked up for permanent deletion
+    const invoice = await fetchInvoiceById(invoiceId, permanent);
     if (!invoice) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
     }
 
     verifyRecordOwnership(req.user, invoice, 'Invoice');
 
-    if (Number(invoice.paid_amount || 0) > 0) {
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .where('pa.invoice_id', invoiceId)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('pa.id', 'p.payment_no', 'pa.total_settled_amount');
+
+    if (activeAllocations.length > 0) {
+        const totalPaid = activeAllocations.reduce((sum, a) => sum + Number(a.total_settled_amount || 0), 0);
+        const receiptList = [...new Set(activeAllocations.map(a => a.payment_no).filter(Boolean))].join(', ');
         throw new ApiError({
             statusCode: 422,
-            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipts totaling ₹${Number(invoice.paid_amount).toFixed(2)} are attached to it. Please cancel or adjust the payment receipts first.`
+            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipt(s) totaling ₹${totalPaid.toFixed(2)}${receiptList ? ` (${receiptList})` : ''} are attached to it. Please cancel or roll back the payment receipts first in the Payments section.`
         });
     }
 
@@ -595,13 +612,16 @@ const bulkDeleteInvoices = asyncHandler(async (req, res) => {
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Guard: Check if any target invoice has active payments
-    const paidInvoices = await db('invoices')
-        .select('invoice_no', 'paid_amount')
-        .whereIn('id', ids)
-        .where('paid_amount', '>', 0);
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .join('invoices as i', 'pa.invoice_id', 'i.id')
+        .whereIn('pa.invoice_id', ids)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('i.invoice_no', 'p.payment_no', 'pa.total_settled_amount');
 
-    if (paidInvoices.length > 0) {
-        const list = paidInvoices.map(i => `${i.invoice_no} (₹${Number(i.paid_amount).toFixed(2)})`).join(', ');
+    if (activeAllocations.length > 0) {
+        const list = [...new Set(activeAllocations.map(a => `${a.invoice_no} [${a.payment_no}]`))].join(', ');
         throw new ApiError({
             statusCode: 422,
             message: `Cannot delete invoice(s) with active payment receipts: ${list}. Please cancel the payment receipts first.`
@@ -796,6 +816,19 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         totalAmountInWords: amountToWords(invoice.total || 0)
     };
 
+    // Determine professional Mode/Term of Payment (Standard Credit Terms when payment is pending)
+    const dueDays = Number(invoice.due_days);
+    let modeOfPayment = '';
+    if (!isNaN(dueDays) && dueDays > 0) {
+        modeOfPayment = `Credit (${dueDays} Days)`;
+    } else if (invoice.payment_label) {
+        modeOfPayment = invoice.payment_label;
+    } else if (!isNaN(dueDays) && dueDays === 0) {
+        modeOfPayment = 'Immediate / Due on Receipt';
+    } else {
+        modeOfPayment = 'Due on Receipt';
+    }
+
     const invoiceData = {
         id: invoice.id,
         status: invoice.status || 'Final',
@@ -831,7 +864,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             poNumber: invoice.po || 'NA',
             poDate: poDate,
             ewayBillNo: invoice.ewaybill || 'NA',
-            modeOfPayment: invoice.payment_label || ''
+            modeOfPayment: modeOfPayment
         },
         items: invoice.items?.map(item => ({
             id: item.id,
@@ -1282,6 +1315,7 @@ process.on("SIGTERM", async () => {
 module.exports = {
     getAllInvoice,
     getInvoiceMeta,
+    getInvoiceSummary,
     getInvoiceById,
     createInvoice,
     updateInvoice,
