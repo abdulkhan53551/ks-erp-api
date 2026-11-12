@@ -320,6 +320,7 @@ const loginUser = asyncHandler(async (req, res) => {
         httpOnly: true,
         secure: true,
         sameSite: 'None',
+        partitioned: true,
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
     };
 
@@ -373,6 +374,7 @@ const refreshUserToken = asyncHandler(async (req, res) => {
         httpOnly: true,
         secure: true,
         sameSite: 'None',
+        partitioned: true,
         maxAge: REFRESH_TOKEN_EXPIRY_IN_MS
     };
 
@@ -507,51 +509,51 @@ const checkIsAuthorizeAccess = asyncHandler(async (req, res, next) => {
 // Logout
 const logout = asyncHandler(async (req, res, next) => {
     try {
-        const refreshToken = req.cookies.refreshToken || req.body.refreshToken
-        const userId = req.user.id;
+        const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
+        const userId = req.user?.id;
 
-        // Check if refresh token is present
-        if (!refreshToken) {
-            throw new ApiError({ statusCode: 400, message: 'Refresh token is required' })
-        }
-
-        const hashedToken = hashToken(refreshToken);
-
-        const wasDeleted = await deleteRefreshTokenByUserIDAndToken(userId, hashedToken)
-
-        if (!wasDeleted) {
-            throw new ApiError({ statusCode: 400, message: 'Unable to logout: token not found or already logged out' })
+        if (refreshToken && userId) {
+            const hashedToken = hashToken(refreshToken);
+            await deleteRefreshTokenByUserIDAndToken(userId, hashedToken);
+        } else if (userId) {
+            // Incognito / third-party cookie blocked fallback:
+            // Invalidate active refresh tokens for this user
+            await deleteRefreshTokenByUserID(userId);
         }
 
         // Clear the refresh token cookie
-        clearAccessAndRefreshTokenCookie(res)
+        clearAccessAndRefreshTokenCookie(res);
 
         return res
             .status(200)
-            .json(new ApiResponse({ statusCode: 200, message: 'Logged out successfully' }))
+            .json(new ApiResponse({ statusCode: 200, message: 'Logged out successfully' }));
     } catch (err) {
         console.log('Error during logout:', err);
-
-        throw err instanceof ApiError ? err : new ApiError({ statusCode: 500, message: 'Logout error' })
+        // Ensure cookie is cleared even on error so user is never trapped
+        clearAccessAndRefreshTokenCookie(res);
+        return res
+            .status(200)
+            .json(new ApiResponse({ statusCode: 200, message: 'Logged out successfully' }));
     }
 });
 
 // Logout all sessions
 const logoutAllSessions = asyncHandler(async (req, res, next) => {
-    const userId = req.user.id;
+    try {
+        const userId = req.user?.id;
 
-    // Delete all refresh tokens for the user
-    const wasDeleted = await deleteRefreshTokenByUserID(userId)
+        if (userId) {
+            await deleteRefreshTokenByUserID(userId);
+        }
 
-    // Check if any tokens were deleted
-    if (!wasDeleted) {
-        throw new ApiError({ statusCode: 400, message: 'Unable to logout from all sessions' })
+        // Clear the refresh token cookie
+        clearAccessAndRefreshTokenCookie(res);
+
+        return res.status(200).json(new ApiResponse({ statusCode: 200, message: 'Logged out from all sessions' }));
+    } catch (err) {
+        clearAccessAndRefreshTokenCookie(res);
+        return res.status(200).json(new ApiResponse({ statusCode: 200, message: 'Logged out from all sessions' }));
     }
-
-    // Clear the refresh token cookie
-    clearAccessAndRefreshTokenCookie(res); // Clears cookie from browser
-
-    return res.status(200).json(new ApiResponse({ statusCode: 200, message: 'Logged out from all sessions' }));
 });
 
 // Create Role

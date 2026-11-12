@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -187,13 +187,16 @@ const createInvoice = asyncHandler(async (req, res) => {
     };
 
     // Insert invoice
-    const invoiceId = await insertInvoice({
+    const result = await insertInvoice({
         masterData: invoiceMaster,
         items: invoiceItems,
         billing,
         shipping,
         document: invoiceDocument
     });
+
+    const invoiceId = result?.invoiceId || result;
+    const finalInvoiceNo = result?.invoiceNo || invoiceMaster.invoice_no;
 
     // If invoiceId is not returned, throw an error
     if (!invoiceId) {
@@ -202,10 +205,11 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     const response = {
         id: invoiceId,
+        invoiceNo: finalInvoiceNo
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: response, message: 'Invoice created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: `Invoice created successfully with Invoice No. ${finalInvoiceNo}.` })
     )
 })
 
@@ -279,7 +283,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
     // Update invoice
     const invoiceMaster = {
-        invoice_no: invoice.invoiceNo,
+        invoice_no: existingInvoice.invoice_no, // Immutable! Preserve original invoice_no
         invoice_date: invoice.invoiceDate,
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
@@ -617,26 +621,8 @@ const bulkRestoreInvoices = asyncHandler(async (req, res) => {
 
 // Generate next invoice number
 const getNextInvoiceNumber = asyncHandler(async (req, res) => {
-    let invoiceNo;
-
-    // Get last invoice number
-    const lastInvoiceNo = await fetchLastInvoiceNumber();
-
-    if (lastInvoiceNo) {
-        invoiceNo = calculateNextInvoiceNumber(lastInvoiceNo);
-    } else {
-        // Get invoice settings
-        const settings = await fetchInvoiceSettings();
-
-        if (!settings) {
-            throw new ApiError({
-                statusCode: 404,
-                message: 'Invoice settings not found. Unable to generate invoice number.',
-            });
-        }
-
-        invoiceNo = `${settings.invoicePrefix}${settings.invoiceStartNumber}`;
-    }
+    const { firmId = 0 } = getContext();
+    const invoiceNo = await fetchNextExpectedInvoiceNumber(firmId);
 
     if (!invoiceNo) {
         throw new ApiError({

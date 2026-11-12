@@ -307,7 +307,7 @@ const bulkRestorePartyRoles = async (partyRoleIds = []) => {
 // Fetch all parties for a given firm
 const fetchAllParties = async (firmId, query) => {
     try {
-        const { page = 1, pageSize = 10, trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', gstRegistered = '', trash = false } = query;
         const isTrash = trash === true || trash === 'true';
 
         const baseQuery = db('parties as p')
@@ -348,6 +348,27 @@ const fetchAllParties = async (firmId, query) => {
             baseQuery.andWhere('p.firm_id', firmId);
         }
 
+        if (status) {
+            baseQuery.andWhere('p.status', status);
+        }
+
+        if (gstRegistered !== '' && gstRegistered !== null && gstRegistered !== undefined) {
+            const isGst = gstRegistered === true || gstRegistered === 'true';
+            baseQuery.andWhere('p.gst_registered', isGst);
+        }
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('p.party_code', 'ILIKE', `%${search}%`)
+                    .orWhere('p.legal_name', 'ILIKE', `%${search}%`)
+                    .orWhere('p.display_name', 'ILIKE', `%${search}%`)
+                    .orWhere('p.mobile', 'ILIKE', `%${search}%`)
+                    .orWhere('p.email', 'ILIKE', `%${search}%`)
+                    .orWhere('p.gstin', 'ILIKE', `%${search}%`)
+                    .orWhere('p.pan_number', 'ILIKE', `%${search}%`);
+            });
+        }
+
         if (isTrash) {
             baseQuery.orderBy('p.deleted_at', 'desc');
         } else {
@@ -368,7 +389,7 @@ const fetchAllParties = async (firmId, query) => {
 // Fetch party pagination
 const fetchPartyMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', gstRegistered = '', trash = false } = query;
         const isTrash = trash === true || trash === 'true';
 
         const { firmId = 0 } = getContext();
@@ -380,13 +401,24 @@ const fetchPartyMeta = async (query) => {
             baseQuery.andWhere('P.firm_id', firmId);
         }
 
+        if (status) {
+            baseQuery.andWhere('P.status', status);
+        }
+
+        if (gstRegistered !== '' && gstRegistered !== null && gstRegistered !== undefined) {
+            const isGst = gstRegistered === true || gstRegistered === 'true';
+            baseQuery.andWhere('P.gst_registered', isGst);
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('P.party_code', 'ILIKE', `%${search}%`)
                     .orWhere('P.legal_name', 'ILIKE', `%${search}%`)
                     .orWhere('P.display_name', 'ILIKE', `%${search}%`)
                     .orWhere('P.mobile', 'ILIKE', `%${search}%`)
-                    .orWhere('P.email', 'ILIKE', `%${search}%`);
+                    .orWhere('P.email', 'ILIKE', `%${search}%`)
+                    .orWhere('P.gstin', 'ILIKE', `%${search}%`)
+                    .orWhere('P.pan_number', 'ILIKE', `%${search}%`);
             });
         }
 
