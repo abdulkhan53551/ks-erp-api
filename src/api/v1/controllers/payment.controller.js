@@ -10,6 +10,7 @@ const { ApiResponse } = require('../services/ApiResponse');
 const { asyncHandler } = require('../services/asyncHandler');
 const { amountToWords, formatAmount, toTitleCase } = require('../services/conversion');
 const { getBrowser } = require('./invoice.controller');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     generateNextPaymentNumber,
     generateNextReceiptNumber,
@@ -188,6 +189,7 @@ const getPaymentById = asyncHandler(async (req, res) => {
     if (!payment) {
         throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
     }
+    verifyRecordOwnership(req.user, payment, 'Payment');
 
     return res.status(200).json(
         new ApiResponse({
@@ -204,6 +206,12 @@ const getReceiptById = getPaymentById;
  * Cancel a payment (works for both INWARD and OUTWARD)
  */
 const cancelPaymentHandler = asyncHandler(async (req, res) => {
+    const payment = await fetchPaymentById(req.params.id);
+    if (!payment) {
+        throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
+    }
+    verifyRecordOwnership(req.user, payment, 'Payment');
+
     const result = await cancelPaymentTransaction(req.params.id);
     const targetType = result.paymentType === 'OUTWARD' ? 'Vendor payment' : 'Receipt';
     const targetEntity = result.paymentType === 'OUTWARD' ? 'Vendor bill' : 'Invoice';
@@ -252,7 +260,8 @@ const getNextReceiptNumber = asyncHandler(async (req, res) => {
  * Get unpaid/partial invoices for a customer
  */
 const getUnpaidInvoices = asyncHandler(async (req, res) => {
-    const invoices = await fetchUnpaidInvoicesByParty(req.params.partyId, req.query?.firmId);
+    const { firmId } = getContext();
+    const invoices = await fetchUnpaidInvoicesByParty(req.params.partyId, firmId || undefined);
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -279,11 +288,14 @@ const getInvoicePaymentHistoryHandler = asyncHandler(async (req, res) => {
 /**
  * Prepare template data for PDF (handles both INWARD receipt and OUTWARD voucher)
  */
-const preparePaymentPdfData = async (paymentId) => {
+const preparePaymentPdfData = async (paymentId, currentUser = null) => {
     const { firmId = 0 } = getContext();
     const payment = await fetchPaymentById(paymentId);
     if (!payment) {
         throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
+    }
+    if (currentUser) {
+        verifyRecordOwnership(currentUser, payment, 'Payment');
     }
 
     // Load master mappings for cities & states
@@ -457,7 +469,7 @@ const prepareReceiptPdfData = preparePaymentPdfData;
  * Generate & download payment voucher / receipt PDF
  */
 const getPaymentPDF = asyncHandler(async (req, res) => {
-    const pdfData = await preparePaymentPdfData(req.params.id);
+    const pdfData = await preparePaymentPdfData(req.params.id, req.user);
     const templateFileName = pdfData.isOutward ? 'payment-voucher-template.ejs' : 'receipt-template.ejs';
     const templatePath = path.join(`${projectPaths.ROOT_DIR}/templates/receipt/`, templateFileName);
     const filledHtml = await ejs.renderFile(templatePath, pdfData);
@@ -503,6 +515,12 @@ const deletePaymentController = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
+    const existing = await fetchPaymentById(paymentId);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Payment');
+
     const result = await deletePaymentById(paymentId, permanent);
 
     return res.status(200).json(
@@ -521,6 +539,12 @@ const deletePaymentController = asyncHandler(async (req, res) => {
  */
 const restorePaymentController = asyncHandler(async (req, res) => {
     const paymentId = req.params.id;
+    const existing = await fetchPaymentById(paymentId);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Payment record not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Payment');
+
     const result = await restorePaymentById(paymentId);
 
     return res.status(200).json(

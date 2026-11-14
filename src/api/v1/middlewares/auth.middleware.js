@@ -64,13 +64,8 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
         }
 
         if (!req.user) {
-            let firmId = null;
-            if (req.headers['x-firm-id'] && req.headers['x-firm-id'] !== 'all') {
-                const parsed = parseInt(req.headers['x-firm-id'], 10);
-                if (!isNaN(parsed) && parsed > 0) firmId = parsed;
-            } else if (!isSuperAdmin) {
-                firmId = null;
-            }
+            const firmId = decoded.firmId ? parseInt(decoded.firmId, 10) : null;
+            const branchId = decoded.branchId ? parseInt(decoded.branchId, 10) : null;
 
             req.user = {
                 id: decoded.id,
@@ -80,8 +75,9 @@ const verifyAccessToken = asyncHandler((req, res, next) => {
                 role: decoded.role,
                 roleId: decoded.roleId,
                 firmId,
+                branchId,
                 isSuperAdmin,
-                dataScope: isSuperAdmin ? 'GLOBAL' : 'OWN'
+                dataScope: decoded.dataScope || (isSuperAdmin ? 'GLOBAL' : 'OWN')
             };
         }
         next();

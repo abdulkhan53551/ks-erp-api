@@ -10,15 +10,10 @@ let redisClient;
 const knexConfig = {
     client: 'pg', // or 'mysql', etc.
     connection: {
-        // host: process.env.DB_HOST,
-        // port: process.env.DB_PORT || 5432,
-        // user: process.env.DB_USER,
-        // password: process.env.DB_PASSWORD,
-        // database: process.env.DB_NAME,
-        connectionString: process.env.UAT_DB_URL,
-        ssl: {
-            rejectUnauthorized: false,
-        },
+        port: process.env.DB_PORT || 5432,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
     },
     migrations: {
         directory: path.resolve(ROOT_DIR, 'migrations'),

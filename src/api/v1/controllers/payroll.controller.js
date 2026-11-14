@@ -26,19 +26,9 @@ const {
     fetchPayrollReport
 } = require('../models/payroll.model');
 
-const getEffectiveFirmId = (req) => {
-    const context = getContext();
-    if (req.query.firmId !== undefined) {
-        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
-        const parsed = parseInt(req.query.firmId, 10);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return context.firmId || req.user?.firmId || null;
-};
-
 // --- Firm Payroll Settings ---
 const getPayrollSettingsController = asyncHandler(async (req, res) => {
-    let firmId = getEffectiveFirmId(req);
+    let { firmId } = getContext();
 
     if (!firmId) {
         const { db } = require('../database');
@@ -84,7 +74,7 @@ const updatePayrollSettingsController = asyncHandler(async (req, res) => {
 
 // --- Salary Templates ---
 const getSalaryTemplatesController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
 
     const templates = await fetchSalaryTemplates(firmId);
 
@@ -177,7 +167,7 @@ const deleteSalaryTemplateController = asyncHandler(async (req, res) => {
 
 // --- Salary Slips & Payroll Run ---
 const getSalarySlipsController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
 
     const result = await fetchSalarySlips({ ...req.query, firmId });
 
@@ -290,7 +280,7 @@ const bulkPaySlipsController = asyncHandler(async (req, res) => {
 
 const getPayrollReportController = asyncHandler(async (req, res) => {
     const context = getContext();
-    const firmId = req.query.firmId || req.user?.firmId || context.firmId;
+    const firmId = req.user?.firmId || context.firmId;
     const { month, year } = req.query;
 
     if (!month || !year) {
@@ -375,7 +365,7 @@ const {
 } = require('../services/musterExport.service');
 
 const exportSalaryMusterController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
     const { month, year, type = 'full', format = 'xlsx' } = req.query;
 
     if (!month || !year) {

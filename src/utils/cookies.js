@@ -4,6 +4,7 @@ const clearAccessAndRefreshTokenCookie = (res) => {
         httpOnly: true,
         secure: true,
         sameSite: 'None',
+        partitioned: true,
     }
 
     res.clearCookie('refreshToken', cookieOptions);

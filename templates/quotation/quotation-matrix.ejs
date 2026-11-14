@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title><%= firm.name %> - Quotation <%= quotation.quotation_no %></title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @page { size: A4 portrait; margin: 0; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0; padding: 0; color: #1e293b; font-size: 8.5px; line-height: 1.35; background: #ffffff;
+      -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility;
+    }
+    .page-sheet {
+      width: 210mm; height: 297mm; max-height: 297mm; margin: 0 auto; background: #ffffff;
+      padding: 7mm 8mm; display: flex; flex-direction: column; overflow: hidden; page-break-after: always; position: relative;
+    }
+    @media print { body { background: transparent; } .page-sheet { margin: 0; page-break-after: always; } }
+    
+    .doc-frame {
+      border: 1.5px solid #e2e8f0; border-top: 3.5px solid #dc2626; border-radius: 4px;
+      display: flex; flex-direction: column; flex: 1; height: 100%; overflow: hidden; background: #ffffff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+    }
+    
+    .top-bar {
+      background: #ffffff; color: #1e293b; padding: 6px 12px; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1.5px solid #f1f5f9; flex-wrap: nowrap;
+    }
+    .top-left-group { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; }
+    .top-title { font-size: 8.5px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: #0f172a; white-space: nowrap; }
+    .top-tag { background: #fef2f2; color: #dc2626; border: 1px solid #fecdd3; font-size: 7.5px; font-weight: 600; padding: 1.5px 6px; border-radius: 3px; letter-spacing: 0.2px; white-space: nowrap; }
+    .top-meta { font-size: 8px; color: #64748b; font-weight: 500; white-space: nowrap; }
+    .top-meta b { color: #0f172a; font-weight: 600; }
+
+    .header-grid { display: flex; border-bottom: 1px solid #e2e8f0; }
+    .co-box { flex: 1.35; padding: 6px 10px; border-right: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px; }
+    .co-info { flex: 1; }
+    .co-name { font-size: 13px; font-weight: 700; color: #dc2626; letter-spacing: 0.3px; margin: 0; }
+    .co-sub { font-size: 7px; font-weight: 600; color: #475569; text-transform: uppercase; margin-bottom: 3px; letter-spacing: 0.2px; }
+    .co-details { font-size: 8px; color: #475569; line-height: 1.35; }
+    .co-details b { font-weight: 600; color: #1e293b; }
+
+    .meta-box { flex: 0.85; padding: 6px 10px; font-size: 8px; background: #fafbfc; }
+    .meta-row { display: flex; justify-content: space-between; margin-bottom: 2.5px; }
+    .meta-lbl { color: #64748b; font-weight: 500; }
+    .meta-val { color: #0f172a; font-weight: 600; }
+
+    .client-grid { display: flex; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+    .client-box { flex: 1.35; padding: 6px 10px; border-right: 1px solid #e2e8f0; }
+    .terms-box { flex: 0.85; padding: 6px 10px; font-size: 8px; background: #fafbfc; line-height: 1.4; }
+    .sec-tag { font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #dc2626; letter-spacing: 0.3px; margin-bottom: 2.5px; }
+
+    .center { text-align: center !important; }
+    .right { text-align: right !important; }
+    .left { text-align: left !important; }
+
+    .table-container { flex: 1; display: flex; flex-direction: column; }
+    .comm-table { width: 100%; border-collapse: collapse; }
+    .comm-table th {
+      background: #fef2f2; color: #991b1b; font-size: 7.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2px;
+      padding: 5px 6px; border-top: 1.5px solid #dc2626; border-bottom: 1.5px solid #dc2626; border-right: 1px solid #fee2e2; text-align: left;
+    }
+    .comm-table th.center, .comm-table td.center, .comm-row td.center { text-align: center !important; }
+    .comm-table th.right, .comm-table td.right, .comm-row td.right { text-align: right !important; }
+    .comm-table th.left, .comm-table td.left, .comm-row td.left { text-align: left !important; }
+    .comm-table th:last-child { border-right: none; }
+    
+    .comm-row td {
+      border: 1px solid #e2e8f0; padding: 3.5px 6px; font-size: 8px; vertical-align: middle; color: #1e293b;
+    }
+    .comm-row td.center { text-align: center !important; }
+    .comm-row td.right { text-align: right !important; }
+    .comm-row:nth-child(even) { background: #f8fafc; }
+    
+    .badge-red {
+      display: inline-block; padding: 1.5px 5px; border-radius: 2px; font-size: 7px; font-weight: 600; letter-spacing: 0.2px;
+      background: #fef2f2; color: #dc2626; border: 0.5px solid #fecdd3;
+    }
+
+    .filler-row { height: 100%; }
+    .filler-row td { border-bottom: none; border-color: #f1f5f9; background: #ffffff; }
+
+    .summary-grid { display: flex; border-top: 1.5px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; background: #ffffff; }
+    .words-box { flex: 1.25; padding: 6px 10px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; }
+    .calc-box { flex: 0.95; padding: 6px 10px; font-size: 8px; background: #fafbfc; }
+    .calc-row { display: flex; justify-content: space-between; margin-bottom: 2.5px; font-weight: 500; }
+    .calc-row.grand {
+      border-top: 1.5px solid #dc2626; margin-top: 4px; padding-top: 4px; font-size: 9.5px; font-weight: 700; color: #dc2626;
+    }
+
+    .footer-grid { display: flex; padding: 6px 10px; font-size: 7.5px; background: #ffffff; justify-content: space-between; align-items: flex-end; border-top: 1px solid #e2e8f0; }
+    .terms-container { max-width: 68%; display: flex; flex-direction: column; gap: 2.5px; }
+    .terms-badge {
+      font-size: 7.5px; font-weight: 700; text-transform: uppercase; color: #dc2626; letter-spacing: 0.3px;
+      display: inline-block; margin-bottom: 2.5px; background: transparent; border: none; padding: 0;
+    }
+    .terms-list { display: flex; flex-direction: column; gap: 1.5px; }
+    .terms-item { font-size: 7.5px; color: #475569; line-height: 1.35; display: flex; gap: 4px; }
+    .terms-bullet { color: #dc2626; font-weight: 600; flex-shrink: 0; }
+
+    .sign-box { text-align: center; width: 140px; }
+    .sign-company { font-size: 7.5px; font-weight: 600; color: #475569; text-transform: uppercase; letter-spacing: 0.2px; margin-bottom: 2px; }
+    .sign-firm-name { color: #dc2626; font-weight: 700; }
+    .sign-space { height: 22px; }
+    .sign-line { border-top: 1px dashed #ef4444; width: 100%; padding-top: 2px; font-size: 7.5px; font-weight: 600; color: #64748b; }
+
+    /* Pure Tabular Matrix Table */
+    .annex-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .annex-table th {
+      background: #fef2f2; color: #991b1b; font-size: 7px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2px;
+      padding: 5px 5px; border-top: 1.5px solid #dc2626; border-bottom: 1.5px solid #dc2626; border-right: 1px solid #fee2e2; text-align: left; vertical-align: middle;
+      word-break: break-word; overflow-wrap: break-word;
+    }
+    .annex-table th.center { text-align: center !important; }
+    .annex-table th.right { text-align: right !important; }
+    .annex-table th:last-child { border-right: none; }
+    
+    .annex-row td {
+      border: 1px solid #e2e8f0; padding: 4px 5px; font-size: 7.5px; vertical-align: top; color: #1e293b; line-height: 1.35;
+      word-break: break-word; overflow-wrap: break-word;
+    }
+    .annex-row td.center { text-align: center !important; }
+    .annex-row td.right { text-align: right !important; }
+    .annex-row:nth-child(even) { background: #fafbfc; }
+    
+    .lbl { color: #64748b; font-weight: 500; font-size: 7px; }
+    .val { color: #0f172a; font-weight: 600; font-size: 7.5px; }
+  </style>
+</head>
+<body>
+
+  <!-- ================= PAGE 1: COMMERCIAL QUOTATION ================= -->
+  <div class="page-sheet">
+    <div class="doc-frame">
+      <div class="top-bar">
+        <div class="top-left-group">
+          <span class="top-title">COMMERCIAL QUOTATION / ESTIMATE</span>
+          <span class="top-tag">REV-<%= String(quotation.revision_no || 0).padStart(2, '0') %></span>
+        </div>
+        <div class="top-meta">Page 1 of <%= totalPages %> (Commercial Offer) | Original for Buyer</div>
+      </div>
+
+      <!-- Header Grid -->
+      <div class="header-grid">
+        <div class="co-box">
+          <% if (firm.logo_url) { %>
+            <div class="co-logo">
+              <img src="<%= firm.logo_url %>" alt="Logo" style="max-height: 42px; max-width: 60px; object-fit: contain;" />
+            </div>
+          <% } %>
+          <div class="co-info">
+            <h1 class="co-name"><%= firm.name %></h1>
+            <% if (firm.subtitle) { %>
+              <div class="co-sub"><%= firm.subtitle %></div>
+            <% } %>
+            <div class="co-details">
+              <% if (firm.address) { %><%= firm.address %><br><% } %>
+              <% if (firm.gstin) { %><b>GSTIN:</b> <%= firm.gstin %><% } %><% if (firm.pan) { %> &nbsp;|&nbsp; <b>PAN:</b> <%= firm.pan %><% } %><% if (firm.gstin || firm.pan) { %><br><% } %>
+              <% if (firm.phone_number) { %><b>Ph:</b> <%= firm.phone_number %><% } %><% if (firm.phone_number && firm.email) { %> &nbsp;|&nbsp; <% } %><% if (firm.email) { %><b>Email:</b> <%= firm.email %><% } %>
+            </div>
+          </div>
+        </div>
+        <div class="meta-box">
+          <div class="meta-row"><span class="meta-lbl">Quotation No:</span><span class="meta-val" style="color:#dc2626;"><%= quotation.quotation_no %><% if (quotation.revision_no) { %>/R<%= quotation.revision_no %><% } %></span></div>
+          <div class="meta-row"><span class="meta-lbl">Quotation Date:</span><span class="meta-val"><%= quotation.formatted_date %></span></div>
+          <div class="meta-row"><span class="meta-lbl">Client RFQ Ref:</span><span class="meta-val"><%= quotation.client_rfq_ref %></span></div>
+          <div class="meta-row"><span class="meta-lbl">Validity:</span><span class="meta-val" style="color:#047857;"><%= quotation.validity_days %> Days (Upto <%= quotation.formatted_validity_date %>)</span></div>
+        </div>
+      </div>
+
+      <!-- Customer / Billed To Section -->
+      <div class="client-grid">
+        <div class="client-box">
+          <div class="sec-tag">QUOTATION PREPARED FOR (BILLED TO)</div>
+          <div style="font-size:9px; font-weight:700; color:#0f172a;"><%= quotation.customer_name %></div>
+          <div style="font-size:8px; color:#334155; margin-top:2px; line-height:1.35;">
+            <% if (quotation.billing_address) { %><%= quotation.billing_address %><br><% } %>
+            <% if (quotation.gst_number) { %><b>GSTIN:</b> <%= quotation.gst_number %> &nbsp;|&nbsp; <% } %><b>Kind Attn:</b> <%= quotation.contact_person || '-' %><br>
+            <b>Phone:</b> <%= quotation.contact_phone || '-' %> &nbsp;|&nbsp; <b>Email:</b> <%= quotation.contact_email || '-' %>
+          </div>
+        </div>
+        <div class="terms-box">
+          <div class="sec-tag">COMMERCIAL DELIVERY & PAYMENT</div>
+          <div><b>Payment Terms:</b> <%= quotation.payment_terms || '-' %></div>
+          <div><b>Delivery Period:</b> <%= quotation.delivery_period || '-' %></div>
+          <div><b>Freight Basis:</b> <%= quotation.freight_basis || '-' %></div>
+          <div><b>Place of Supply:</b> <%= quotation.place_of_supply || '-' %><% if (quotation.place_of_supply) { %> - <%= isInterState ? 'Interstate' : 'Intra-State' %><% } %></div>
+        </div>
+      </div>
+
+      <!-- Commercial Table -->
+      <div class="table-container">
+        <table class="comm-table">
+          <thead>
+            <tr>
+              <th style="width: 3%;" class="center">#</th>
+              <th style="width: 37%;">DESCRIPTION OF GOODS & TECHNICAL DRAWING REF</th>
+              <th style="width: 7%;" class="center">HSN</th>
+              <th style="width: 6%;" class="center">QTY</th>
+              <th style="width: 6%;" class="center">UNIT</th>
+              <th style="width: 11%;" class="right">RATE (₹)</th>
+              <th style="width: 14%;" class="right">TAXABLE (₹)</th>
+              <th style="width: 5%;" class="center">GST</th>
+              <th style="width: 11%;" class="right">AMOUNT (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% items.forEach((item, index) => { %>
+              <tr class="comm-row">
+                <td class="center" style="font-weight:700;"><%= index + 1 %></td>
+                <td>
+                  <b><%= item.item_name %></b>
+                  <% if (item.drawing_number) { %>
+                    &nbsp;<span class="badge-red">DWG: <%= item.drawing_number %></span>
+                  <% } %>
+                  <% if (includeAnnexure) { %>
+                    <span style="display:block; font-size:7px; color:#64748b;">↳ See Annexure-I (Page 2) for Technical Specification Matrix</span>
+                  <% } %>
+                </td>
+                <td class="center"><%= item.hsn_sac_code || '-' %></td>
+                <td class="center" style="font-weight:700;"><%= item.qty %></td>
+                <td class="center"><%= (item.unit || 'NOS').toUpperCase() %></td>
+                <td class="right"><%= item.formatted_rate %></td>
+                <td class="right" style="font-weight:700;"><%= item.formatted_taxable %></td>
+                <td class="center"><%= Number(item.tax_rate) %>%</td>
+                <td class="right" style="font-weight:700;"><%= item.formatted_total %></td>
+              </tr>
+            <% }); %>
+
+            <tr class="filler-row">
+              <td style="border-right:1px solid #e2e8f0; border-left:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+              <td style="border-right:1px solid #e2e8f0;"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Financial Summary Grid -->
+      <div class="summary-grid">
+        <div class="words-box">
+          <div>
+            <div class="sec-tag">AMOUNT CHARGEABLE IN WORDS</div>
+            <div style="font-size:8.5px; font-weight:800; color:#0f172a;"><%= totalAmountInWords %></div>
+          </div>
+          <% if (bank && (bank.account_number || bank.bank_name)) { %>
+            <div style="margin-top:6px; font-size:7.5px; color:#334155;">
+              <b>Bank Details:</b> <%= bank.bank_name %><% if (bank.account_number) { %> &nbsp;|&nbsp; <b>A/C:</b> <%= bank.account_number %><% } %><% if (bank.ifsc_code) { %> &nbsp;|&nbsp; <b>IFSC:</b> <%= bank.ifsc_code %><% } %><% if (bank.branch_name) { %> (<%= bank.branch_name %>)<% } %>
+            </div>
+          <% } %>
+        </div>
+        <div class="calc-box">
+          <div class="calc-row"><span class="meta-lbl">Total Taxable Value:</span><span class="meta-val">₹<%= quotation.formatted_taxable_amount %></span></div>
+          <% if (Number(quotation.discount_amount) > 0) { %>
+            <div class="calc-row"><span class="meta-lbl">Overall Discount:</span><span class="meta-val" style="color:#059669;">-₹<%= quotation.formatted_discount_amount %></span></div>
+          <% } %>
+          <% if (isInterState) { %>
+            <div class="calc-row"><span class="meta-lbl">Integrated Tax (IGST):</span><span class="meta-val">₹<%= quotation.formatted_igst %></span></div>
+          <% } else { %>
+            <div class="calc-row"><span class="meta-lbl">Central Tax (CGST):</span><span class="meta-val">₹<%= quotation.formatted_cgst %></span></div>
+            <div class="calc-row"><span class="meta-lbl">State Tax (SGST):</span><span class="meta-val">₹<%= quotation.formatted_sgst %></span></div>
+          <% } %>
+          <% if (Number(quotation.other) > 0) { %>
+            <div class="calc-row"><span class="meta-lbl">Other / Freight Charges:</span><span class="meta-val">+₹<%= quotation.formatted_other %></span></div>
+          <% } %>
+          <% if (Number(quotation.round_off) !== 0) { %>
+            <div class="calc-row"><span class="meta-lbl">Round Off:</span><span class="meta-val">₹<%= quotation.formatted_round_off %></span></div>
+          <% } %>
+          <div class="calc-row grand"><span>NET QUOTATION TOTAL:</span><span>₹<%= quotation.formatted_total %></span></div>
+        </div>
+      </div>
+
+      <!-- Pinned Footer -->
+      <div class="footer-grid">
+        <div class="terms-container">
+          <div class="terms-label-group">
+            <span class="terms-badge">TERMS & CONDITIONS:</span>
+          </div>
+          <div class="terms-list">
+            <% termsList.forEach((term, tIdx) => { %>
+              <div class="terms-item"><span class="terms-bullet"><%= tIdx + 1 %>.</span> <span><%= term %></span></div>
+            <% }); %>
+          </div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-company">For <span class="sign-firm-name"><%= firm.name %></span></div>
+          <div class="sign-space"></div>
+          <div class="sign-line">Authorized Signatory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ================= PAGE 2: ANNEXURE - I (PURE TABULAR MATRIX) ================= -->
+  <% if (includeAnnexure) { %>
+  <div class="page-sheet">
+    <div class="doc-frame">
+      <div class="top-bar">
+        <div class="top-left-group">
+          <span class="top-title">ANNEXURE - I : TECHNICAL SPECIFICATIONS & COSTING MATRIX</span>
+        </div>
+        <div class="top-meta">Ref: <b><%= quotation.quotation_no %>/R<%= quotation.revision_no || 0 %></b> | Page 2 of <%= totalPages %></div>
+      </div>
+
+      <div class="table-container">
+        <table class="annex-table">
+          <thead>
+            <tr>
+              <th style="width: 3.5%;" class="center">#</th>
+              <th style="width: 22.5%;">ITEM DESCRIPTION & DRAWING</th>
+              <% matrixColumns.forEach((col) => { %>
+                <th style="width: <%= col.width || (Math.floor(64 / matrixColumns.length) + '%') %>;"><%= col.header %></th>
+              <% }); %>
+              <th style="width: 10%;" class="right">QUOTED RATE (₹)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% items.forEach((item, index) => { %>
+              <tr class="annex-row">
+                <td class="center" style="font-weight:700;"><%= index + 1 %></td>
+                <td>
+                  <b style="color:#0f172a;"><%= item.item_name %></b><br>
+                  <% if (item.drawing_number) { %>
+                    <span class="badge-red">DWG: <%= item.drawing_number %></span><br>
+                  <% } %>
+                  <% if (item.matrixData && item.matrixData.dimensions) { %>
+                    <span class="lbl">Size:</span> <span class="val"><%= item.matrixData.dimensions %></span>
+                  <% } %>
+                </td>
+                
+                <% matrixColumns.forEach((col) => { %>
+                  <td>
+                    <%- item.matrixCellHtml ? item.matrixCellHtml[col.id] || '-' : '-' %>
+                  </td>
+                <% }); %>
+
+                <td class="right" style="vertical-align:middle;">
+                  <span style="font-size:9px; font-weight:700; color:#047857;">₹<%= item.formatted_rate %></span><br>
+                  <span class="lbl">Ex-Works</span>
+                </td>
+              </tr>
+            <% }); %>
+
+            <tr class="filler-row">
+              <td></td><td></td>
+              <% matrixColumns.forEach(() => { %><td></td><% }); %>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Annexure Footer -->
+      <div class="footer-grid">
+        <div class="terms-container">
+          <div class="terms-label-group">
+            <span class="terms-badge">SPECIAL TECHNICAL & COMMERCIAL NOTES:</span>
+          </div>
+          <div class="terms-list">
+            <% specialNotesList.forEach((note) => { %>
+              <div class="terms-item"><span class="terms-bullet">•</span> <span><%= note %></span></div>
+            <% }); %>
+          </div>
+        </div>
+        <div class="sign-box">
+          <div class="sign-company">For <span class="sign-firm-name"><%= firm.name %></span></div>
+          <div class="sign-space"></div>
+          <div class="sign-line">Quality / Engineering Signatory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <% } %>
+
+</body>
+</html>

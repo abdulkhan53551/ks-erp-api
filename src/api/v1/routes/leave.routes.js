@@ -17,10 +17,13 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 
 const router = Router();
 
+// Enforce firm context perimeter defense
+router.use(requireFirmContext);
+
 router.get('/', checkPermission('leaves', 'read'), validate(queryLeavesSchema), getLeaves);
-router.post('/apply', requireFirmContext, checkPermission('leaves', 'create'), validate(applyLeaveSchema), applyLeaveController);
+router.post('/apply', checkPermission('leaves', 'create'), validate(applyLeaveSchema), applyLeaveController);
 router.get('/:id', checkPermission('leaves', 'read'), validate(leaveIdParamSchema), getLeaveDetail);
-router.patch('/:id/review', requireFirmContext, checkPermission('leaves', 'approve'), validate(reviewLeaveSchema), reviewLeaveController);
-router.patch('/:id/cancel', requireFirmContext, checkPermission('leaves', 'update'), validate(leaveIdParamSchema), cancelLeaveController);
+router.patch('/:id/review', checkPermission('leaves', 'approve'), validate(reviewLeaveSchema), reviewLeaveController);
+router.patch('/:id/cancel', checkPermission('leaves', 'update'), validate(leaveIdParamSchema), cancelLeaveController);
 
 module.exports = router;
