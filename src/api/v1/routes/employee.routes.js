@@ -21,6 +21,9 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 
 const router = Router();
 
+// Enforce firm context perimeter defense
+router.use(requireFirmContext);
+
 // Static routes before /:id
 router.get('/meta', checkPermission('employees', 'read'), getEmployeesMeta);
 router.get('/dropdown', checkPermission('employees', 'read'), getEmployeesDropdown);
@@ -28,12 +31,12 @@ router.get('/next-code', checkPermission('employees', 'read'), getNextEmployeeCo
 
 // Main collection routes
 router.get('/', checkPermission('employees', 'read'), validate(queryEmployeesSchema), getEmployees);
-router.post('/', requireFirmContext, checkPermission('employees', 'create'), validate(createEmployeeSchema), createEmployeeController);
+router.post('/', checkPermission('employees', 'create'), validate(createEmployeeSchema), createEmployeeController);
 
 // Single resource routes
 router.get('/:id', checkPermission('employees', 'read'), validate(employeeIdParamSchema), getEmployeeDetail);
-router.put('/:id', requireFirmContext, checkPermission('employees', 'update'), validate(updateEmployeeSchema), updateEmployeeController);
-router.delete('/:id', requireFirmContext, checkPermission('employees', 'delete'), validate(employeeIdParamSchema), deleteEmployeeController);
-router.patch('/:id/restore', requireFirmContext, checkPermission('employees', 'delete'), validate(employeeIdParamSchema), restoreEmployeeController);
+router.put('/:id', checkPermission('employees', 'update'), validate(updateEmployeeSchema), updateEmployeeController);
+router.delete('/:id', checkPermission('employees', 'delete'), validate(employeeIdParamSchema), deleteEmployeeController);
+router.patch('/:id/restore', checkPermission('employees', 'delete'), validate(employeeIdParamSchema), restoreEmployeeController);
 
 module.exports = router;

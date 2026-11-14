@@ -2,6 +2,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiResponse } = require('../services/ApiResponse');
 const { getPartyLedgerStatement } = require('../services/partyLedger.service');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 
 /**
  * Controller to fetch Party Ledger Statement
@@ -9,19 +10,20 @@ const { getContext } = require('../helpers/requestContext');
  */
 const getPartyLedger = asyncHandler(async (req, res) => {
     const { partyId } = req.params;
-    const { startDate, endDate, branchId, firmId: queryFirmId } = req.query;
-    const { firmId = 0 } = getContext();
-
-    const rawFirmId = req.firmId || req.user?.firmId || firmId || queryFirmId || req.headers['x-firm-id'];
-    const resolvedFirmId = (rawFirmId && rawFirmId !== 'all') ? Number(rawFirmId) : undefined;
+    const { startDate, endDate, branchId } = req.query;
+    const { firmId } = getContext();
 
     const ledgerStatement = await getPartyLedgerStatement({
         partyId: Number(partyId),
-        firmId: resolvedFirmId,
+        firmId: firmId ? Number(firmId) : undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
         branchId: branchId ? Number(branchId) : undefined,
     });
+
+    if (ledgerStatement?.party) {
+        verifyRecordOwnership(req.user, ledgerStatement.party, 'Party');
+    }
 
     return res.status(200).json(
         new ApiResponse({

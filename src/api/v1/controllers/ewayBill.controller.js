@@ -3,6 +3,7 @@ const { fetchAllEwayBill, fetchEwayBillMeta, fetchEwayBillById, fetchEwayBillByI
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
+const { verifyRecordOwnership } = require("../middlewares/authorize.middleware");
 
 // Fetch all eway bill with pagination and search
 const getAllEwayBill = asyncHandler(async (req, res) => {
@@ -38,6 +39,8 @@ const getEwayBillById = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Eway bill not found.' });
     }
 
+    verifyRecordOwnership(req.user, result, 'Eway Bill');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -66,11 +69,10 @@ const getEwayBillByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create a new eway bill
 const createEwayBill = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
+    const { firmId } = getContext();
     const body = req.body;
-    const effectiveFirmId = body.firmId ? Number(body.firmId) : firmId;
 
-    if (!effectiveFirmId) {
+    if (!firmId) {
         throw new ApiError({
             statusCode: 400,
             message: 'Firm ID is required to create an E-Way Bill.'
@@ -83,7 +85,7 @@ const createEwayBill = asyncHandler(async (req, res) => {
         eway_bill_date: body.ewayBillDate,
         valid_upto: body.ewaybillValidUpto,
         customer_name: body.customerName,
-        firm_id: effectiveFirmId
+        firm_id: firmId
     };
 
     const ewayBillId = await insertEwayBill(data);
@@ -105,6 +107,12 @@ const createEwayBill = asyncHandler(async (req, res) => {
 const updateEwayBill = asyncHandler(async (req, res) => {
     const ewayId = req.params.id;
     const body = req.body;
+
+    const existing = await fetchEwayBillById(ewayId);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Eway bill not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Eway Bill');
 
     const updatedData = {
         invoice_id: body.invoiceId !== undefined ? body.invoiceId : undefined,
@@ -133,6 +141,12 @@ const deleteEwayBill = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
+    const existing = await fetchEwayBillById(ewayId, permanent);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Eway bill not found or already deleted' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Eway Bill');
+
     // Delete eway bill by ID
     const deleted = await deleteEwayBillById(ewayId, permanent);
 
@@ -153,6 +167,12 @@ const deleteEwayBill = asyncHandler(async (req, res) => {
 // Restore eway bill by ID
 const restoreEwayBill = asyncHandler(async (req, res) => {
     const ewayId = req.params.id;
+
+    const existing = await fetchEwayBillById(ewayId, true);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'E-Way bill not found in Trash or restore failed' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Eway Bill');
 
     const restored = await restoreEwayBillById(ewayId);
 

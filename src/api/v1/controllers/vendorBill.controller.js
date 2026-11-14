@@ -1,6 +1,7 @@
 const { ApiResponse } = require('../services/ApiResponse');
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require('../services/asyncHandler');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     createVendorBill,
     fetchAllVendorBills,
@@ -76,6 +77,8 @@ const getVendorBillByIdHandler = asyncHandler(async (req, res) => {
     if (!result) {
         throw new ApiError({ statusCode: 404, message: 'Vendor bill not found.' });
     }
+    verifyRecordOwnership(req.user, result, 'Vendor Bill');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -89,6 +92,12 @@ const getVendorBillByIdHandler = asyncHandler(async (req, res) => {
  * Update vendor bill
  */
 const updateVendorBillHandler = asyncHandler(async (req, res) => {
+    const existing = await fetchVendorBillById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Vendor bill not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Vendor Bill');
+
     const result = await updateVendorBill(req.params.id, req.body);
     return res.status(200).json(
         new ApiResponse({
@@ -103,6 +112,12 @@ const updateVendorBillHandler = asyncHandler(async (req, res) => {
  * Soft delete vendor bill
  */
 const deleteVendorBillHandler = asyncHandler(async (req, res) => {
+    const existing = await fetchVendorBillById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Vendor bill not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Vendor Bill');
+
     const result = await deleteVendorBill(req.params.id);
     return res.status(200).json(
         new ApiResponse({

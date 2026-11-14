@@ -4,6 +4,7 @@ const { fetchAllPurchaseOrder, fetchPurchaseOrderById, fetchPurchaseOrderByInvoi
 const { ApiError } = require("../services/ApiError");
 const { ApiResponse } = require("../services/ApiResponse");
 const { asyncHandler } = require("../services/asyncHandler");
+const { verifyRecordOwnership } = require("../middlewares/authorize.middleware");
 
 // Fetch all purchase orders with pagination and search
 const getAllPurchaseOrder = asyncHandler(async (req, res) => {
@@ -39,6 +40,8 @@ const getPurchaseOrderById = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Purchase order not found.' });
     }
 
+    verifyRecordOwnership(req.user, purchaseOrder, 'Purchase Order');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -67,11 +70,10 @@ const getPurchaseOrderByInvoiceId = asyncHandler(async (req, res) => {
 
 // Create a new purchase order
 const createPurchaseOrder = asyncHandler(async (req, res) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId, branchId } = getContext();
     const body = req.body;
 
-    const effectiveFirmId = body.firmId ? Number(body.firmId) : (firmId || null);
-    if (!effectiveFirmId) {
+    if (!firmId) {
         throw new ApiError({
             statusCode: 400,
             message: 'Firm context is required to create a purchase order. Please select an issuing firm.'
@@ -79,8 +81,8 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
     }
 
     let resolvedFirmBranchId = body.firmBranchId ? Number(body.firmBranchId) : (branchId ? Number(branchId) : null);
-    if (!resolvedFirmBranchId && effectiveFirmId) {
-        const defaultBranch = await db('firm_branches').where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+    if (!resolvedFirmBranchId && firmId) {
+        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true, is_deleted: false }).first();
         if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
     }
 
@@ -89,7 +91,7 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
         po_no: body.poNo,
         po_date: body.poDate,
         customer_name: body.customerName,
-        firm_id: effectiveFirmId,
+        firm_id: firmId,
         firm_branch_id: resolvedFirmBranchId,
         status: body.status || 'OPEN'
     };
@@ -114,6 +116,12 @@ const createPurchaseOrder = asyncHandler(async (req, res) => {
 const updatePurchaseOrder = asyncHandler(async (req, res) => {
     const poId = req.params.id;
     const body = req.body;
+
+    const existing = await fetchPurchaseOrderById(poId);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Purchase order not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Purchase Order');
 
     const updatedData = {
         firm_branch_id: body.firmBranchId !== undefined ? (body.firmBranchId ? Number(body.firmBranchId) : null) : undefined,
@@ -144,6 +152,12 @@ const deletePurchaseOrder = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
+    const existing = await fetchPurchaseOrderById(poId, permanent);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Purchase order not found or already deleted' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Purchase Order');
+
     // Delete purchase order by ID
     const deleted = await deletePurchaseOrderById(poId, permanent);
 
@@ -164,6 +178,12 @@ const deletePurchaseOrder = asyncHandler(async (req, res) => {
 // Restore purchase order by ID
 const restorePurchaseOrder = asyncHandler(async (req, res) => {
     const poId = req.params.id;
+
+    const existing = await fetchPurchaseOrderById(poId, true);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Purchase order not found in Trash or restore failed' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Purchase Order');
 
     const restored = await restorePurchaseOrderById(poId);
 

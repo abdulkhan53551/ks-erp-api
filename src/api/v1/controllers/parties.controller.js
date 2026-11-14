@@ -237,6 +237,8 @@ const getPartyById = asyncHandler(async (req, res) => {
         });
     }
 
+    verifyRecordOwnership(req.user, party, 'Party');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -824,6 +826,8 @@ const getPartyDetails = asyncHandler(async (req, res) => {
             message: 'Party not found.'
         });
     }
+
+    verifyRecordOwnership(req.user, partyDetails, 'Party');
 
     return res.status(200).json(
         new ApiResponse({

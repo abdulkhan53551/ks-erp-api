@@ -60,6 +60,8 @@ const getInvoiceById = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
     }
 
+    verifyRecordOwnership(req.user, result, 'Invoice');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -71,22 +73,22 @@ const getInvoiceById = asyncHandler(async (req, res) => {
 
 // Create a new invoice
 const createInvoice = asyncHandler(async (req, res) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId, branchId } = getContext();
     const invoice = req.body;
     const { items, billingAddress, shippingAddress } = invoice;
 
-    const effectiveFirmId = invoice.firmId ? Number(invoice.firmId) : (firmId || null);
-    if (!effectiveFirmId) {
+    if (!firmId) {
         throw new ApiError({
             statusCode: 400,
             message: 'Firm context is required to create an invoice. Please select an issuing firm.'
         });
     }
+    invoice.firmId = firmId;
 
     // Resolve internal firm branch
     let resolvedFirmBranchId = invoice.firmBranchId ? Number(invoice.firmBranchId) : (branchId ? Number(branchId) : null);
-    if (!resolvedFirmBranchId && effectiveFirmId) {
-        const defaultBranch = await db('firm_branches').where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+    if (!resolvedFirmBranchId && firmId) {
+        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true, is_deleted: false }).first();
         if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
     }
 
@@ -136,7 +138,7 @@ const createInvoice = asyncHandler(async (req, res) => {
         payment_status_id: invoice.paymentStatusId ? Number(invoice.paymentStatusId) : pendingStatusId,
         payment_mode_id: null,
         status: 'Final',
-        firm_id: effectiveFirmId
+        firm_id: firmId
     };
 
     // Prepare invoice items
@@ -574,6 +576,13 @@ const deleteInvoice = asyncHandler(async (req, res) => {
 const restoreInvoice = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
 
+    // Fetch existing invoice to verify ownership before restoring
+    const existing = await fetchInvoiceById(invoiceId, true);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found in Trash or already active.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Invoice');
+
     const restored = await restoreInvoiceById(invoiceId);
 
     if (!restored) {
@@ -658,7 +667,15 @@ const bulkRestoreInvoices = asyncHandler(async (req, res) => {
 
 // Generate next invoice number
 const getNextInvoiceNumber = asyncHandler(async (req, res) => {
-    const { firmId = 0 } = getContext();
+    const { firmId } = getContext();
+
+    if (!firmId || firmId <= 0) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Active firm context is required to determine the next invoice number. Please select a firm.',
+        });
+    }
+
     const invoiceNo = await fetchNextExpectedInvoiceNumber(firmId);
 
     if (!invoiceNo) {
@@ -704,6 +721,9 @@ const getInvoicePdf = asyncHandler(async (req, res) => {
     if (!invoiceData) {
         throw new ApiError({ statusCode: 404, errorCode: ERROR_CODES.NOT_FOUND, message: 'Invoice not found' });
     }
+
+    // Verify ownership before processing attachments or launching Puppeteer
+    verifyRecordOwnership(req.user, invoiceData, 'Invoice');
 
     // Fetch challan, PO, ewaybill data
     const invoiceChallanPOEwaybillData = await fetchChallanPOEwayBillsForInvoice(invoiceId);

@@ -2,6 +2,7 @@ const { asyncHandler } = require('../services/asyncHandler');
 const { ApiResponse } = require('../services/ApiResponse');
 const { ApiError } = require('../services/ApiError');
 const { getContext } = require('../helpers/requestContext');
+const { verifyRecordOwnership } = require('../middlewares/authorize.middleware');
 const {
     fetchAllQuotations,
     fetchQuotationMeta,
@@ -122,7 +123,7 @@ const getQuotationMeta = asyncHandler(async (req, res) => {
 // GET /api/v1/quotations/next-quotation-number
 const getNextQuotationNumber = asyncHandler(async (req, res) => {
     const { firmId } = getContext();
-    if (!firmId) {
+    if (!firmId || firmId <= 0) {
         throw new ApiError({ statusCode: 400, message: 'Active firm context is required.' });
     }
     const nextNumber = await fetchNextExpectedQuotationNumber(firmId);
@@ -138,6 +139,11 @@ const getNextQuotationNumber = asyncHandler(async (req, res) => {
 // GET /api/v1/quotations/:id
 const getQuotationById = asyncHandler(async (req, res) => {
     const quotation = await fetchQuotationById(req.params.id);
+    if (!quotation) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, quotation, 'Quotation');
+
     return res.status(200).json(
         new ApiResponse({
             statusCode: 200,
@@ -150,6 +156,12 @@ const getQuotationById = asyncHandler(async (req, res) => {
 // POST /api/v1/quotations
 const createQuotation = asyncHandler(async (req, res) => {
     const payload = normalizeQuotationPayload(req.body);
+    const { firmId } = getContext();
+    if (!firmId) {
+        throw new ApiError({ statusCode: 400, message: 'Active firm context is required to create a quotation.' });
+    }
+    payload.firm_id = firmId;
+
     const created = await insertQuotation(payload);
     return res.status(201).json(
         new ApiResponse({
@@ -162,6 +174,12 @@ const createQuotation = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/quotations/:id
 const updateQuotationController = asyncHandler(async (req, res) => {
+    const existing = await fetchQuotationById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Quotation');
+
     const payload = normalizeQuotationPayload(req.body);
     const updated = await updateQuotation(req.params.id, payload);
     return res.status(200).json(
@@ -175,6 +193,12 @@ const updateQuotationController = asyncHandler(async (req, res) => {
 
 // POST /api/v1/quotations/:id/revisions
 const createQuotationRevisionController = asyncHandler(async (req, res) => {
+    const existing = await fetchQuotationById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Quotation');
+
     const payload = normalizeQuotationPayload(req.body);
     const revised = await createQuotationRevision(req.params.id, payload);
     return res.status(201).json(
@@ -188,6 +212,12 @@ const createQuotationRevisionController = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/quotations/:id/approve
 const approveQuotationController = asyncHandler(async (req, res) => {
+    const existing = await fetchQuotationById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Quotation');
+
     const approval_status = req.body.approvalStatus || req.body.approval_status;
     const rejection_reason = req.body.rejectionReason !== undefined ? req.body.rejectionReason : req.body.rejection_reason;
     const updated = await approveQuotation(req.params.id, { approval_status, rejection_reason });
@@ -202,6 +232,12 @@ const approveQuotationController = asyncHandler(async (req, res) => {
 
 // DELETE /api/v1/quotations/:id
 const deleteQuotationController = asyncHandler(async (req, res) => {
+    const existing = await fetchQuotationById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Quotation');
+
     const deleted = await deleteQuotation(req.params.id);
     return res.status(200).json(
         new ApiResponse({
@@ -214,6 +250,12 @@ const deleteQuotationController = asyncHandler(async (req, res) => {
 
 // PATCH /api/v1/quotations/:id/restore
 const restoreQuotationController = asyncHandler(async (req, res) => {
+    const existing = await fetchQuotationById(req.params.id);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Quotation');
+
     const restored = await restoreQuotation(req.params.id);
     return res.status(200).json(
         new ApiResponse({
@@ -256,6 +298,7 @@ const getQuotationPdfController = asyncHandler(async (req, res) => {
     if (!quotation) {
         throw new ApiError({ statusCode: 404, message: 'Quotation not found.' });
     }
+    verifyRecordOwnership(req.user, quotation, 'Quotation');
 
     // Support query override: ?include_annexure=false/true or fallback to saved quotation setting
     let includeAnnexure = quotation.include_annexure !== false;

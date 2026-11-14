@@ -625,10 +625,23 @@ const restoreProformaInvoice = async (id) => {
 
 // Bulk delete proforma invoices
 const bulkDeleteProformaInvoices = async (ids = []) => {
-    const { userId } = getContext();
+    if (!ids || !ids.length) return { affected: 0 };
+    const { userId, firmId, isSuperAdmin } = getContext();
+
+    const targetRows = await db('proforma_invoices')
+        .whereIn('id', ids)
+        .modify(qb => {
+            if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                qb.where({ firm_id: firmId });
+            }
+        })
+        .select('id');
+
+    const validIds = targetRows.map(r => r.id);
+    if (!validIds.length) return { affected: 0 };
 
     const count = await db('proforma_invoices')
-        .whereIn('id', ids)
+        .whereIn('id', validIds)
         .update({
             is_active: false,
             deleted_at: new Date(),
@@ -636,7 +649,7 @@ const bulkDeleteProformaInvoices = async (ids = []) => {
         });
 
     await db('proforma_invoice_items')
-        .whereIn('proforma_invoice_id', ids)
+        .whereIn('proforma_invoice_id', validIds)
         .update({
             is_active: false,
             deleted_at: new Date(),
@@ -648,10 +661,24 @@ const bulkDeleteProformaInvoices = async (ids = []) => {
 
 // Bulk restore proforma invoices
 const bulkRestoreProformaInvoices = async (ids = []) => {
-    const { userId } = getContext();
+    if (!ids || !ids.length) return { affected: 0 };
+    const { userId, firmId, isSuperAdmin } = getContext();
+
+    const targetRows = await db('proforma_invoices')
+        .whereIn('id', ids)
+        .andWhere({ is_active: false })
+        .modify(qb => {
+            if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                qb.where({ firm_id: firmId });
+            }
+        })
+        .select('id');
+
+    const validIds = targetRows.map(r => r.id);
+    if (!validIds.length) return { affected: 0 };
 
     const count = await db('proforma_invoices')
-        .whereIn('id', ids)
+        .whereIn('id', validIds)
         .update({
             is_active: true,
             deleted_at: null,
@@ -660,7 +687,7 @@ const bulkRestoreProformaInvoices = async (ids = []) => {
         });
 
     await db('proforma_invoice_items')
-        .whereIn('proforma_invoice_id', ids)
+        .whereIn('proforma_invoice_id', validIds)
         .update({
             is_active: true,
             deleted_at: null,

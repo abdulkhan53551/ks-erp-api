@@ -20,15 +20,18 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 
 const router = Router();
 
+// Enforce firm context perimeter defense
+router.use(requireFirmContext);
+
 // Shift assignments
 router.get('/assignments', checkPermission('shifts', 'read'), getShiftAssignmentsController);
-router.post('/assign', requireFirmContext, checkPermission('shifts', 'update'), validate(assignShiftSchema), assignShiftController);
+router.post('/assign', checkPermission('shifts', 'update'), validate(assignShiftSchema), assignShiftController);
 
 // Shifts CRUD
 router.get('/', checkPermission('shifts', 'read'), validate(queryShiftsSchema), getShifts);
-router.post('/', requireFirmContext, checkPermission('shifts', 'create'), validate(createShiftSchema), createShiftController);
+router.post('/', checkPermission('shifts', 'create'), validate(createShiftSchema), createShiftController);
 router.get('/:id', checkPermission('shifts', 'read'), validate(shiftIdParamSchema), getShiftDetail);
-router.put('/:id', requireFirmContext, checkPermission('shifts', 'update'), validate(updateShiftSchema), updateShiftController);
-router.delete('/:id', requireFirmContext, checkPermission('shifts', 'delete'), validate(shiftIdParamSchema), deleteShiftController);
+router.put('/:id', checkPermission('shifts', 'update'), validate(updateShiftSchema), updateShiftController);
+router.delete('/:id', checkPermission('shifts', 'delete'), validate(shiftIdParamSchema), deleteShiftController);
 
 module.exports = router;

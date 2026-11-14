@@ -470,7 +470,7 @@ const insertQuotation = async (data) => {
 // Update existing quotation and items
 const updateQuotation = async (id, data) => {
     return db.transaction(async (trx) => {
-        const { firmId: contextFirmId, userId } = getContext();
+        const { firmId: contextFirmId, userId, isSuperAdmin } = getContext();
         const firmId = data.firm_id || contextFirmId;
 
         const existing = await trx('quotations')
@@ -481,6 +481,13 @@ const updateQuotation = async (id, data) => {
             throw new ApiError({
                 statusCode: 404,
                 message: 'Quotation not found.',
+            });
+        }
+
+        if (!isSuperAdmin && contextFirmId && existing.firm_id && Number(existing.firm_id) !== Number(contextFirmId)) {
+            throw new ApiError({
+                statusCode: 403,
+                message: 'Unauthorized: Cannot modify quotation belonging to another firm.',
             });
         }
 
@@ -652,13 +659,20 @@ const createQuotationRevision = async (id, data = {}) => {
 
 // Admin Approval or Rejection
 const approveQuotation = async (id, { approval_status, rejection_reason }) => {
-    const { userId } = getContext();
+    const { userId, firmId: contextFirmId, isSuperAdmin } = getContext();
 
     const existing = await db('quotations').where({ id }).first();
     if (!existing) {
         throw new ApiError({
             statusCode: 404,
             message: 'Quotation not found.'
+        });
+    }
+
+    if (!isSuperAdmin && contextFirmId && existing.firm_id && Number(existing.firm_id) !== Number(contextFirmId)) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Unauthorized: Cannot approve or reject quotation belonging to another firm.'
         });
     }
 
@@ -681,7 +695,22 @@ const approveQuotation = async (id, { approval_status, rejection_reason }) => {
 
 // Soft delete quotation
 const deleteQuotation = async (id) => {
-    const { userId } = getContext();
+    const { userId, firmId: contextFirmId, isSuperAdmin } = getContext();
+
+    const existing = await db('quotations').where({ id }).first();
+    if (!existing) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Quotation not found.',
+        });
+    }
+
+    if (!isSuperAdmin && contextFirmId && existing.firm_id && Number(existing.firm_id) !== Number(contextFirmId)) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Unauthorized: Cannot delete quotation belonging to another firm.'
+        });
+    }
 
     const [deleted] = await db('quotations')
         .where({ id })
@@ -692,19 +721,27 @@ const deleteQuotation = async (id) => {
         })
         .returning('*');
 
-    if (!deleted) {
+    return deleted;
+};
+
+// Restore soft-deleted quotation
+const restoreQuotation = async (id) => {
+    const { userId, firmId: contextFirmId, isSuperAdmin } = getContext();
+
+    const existing = await db('quotations').where({ id }).first();
+    if (!existing) {
         throw new ApiError({
             statusCode: 404,
             message: 'Quotation not found.',
         });
     }
 
-    return deleted;
-};
-
-// Restore soft-deleted quotation
-const restoreQuotation = async (id) => {
-    const { userId } = getContext();
+    if (!isSuperAdmin && contextFirmId && existing.firm_id && Number(existing.firm_id) !== Number(contextFirmId)) {
+        throw new ApiError({
+            statusCode: 403,
+            message: 'Unauthorized: Cannot restore quotation belonging to another firm.'
+        });
+    }
 
     const [restored] = await db('quotations')
         .where({ id })
@@ -716,22 +753,28 @@ const restoreQuotation = async (id) => {
         })
         .returning('*');
 
-    if (!restored) {
-        throw new ApiError({
-            statusCode: 404,
-            message: 'Quotation not found.',
-        });
-    }
-
     return restored;
 };
 
 // Bulk delete quotations
 const bulkDeleteQuotations = async (ids = []) => {
-    const { userId } = getContext();
+    if (!ids || !ids.length) return { affected: 0 };
+    const { userId, firmId, isSuperAdmin } = getContext();
+
+    const targetRows = await db('quotations')
+        .whereIn('id', ids)
+        .modify(qb => {
+            if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                qb.where({ firm_id: firmId });
+            }
+        })
+        .select('id');
+
+    const validIds = targetRows.map(r => r.id);
+    if (!validIds.length) return { affected: 0 };
 
     const count = await db('quotations')
-        .whereIn('id', ids)
+        .whereIn('id', validIds)
         .update({
             is_active: false,
             deleted_at: new Date(),
@@ -743,10 +786,24 @@ const bulkDeleteQuotations = async (ids = []) => {
 
 // Bulk restore quotations
 const bulkRestoreQuotations = async (ids = []) => {
-    const { userId } = getContext();
+    if (!ids || !ids.length) return { affected: 0 };
+    const { userId, firmId, isSuperAdmin } = getContext();
+
+    const targetRows = await db('quotations')
+        .whereIn('id', ids)
+        .andWhere({ is_active: false })
+        .modify(qb => {
+            if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                qb.where({ firm_id: firmId });
+            }
+        })
+        .select('id');
+
+    const validIds = targetRows.map(r => r.id);
+    if (!validIds.length) return { affected: 0 };
 
     const count = await db('quotations')
-        .whereIn('id', ids)
+        .whereIn('id', validIds)
         .update({
             is_active: true,
             deleted_at: null,
