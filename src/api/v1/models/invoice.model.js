@@ -5,7 +5,7 @@ const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 const { updateInvoiceEwayBillMapping } = require("./ewayBill.model");
 const { updateInvoiceChallanMapping } = require("./invoiceChallan.model");
-const { updateInvoicePurchaseOrderMapping } = require("./purchaseOrder.model");
+const { updateInvoicePurchaseOrderMapping, syncPurchaseOrderBillingProgress } = require("./purchaseOrder.model");
 
 // Fetch all invoices
 const fetchAllInvoice = async (query) => {
@@ -513,6 +513,12 @@ const insertInvoice = async (data) => {
             updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
+        // Re-sync PO items billed quantities and statuses now that invoice items are inserted
+        const poIds = masterData.purchaseOrderIds || document.purchaseOrderIds || [];
+        if (poIds.length > 0) {
+            await syncPurchaseOrderBillingProgress(trx, poIds);
+        }
+
         // Update billing & shipping address id into invoice
         await updateAddressIdInInvoice(trx, invoiceId, addressResult)
         return { invoiceId, invoiceNo };
@@ -692,6 +698,16 @@ const updateInvoiceById = async (data) => {
             updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
+        // Re-sync PO items billed quantities and statuses
+        const poIds = document.purchaseOrderIds || masterData.purchaseOrderIds || [];
+        const linkedPos = await trx('purchase_order_invoices')
+            .select('purchase_order_id')
+            .where({ invoice_id: invoiceId });
+        const allPoIds = [...new Set([...poIds, ...linkedPos.map(p => p.purchase_order_id)])];
+        if (allPoIds.length > 0) {
+            await syncPurchaseOrderBillingProgress(trx, allPoIds);
+        }
+
         return invoiceId;
     });
 }
@@ -760,13 +776,20 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
         return db.transaction(async trx => {
             let result;
 
+            // Fetch affected POs before delete
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .where({ invoice_id: invoiceId });
+            const affectedPoIds = linkedPos.map(p => p.purchase_order_id);
+
             const invWhere = firmId ? { id: invoiceId, firm_id: firmId } : { id: invoiceId };
             if (isPermanentDelete) {
                 // HARD DELETE - clean up foreign key references first
                 await Promise.all([
                     trx('invoice_contacts').where({ invoice_id: invoiceId }).del(),
                     trx('invoice_items').where({ invoice_id: invoiceId }).del(),
-                    trx('payment_allocations').where({ invoice_id: invoiceId }).del()
+                    trx('payment_allocations').where({ invoice_id: invoiceId }).del(),
+                    trx('purchase_order_invoices').where({ invoice_id: invoiceId }).del()
                 ]);
 
                 result = await trx('invoices').where(invWhere).del(); // number of affected invoice rows
@@ -782,6 +805,10 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                 ]);
 
                 result = invoice;
+            }
+
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
             }
 
             return result > 0;
@@ -819,24 +846,35 @@ const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) =>
 
             const invQuery = trx('invoices').whereIn('id', validIds);
 
+            // Fetch affected POs before delete
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .whereIn('invoice_id', validIds);
+            const affectedPoIds = [...new Set(linkedPos.map(p => p.purchase_order_id))];
+
             if (isPermanentDelete) {
                 await Promise.all([
                     trx('invoice_contacts').whereIn('invoice_id', validIds).del(),
                     trx('invoice_items').whereIn('invoice_id', validIds).del(),
-                    trx('payment_allocations').whereIn('invoice_id', validIds).del()
+                    trx('payment_allocations').whereIn('invoice_id', validIds).del(),
+                    trx('purchase_order_invoices').whereIn('invoice_id', validIds).del()
                 ]);
-                return await invQuery.del();
+                await invQuery.del();
+            } else {
+                // Soft delete (bulk move to trash)
+                await Promise.all([
+                    trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('invoice_challans').whereIn('invoice_id', validIds).update({ invoice_id: null }),
+                    trx('eway_bills').whereIn('invoice_id', validIds).update({ invoice_id: null }),
+                    invQuery.update({ is_active: false })
+                ]);
             }
 
-            // Soft delete (bulk move to trash)
-            await Promise.all([
-                trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: false }),
-                trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: false }),
-                trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: false }),
-                trx('invoice_challans').whereIn('invoice_id', validIds).update({ invoice_id: null }),
-                trx('eway_bills').whereIn('invoice_id', validIds).update({ invoice_id: null }),
-                invQuery.update({ is_active: false })
-            ]);
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
 
             return validIds.length;
         });
@@ -878,8 +916,17 @@ const restoreInvoiceById = async (invoiceId) => {
             await Promise.all([
                 trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: true }),
                 trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: true }),
+                trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: true }),
                 restoreQuery.update({ is_active: true })
             ]);
+
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .where({ invoice_id: invoiceId, is_active: true });
+            const affectedPoIds = linkedPos.map(p => p.purchase_order_id);
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
 
             return 1;
         });
@@ -920,8 +967,18 @@ const bulkRestoreInvoices = async (invoiceIds = []) => {
             await Promise.all([
                 trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: true }),
                 trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: true }),
+                trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: true }),
                 invQuery.update({ is_active: true })
             ]);
+
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .whereIn('invoice_id', validIds)
+                .where('is_active', true);
+            const affectedPoIds = [...new Set(linkedPos.map(p => p.purchase_order_id))];
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
 
             return validIds.length;
         });

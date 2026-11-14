@@ -14,17 +14,43 @@ const getInvoiceChallansByInvoiceIdValidationSchema = {
     }),
     query: Joi.object({
         includeUnmappedChallans: Joi.boolean().optional().default(false),
+        partyId: Joi.number().integer().positive().optional().allow(null),
     })
 };
+
+// Item schema for line items inside Delivery Challan
+const challanItemSchema = Joi.object({
+    id: Joi.number().integer().positive().optional(),
+    productId: Joi.number().integer().positive().allow(null).optional(),
+    itemName: Joi.string().max(255).required(),
+    description: Joi.string().allow('', null).optional(),
+    hsnSacCode: Joi.string().max(30).allow('', null).optional(),
+    qty: Joi.number().positive().required(),
+    unit: Joi.string().max(50).optional().default('Nos'),
+    rate: Joi.number().min(0).optional().default(0),
+    total: Joi.number().min(0).optional().default(0),
+    sortOrder: Joi.number().integer().min(0).optional().default(0)
+});
 
 // Schema: Create a new invoice challan
 const createInvoiceChallanValidationSchema = {
     body: Joi.object({
         invoiceId: Joi.number().integer().positive().allow(null).optional(),
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
-        challanNo: Joi.string().max(50).required(),
+        partyId: Joi.number().integer().positive().allow(null).optional(),
+        partyBranchId: Joi.number().integer().positive().allow(null).optional(),
+        challanNo: Joi.string().max(50).optional().allow('', null),
         challanDate: Joi.date().required(),
-        customerName: Joi.string().max(255).required()
+        customerName: Joi.string().max(255).required(),
+        deliveryAddress: Joi.string().allow('', null).optional(),
+        transportMode: Joi.string().max(50).allow('', null).optional().default('Road'),
+        vehicleNo: Joi.string().max(50).allow('', null).optional(),
+        transporterName: Joi.string().max(150).allow('', null).optional(),
+        lrNo: Joi.string().max(100).allow('', null).optional(),
+        dispatchReason: Joi.string().max(100).allow('', null).optional().default('Supply on Delivery'),
+        status: Joi.string().valid('DRAFT', 'DISPATCHED', 'BILLED', 'CANCELLED').optional().default('DISPATCHED'),
+        notes: Joi.string().allow('', null).optional(),
+        items: Joi.array().items(challanItemSchema).optional().default([])
     }),
 };
 
@@ -36,9 +62,20 @@ const updateInvoiceChallanValidationSchema = {
     body: Joi.object({
         invoiceId: Joi.number().integer().positive().allow(null).optional(),
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
-        challanNo: Joi.string().max(50).optional(),
+        partyId: Joi.number().integer().positive().allow(null).optional(),
+        partyBranchId: Joi.number().integer().positive().allow(null).optional(),
+        challanNo: Joi.string().max(50).optional().allow('', null),
         challanDate: Joi.date().optional(),
-        customerName: Joi.string().max(255).optional()
+        customerName: Joi.string().max(255).optional(),
+        deliveryAddress: Joi.string().allow('', null).optional(),
+        transportMode: Joi.string().max(50).allow('', null).optional(),
+        vehicleNo: Joi.string().max(50).allow('', null).optional(),
+        transporterName: Joi.string().max(150).allow('', null).optional(),
+        lrNo: Joi.string().max(100).allow('', null).optional(),
+        dispatchReason: Joi.string().max(100).allow('', null).optional(),
+        status: Joi.string().valid('DRAFT', 'DISPATCHED', 'BILLED', 'CANCELLED').optional(),
+        notes: Joi.string().allow('', null).optional(),
+        items: Joi.array().items(challanItemSchema).optional()
     }).min(1),
 };
 

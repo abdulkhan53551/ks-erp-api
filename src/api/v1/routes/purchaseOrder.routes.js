@@ -3,6 +3,7 @@ const validate = require('../middlewares/validate');
 const { checkPermission, requireFirmContext } = require('../middlewares/authorize.middleware');
 const { 
     getPurchaseOrderMeta, 
+    getPurchaseOrderSummary,
     getPurchaseOrderById, 
     getPurchaseOrderByInvoiceId, 
     createPurchaseOrder, 
@@ -31,6 +32,7 @@ router.use(requireFirmContext);
 
 // Purchase Order routes guarded by Casbin in-memory RBAC
 router.get('/pagination', checkPermission('purchase-orders', 'read'), getPurchaseOrderMeta);
+router.get('/summary', checkPermission('purchase-orders', 'read'), getPurchaseOrderSummary);
 router.get('/', checkPermission('purchase-orders', 'read'), getAllPurchaseOrder);
 router.post('/bulk-delete', checkPermission('purchase-orders', 'delete'), validate(bulkDeletePurchaseOrdersValidationSchema), bulkDeletePurchaseOrders);
 router.patch('/bulk-restore', checkPermission('purchase-orders', 'delete'), validate(bulkRestorePurchaseOrdersValidationSchema), bulkRestorePurchaseOrders);

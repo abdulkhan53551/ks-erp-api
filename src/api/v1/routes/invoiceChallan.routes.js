@@ -4,6 +4,7 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 const { 
     getInvoiceChallansByInvoiceId, 
     getInvoiceChallanById, 
+    getDeliveryChallanPdf,
     createInvoiceChallan, 
     updateInvoiceChallan, 
     deleteInvoiceChallan, 
@@ -36,6 +37,7 @@ router.post('/bulk-delete', checkPermission('challans', 'delete'), validate(bulk
 router.patch('/bulk-restore', checkPermission('challans', 'delete'), validate(bulkRestoreInvoiceChallansValidationSchema), bulkRestoreInvoiceChallans);
 router.get('/invoice/:invoiceId', checkPermission('challans', 'read'), validate(getInvoiceChallansByInvoiceIdValidationSchema), getInvoiceChallansByInvoiceId);
 router.get('/:id', checkPermission('challans', 'read'), validate(getInvoiceChallanByIdValidationSchema), getInvoiceChallanById);
+router.get('/:id/pdf', checkPermission('challans', 'read'), validate(getInvoiceChallanByIdValidationSchema), getDeliveryChallanPdf);
 router.post('/', checkPermission('challans', 'create'), validate(createInvoiceChallanValidationSchema), createInvoiceChallan);
 router.patch('/:id', checkPermission('challans', 'update'), validate(updateInvoiceChallanValidationSchema), updateInvoiceChallan);
 router.patch('/:id/restore', checkPermission('challans', 'delete'), validate(restoreInvoiceChallanValidationSchema), restoreInvoiceChallan);
