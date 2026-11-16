@@ -29,7 +29,8 @@ const { getEnforcer } = require('../services/casbin.js');
 const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
 
 const { db } = require('../database');
-const { getFirmRolePermissions, isStrictSubordinateRole, getUserHighestRoleId, invalidateUserTenantCache } = require('../services/firmPermissionCache');
+const firmPermissionCache = require('../services/firmPermissionCache');
+const { getFirmRolePermissions, isStrictSubordinateRole, getUserHighestRoleId, invalidateUserTenantCache, getUserAllowedFirms } = firmPermissionCache;
 const { getPublicKey } = require('../../../config/rsaKeys');
 
 // Convert to expiry days to number
