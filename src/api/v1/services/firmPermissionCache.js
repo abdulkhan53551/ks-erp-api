@@ -26,6 +26,18 @@ let cachedHierarchyGraph = null;
 let lastHierarchyLoadTime = 0;
 const HIERARCHY_TTL = 15 * 60 * 1000; // 15 minutes
 
+// Standard RBAC hierarchy fallback for enterprise roles
+const FALLBACK_ROLE_HIERARCHY = {
+    'super-admin': ['administrator', 'admin', 'manager', 'supervisor', 'employee', 'auditor', 'viewer'],
+    'administrator': ['manager', 'supervisor', 'employee', 'auditor', 'viewer'],
+    'admin': ['manager', 'supervisor', 'employee', 'auditor', 'viewer'],
+    'manager': ['supervisor', 'employee'],
+    'supervisor': ['employee'],
+    'auditor': [],
+    'viewer': [],
+    'employee': []
+};
+
 /**
  * Loads all roles from the database and constructs a transitive hierarchy graph in RAM.
  * Ensures O(1) lookups for any ancestor-descendant query.
@@ -88,6 +100,22 @@ async function loadRoleHierarchy(forceRefresh = false) {
             }
         }
 
+        // 4. Enrich with standard hierarchy fallback for any roles missing explicit parent links
+        for (const r of roles) {
+            const roleEntry = roleMap.get(r.id);
+            if (!roleEntry) continue;
+            const slug = (roleEntry.slug || '').toLowerCase();
+            const allowedDescendantSlugs = FALLBACK_ROLE_HIERARCHY[slug];
+            if (allowedDescendantSlugs && allowedDescendantSlugs.length > 0) {
+                for (const targetRole of roles) {
+                    const targetSlug = (targetRole.slug || '').toLowerCase();
+                    if (allowedDescendantSlugs.includes(targetSlug) && targetRole.id !== r.id) {
+                        roleEntry.descendants.add(targetRole.id);
+                    }
+                }
+            }
+        }
+
         cachedHierarchyGraph = roleMap;
         lastHierarchyLoadTime = now;
         return cachedHierarchyGraph;
@@ -112,11 +140,99 @@ async function isAncestorRole(ancestorRoleId, descendantRoleId) {
     if (isNaN(aId) || isNaN(dId)) return false;
     if (aId === dId) return true; // A role can manage records created by itself
 
+    return isStrictSubordinateRole(aId, dId);
+}
+
+/**
+ * Evaluates whether descendantRoleId is strictly subordinate to ancestorRoleId.
+ * Returns false if roles are identical (peers cannot administer peers).
+ * 
+ * @param {number|string} ancestorRoleId Superior role ID
+ * @param {number|string} descendantRoleId Target subordinate role ID
+ * @returns {Promise<boolean>}
+ */
+async function isStrictSubordinateRole(ancestorRoleId, descendantRoleId) {
+    const aId = parseInt(ancestorRoleId, 10);
+    const dId = parseInt(descendantRoleId, 10);
+
+    if (isNaN(aId) || isNaN(dId) || aId === dId) return false;
+
     const graph = await loadRoleHierarchy();
     const ancestor = graph.get(aId);
     if (!ancestor) return false;
 
-    return ancestor.descendants.has(dId);
+    if (ancestor.descendants && ancestor.descendants.has(dId)) {
+        return true;
+    }
+
+    // Direct fallback check using slug
+    const target = graph.get(dId);
+    if (ancestor.slug && target?.slug) {
+        const allowedSlugs = FALLBACK_ROLE_HIERARCHY[ancestor.slug.toLowerCase()];
+        if (allowedSlugs && allowedSlugs.includes(target.slug.toLowerCase())) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Resolves the highest role rank held by a user across active firm assignments (or globally).
+ * Returns the role ID with the highest rank (most descendants or ancestral root).
+ * 
+ * @param {number|string} userId
+ * @param {number|string|null} [firmId] Optional firm ID filter
+ * @returns {Promise<number|null>}
+ */
+async function getUserHighestRoleId(userId, firmId = null) {
+    const uId = parseInt(userId, 10);
+    if (isNaN(uId)) return null;
+
+    let query = db('user_firm_branches')
+        .where({ user_id: uId, is_active: true });
+
+    if (firmId) {
+        const fId = parseInt(firmId, 10);
+        if (!isNaN(fId)) {
+            query = query.where({ firm_id: fId });
+        }
+    }
+
+    const assignments = await query.select('role_id');
+    const roleIds = assignments.map(a => a.role_id).filter(Boolean);
+
+    // Also consider user.role_id
+    const user = await db('users').where({ id: uId }).select('role_id').first();
+    if (user?.role_id) {
+        roleIds.push(user.role_id);
+    }
+
+    if (roleIds.length === 0) return null;
+
+    const uniqueRoleIds = Array.from(new Set(roleIds.map(id => parseInt(id, 10))));
+    if (uniqueRoleIds.length === 1) return uniqueRoleIds[0];
+
+    const graph = await loadRoleHierarchy();
+
+    let highestRoleId = uniqueRoleIds[0];
+    let highestDescendantCount = (graph.get(highestRoleId)?.descendants?.size) ?? -1;
+
+    for (let i = 1; i < uniqueRoleIds.length; i++) {
+        const currentId = uniqueRoleIds[i];
+        const currentDescendantCount = (graph.get(currentId)?.descendants?.size) ?? -1;
+
+        const currentRole = graph.get(currentId);
+        if (currentRole && currentRole.descendants.has(highestRoleId)) {
+            highestRoleId = currentId;
+            highestDescendantCount = currentDescendantCount;
+        } else if (currentDescendantCount > highestDescendantCount) {
+            highestRoleId = currentId;
+            highestDescendantCount = currentDescendantCount;
+        }
+    }
+
+    return highestRoleId;
 }
 
 /**
@@ -358,6 +474,8 @@ module.exports = {
     hasPermission,
     loadRoleHierarchy,
     isAncestorRole,
+    isStrictSubordinateRole,
+    getUserHighestRoleId,
     getDescendantRoleIds,
     getRoleMetadata,
     getUserAllowedFirms,

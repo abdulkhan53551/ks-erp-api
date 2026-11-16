@@ -29,7 +29,7 @@ const { getEnforcer } = require('../services/casbin.js');
 const { jsonLogicToString, stringToJsonLogic } = require('../../../utils/utility.js');
 
 const { db } = require('../database');
-const { getFirmRolePermissions } = require('../services/firmPermissionCache');
+const { getFirmRolePermissions, isStrictSubordinateRole, getUserHighestRoleId, invalidateUserTenantCache } = require('../services/firmPermissionCache');
 const { getPublicKey } = require('../../../config/rsaKeys');
 
 // Convert to expiry days to number
@@ -1091,13 +1091,48 @@ const getPendingRegistrationsList = asyncHandler(async (req, res) => {
 const approveRegistration = asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { roleId } = req.body;
+    const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
     const user = await findUserById(id);
     if (!user) {
         throw new ApiError({ statusCode: 404, message: 'User not found' });
     }
 
+    if (!isCallerSuperAdmin) {
+        const callerHighestRoleId = await getUserHighestRoleId(req.user.id);
+        if (roleId && callerHighestRoleId) {
+            const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, roleId);
+            if (!isSubordinate) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: 'Access denied: You can only approve registrations with roles strictly subordinate to your rank.'
+                });
+            }
+        }
+    }
+
     await approveUserRegistration(id, roleId);
+
+    // If caller has an active firm context (e.g. Firm Admin), attach the user to that firm if not already assigned
+    const activeFirmId = req.user?.firmId;
+    if (activeFirmId && roleId) {
+        const existingAssignment = await db('user_firm_branches')
+            .where({ user_id: id, firm_id: activeFirmId })
+            .first();
+        if (!existingAssignment) {
+            await db('user_firm_branches').insert({
+                user_id: id,
+                firm_id: activeFirmId,
+                firm_branch_id: null,
+                role_id: roleId,
+                data_scope: 'FIRM',
+                is_default: true,
+                is_active: true
+            });
+        }
+    }
+
+    invalidateUserTenantCache(id);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,
@@ -1108,13 +1143,33 @@ const approveRegistration = asyncHandler(async (req, res) => {
 
 const rejectRegistration = asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
     const user = await findUserById(id);
     if (!user) {
         throw new ApiError({ statusCode: 404, message: 'User not found' });
     }
 
+    if (user.id === req.user.id) {
+        throw new ApiError({ statusCode: 400, message: 'Security Policy: You cannot reject your own account.' });
+    }
+
+    if (!isCallerSuperAdmin) {
+        const callerHighestRoleId = await getUserHighestRoleId(req.user.id);
+        const targetHighestRoleId = await getUserHighestRoleId(user.id);
+        if (callerHighestRoleId && targetHighestRoleId) {
+            const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, targetHighestRoleId);
+            if (!isSubordinate) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: 'Access denied: You cannot reject an account with equal or superior role rank.'
+                });
+            }
+        }
+    }
+
     await rejectUserRegistration(id);
+    invalidateUserTenantCache(id);
 
     return res.status(200).json(new ApiResponse({
         statusCode: 200,

@@ -6,7 +6,7 @@ const { db } = require('../database')
 const { getEnforcer } = require('../services/casbin')
 const { fetchPageData, buildPagination } = require('../../../utils/pagination')
 const { getContext } = require('../helpers/requestContext')
-const { getUserAllowedFirms } = require('../services/firmPermissionCache')
+const { getUserAllowedFirms, isStrictSubordinateRole, getUserHighestRoleId, getDescendantRoleIds } = require('../services/firmPermissionCache')
 
 //  Is user exist
 const isUserExist = async (username = '', email = '') => {
@@ -156,19 +156,38 @@ const generateRefreshToken = (data) => {
 
 // ========== REGISTRATION APPROVAL ==========
 const getPendingRegistrations = async () => {
-    return db('users')
+    const list = await db('users')
         .select('id', 'first_name', 'last_name', 'email', 'user_name', 'approval_status', 'created_at')
         .where({ approval_status: 'PENDING' })
         .whereNull('deleted_at')
         .orderBy('created_at', 'desc');
+
+    return list.map(u => ({
+        ...u,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        userName: u.user_name,
+        approvalStatus: u.approval_status,
+        createdAt: u.created_at
+    }));
 };
 
 const getRejectedRegistrations = async () => {
-    return db('users')
+    const list = await db('users')
         .select('id', 'first_name', 'last_name', 'email', 'user_name', 'approval_status', 'created_at', 'updated_at')
         .where({ approval_status: 'REJECTED' })
         .whereNull('deleted_at')
         .orderBy('updated_at', 'desc');
+
+    return list.map(u => ({
+        ...u,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        userName: u.user_name,
+        approvalStatus: u.approval_status,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at
+    }));
 };
 
 const approveUserRegistration = async (userId, roleId = null) => {
@@ -245,7 +264,18 @@ const completePasswordReset = async (userId, hashedPassword) => {
 
 const getAllRoles = async () => {
     return db('roles')
-        .select('id', 'name', 'slug', 'description')
+        .select(
+            'id',
+            'name',
+            'slug',
+            'description',
+            'parent_role_id',
+            'parent_role_id as parentRoleId',
+            'data_scope',
+            'data_scope as dataScope',
+            'is_independent',
+            'is_independent as isIndependent'
+        )
         .where({ is_active: true })
         .orderBy('id', 'asc');
 };
@@ -256,6 +286,100 @@ const getSuperAdminRoleId = async () => {
         .whereRaw('LOWER(slug) = ?', ['super-admin'])
         .first();
     return role ? role.id : null;
+};
+
+/**
+ * Applies tenant firm scoping and role hierarchy (descendants) scoping to user queries.
+ * 
+ * Rules:
+ * - Super Admin: Global view across all firms (or filtered by query firmId). Sees all roles.
+ * - Non-Super Admin (e.g. Administrator, Manager):
+ *     1. Scoped to the caller's allowed firms (or query firmId if permitted).
+ *     2. Strictly excludes Super Admin accounts.
+ *     3. Only includes users whose assigned role in that firm is a descendant of the caller,
+ *        plus the caller's own account (if includeSelf is true),
+ *        plus pending registration users awaiting approval.
+ */
+const applyUserTenantAndHierarchyScoping = async (queryBuilder, {
+    callerId,
+    isSuperAdmin,
+    firmId = null,
+    includeSelf = true
+} = {}) => {
+    if (isSuperAdmin) {
+        if (firmId && firmId !== 'all') {
+            const targetFirmId = parseInt(firmId, 10);
+            queryBuilder.whereIn('u.id', function () {
+                this.select('user_id')
+                    .from('user_firm_branches')
+                    .where({ firm_id: targetFirmId, is_active: true });
+            });
+        }
+        return queryBuilder;
+    }
+
+    if (!callerId) {
+        queryBuilder.whereRaw('1 = 0');
+        return queryBuilder;
+    }
+
+    const { allowedFirmIds } = await getUserAllowedFirms(callerId);
+    let firmIds = Array.from(allowedFirmIds || []);
+
+    if (firmId && firmId !== 'all') {
+        const targetFirmId = parseInt(firmId, 10);
+        if (firmIds.includes(targetFirmId)) {
+            firmIds = [targetFirmId];
+        } else {
+            queryBuilder.whereRaw('1 = 0');
+            return queryBuilder;
+        }
+    }
+
+    if (firmIds.length === 0) {
+        queryBuilder.whereRaw('1 = 0');
+        return queryBuilder;
+    }
+
+    // Resolve caller's highest role rank in this tenant context
+    const callerHighestRoleId = await getUserHighestRoleId(callerId, firmIds.length === 1 ? firmIds[0] : null);
+    const descendantRoleIds = callerHighestRoleId ? await getDescendantRoleIds(callerHighestRoleId) : [];
+    const superAdminRoleId = await getSuperAdminRoleId();
+
+    // 1. Strictly exclude Super Admin accounts for non-super-admins
+    if (superAdminRoleId) {
+        queryBuilder.where(function () {
+            this.whereNull('u.role_id')
+                .orWhere('u.role_id', '!=', superAdminRoleId);
+        });
+    }
+
+    // 2. Strict firm & descendant role scoping
+    queryBuilder.where(function () {
+        // A) Subordinate users assigned to caller's firm(s)
+        this.whereIn('u.id', function () {
+            const sub = this.select('user_id')
+                .from('user_firm_branches')
+                .whereIn('firm_id', firmIds)
+                .where('is_active', true);
+
+            if (descendantRoleIds.length > 0) {
+                sub.whereIn('role_id', descendantRoleIds);
+            } else {
+                sub.whereRaw('1 = 0');
+            }
+        });
+
+        // B) Caller's own account
+        if (includeSelf && callerId) {
+            this.orWhere('u.id', callerId);
+        }
+
+        // C) Pending registrations awaiting approval
+        this.orWhere('u.approval_status', 'PENDING');
+    });
+
+    return queryBuilder;
 };
 
 // ========== USER DIRECTORY & RECYCLE BIN ==========
@@ -292,30 +416,13 @@ const fetchAllUsers = async (query = {}) => {
             baseQuery.whereNull('u.deleted_at');
         }
 
-        // Multi-tenant Scoping: If not super admin, restrict to users in requester's allowed firms
-        if (!isSuperAdmin && context.userId) {
-            const { allowedFirmIds } = await getUserAllowedFirms(context.userId);
-            const firmIds = Array.from(allowedFirmIds || []);
-            if (firmIds.length === 0) {
-                return [];
-            }
-            baseQuery.whereIn('u.id', function () {
-                this.select('user_id')
-                    .from('user_firm_branches')
-                    .whereIn('firm_id', firmIds)
-                    .where('is_active', true);
-            });
-        }
-
-        // Explicit firm filter if passed
-        if (firmId && firmId !== 'all') {
-            const targetFirmId = parseInt(firmId, 10);
-            baseQuery.whereIn('u.id', function () {
-                this.select('user_id')
-                    .from('user_firm_branches')
-                    .where({ firm_id: targetFirmId, is_active: true });
-            });
-        }
+        // Apply tenant and hierarchy scoping
+        await applyUserTenantAndHierarchyScoping(baseQuery, {
+            callerId: context.userId,
+            isSuperAdmin,
+            firmId,
+            includeSelf: !isTrash
+        });
 
         if (status) {
             if (status === 'APPROVED') {
@@ -416,14 +523,32 @@ const fetchAllUsers = async (query = {}) => {
             const uAssignments = assignmentMap.get(u.id) || [];
             const defaultAssignment = uAssignments.find(a => a.is_default) || uAssignments[0] || null;
             const isUserSuperAdmin = (u.role_slug || '').toLowerCase() === 'super-admin';
+            const resolvedRoleName = isUserSuperAdmin ? 'Super Admin' : (defaultAssignment?.role_name || u.role_name);
+            const resolvedRoleSlug = isUserSuperAdmin ? 'super-admin' : (defaultAssignment?.role_slug || u.role_slug);
+            const resolvedRoleId = isUserSuperAdmin ? u.role_id : (defaultAssignment?.role_id || u.role_id);
 
             return {
                 ...u,
-                role_name: isUserSuperAdmin ? 'Super Admin' : (defaultAssignment?.role_name || u.role_name),
-                role_slug: isUserSuperAdmin ? 'super-admin' : (defaultAssignment?.role_slug || u.role_slug),
-                role_id: isUserSuperAdmin ? u.role_id : (defaultAssignment?.role_id || u.role_id),
+                id: u.id,
+                firstName: u.first_name,
+                lastName: u.last_name,
+                userName: u.user_name,
+                email: u.email,
+                isActive: u.is_active,
+                approvalStatus: u.approval_status,
+                createdAt: u.created_at,
+                updatedAt: u.updated_at,
+                deletedAt: u.deleted_at,
+                deletedByName: u.deleted_by_name,
+                role_name: resolvedRoleName,
+                roleName: resolvedRoleName,
+                role_slug: resolvedRoleSlug,
+                roleSlug: resolvedRoleSlug,
+                role_id: resolvedRoleId,
+                roleId: resolvedRoleId,
                 assignments: uAssignments,
-                is_super_admin: isUserSuperAdmin
+                is_super_admin: isUserSuperAdmin,
+                isSuperAdmin: isUserSuperAdmin
             };
         });
     } catch (error) {
@@ -449,34 +574,13 @@ const fetchUsersMeta = async (query = {}) => {
             baseQuery.whereNull('u.deleted_at');
         }
 
-        // Multi-tenant Scoping: If not super admin, restrict to users in requester's allowed firms
-        if (!isSuperAdmin && context.userId) {
-            const { allowedFirmIds } = await getUserAllowedFirms(context.userId);
-            const firmIds = Array.from(allowedFirmIds || []);
-            if (firmIds.length === 0) {
-                return {
-                    pagination: { total: 0, page, pageSize, totalPages: 1, offset: 0, hasNextPage: false, hasPrevPage: false },
-                    activeCount: 0,
-                    trashCount: 0
-                };
-            }
-            baseQuery.whereIn('u.id', function () {
-                this.select('user_id')
-                    .from('user_firm_branches')
-                    .whereIn('firm_id', firmIds)
-                    .where('is_active', true);
-            });
-        }
-
-        // Explicit firm filter if passed
-        if (firmId && firmId !== 'all') {
-            const targetFirmId = parseInt(firmId, 10);
-            baseQuery.whereIn('u.id', function () {
-                this.select('user_id')
-                    .from('user_firm_branches')
-                    .where({ firm_id: targetFirmId, is_active: true });
-            });
-        }
+        // Apply tenant and hierarchy scoping to base query
+        await applyUserTenantAndHierarchyScoping(baseQuery, {
+            callerId: context.userId,
+            isSuperAdmin,
+            firmId,
+            includeSelf: !isTrash
+        });
 
         if (status) {
             if (status === 'APPROVED') {
@@ -514,14 +618,53 @@ const fetchUsersMeta = async (query = {}) => {
 
         const paginationResult = await buildPagination({ baseQuery, page, pageSize });
 
-        // Total counts for active records vs recycle bin
-        const activeCountRow = await db('users').whereNull('deleted_at').count('* as count').first();
-        const trashCountRow = await db('users').whereNotNull('deleted_at').count('* as count').first();
+        // 2. Scoped Active Count (non-deleted, active, approved within caller's scope)
+        const activeCountQuery = db('users as u')
+            .whereNull('u.deleted_at')
+            .where('u.is_active', true)
+            .where('u.approval_status', 'APPROVED');
+
+        await applyUserTenantAndHierarchyScoping(activeCountQuery, {
+            callerId: context.userId,
+            isSuperAdmin,
+            firmId,
+            includeSelf: true
+        });
+
+        const activeCountRow = await activeCountQuery.count('* as count').first();
+
+        // 3. Scoped Trash Count (deleted within caller's scope)
+        const trashCountQuery = db('users as u')
+            .whereNotNull('u.deleted_at');
+
+        await applyUserTenantAndHierarchyScoping(trashCountQuery, {
+            callerId: context.userId,
+            isSuperAdmin,
+            firmId,
+            includeSelf: false
+        });
+
+        const trashCountRow = await trashCountQuery.count('* as count').first();
+
+        // 4. Scoped Pending Count (pending approval within caller's scope)
+        const pendingCountQuery = db('users as u')
+            .whereNull('u.deleted_at')
+            .where('u.approval_status', 'PENDING');
+
+        await applyUserTenantAndHierarchyScoping(pendingCountQuery, {
+            callerId: context.userId,
+            isSuperAdmin,
+            firmId,
+            includeSelf: false
+        });
+
+        const pendingCountRow = await pendingCountQuery.count('* as count').first();
 
         return {
             ...paginationResult,
-            activeCount: parseInt(activeCountRow?.count || 0),
-            trashCount: parseInt(trashCountRow?.count || 0)
+            activeCount: parseInt(activeCountRow?.count || 0, 10),
+            trashCount: parseInt(trashCountRow?.count || 0, 10),
+            pendingCount: parseInt(pendingCountRow?.count || 0, 10)
         };
     } catch (error) {
         throw new ApiError({
@@ -740,13 +883,25 @@ const saveUserAssignments = async (userId, { isSuperAdmin = false, assignments =
 /**
  * Validates if the caller has authority to manage/modify/delete a target user.
  * - Super Admins can manage any user.
+ * - Self-administrative operations are disallowed unless allowSelf is explicitly set.
  * - Non-super-admins cannot manage Super Admin accounts.
  * - Non-super-admins must belong to at least one firm in common with the target user.
+ * - Non-super-admins can ONLY manage users who hold a strict subordinate role rank.
  */
-const canManageTargetUser = async (targetUserId, caller) => {
+const canManageTargetUser = async (targetUserId, caller, { allowSelf = false } = {}) => {
     const isCallerSuperAdmin = Boolean(caller?.isSuperAdmin);
+    const parsedTargetId = parseInt(targetUserId, 10);
+    const callerId = caller?.id ? parseInt(caller.id, 10) : null;
 
-    const targetUser = await findUserById(targetUserId);
+    if (!allowSelf && callerId && parsedTargetId === callerId) {
+        return {
+            allowed: false,
+            statusCode: 400,
+            message: 'Security Violation: You cannot perform this administrative operation on your own account.'
+        };
+    }
+
+    const targetUser = await findUserById(parsedTargetId);
     if (!targetUser) {
         return { allowed: false, statusCode: 404, message: 'User not found.' };
     }
@@ -777,16 +932,35 @@ const canManageTargetUser = async (targetUserId, caller) => {
     }
 
     const hasCommonFirm = await db('user_firm_branches')
-        .where('user_id', targetUserId)
+        .where('user_id', parsedTargetId)
         .whereIn('firm_id', firmIds)
         .first();
 
-    if (!hasCommonFirm) {
+    const targetHasAnyFirm = await db('user_firm_branches')
+        .where('user_id', parsedTargetId)
+        .first();
+
+    if (targetHasAnyFirm && !hasCommonFirm) {
         return {
             allowed: false,
             statusCode: 403,
             message: 'Access denied: Target user does not belong to any firm administered by you.'
         };
+    }
+
+    // Role hierarchy check: Non-super-admin caller cannot manage peer or superior users
+    const callerHighestRoleId = await getUserHighestRoleId(caller.id);
+    const targetHighestRoleId = await getUserHighestRoleId(parsedTargetId);
+
+    if (callerHighestRoleId && targetHighestRoleId) {
+        const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, targetHighestRoleId);
+        if (!isSubordinate) {
+            return {
+                allowed: false,
+                statusCode: 403,
+                message: 'Access denied: You cannot manage accounts with an equal or superior role rank.'
+            };
+        }
     }
 
     return { allowed: true, targetUser };
@@ -801,6 +975,15 @@ const userIsSuperAdmin = (user, superAdminRoleId) => {
  */
 const validateBulkUserOperation = async (targetUserIds = [], caller, { permanent = false } = {}) => {
     const isCallerSuperAdmin = Boolean(caller?.isSuperAdmin);
+    const callerId = caller?.id ? parseInt(caller.id, 10) : null;
+
+    if (callerId && targetUserIds.map(id => parseInt(id, 10)).includes(callerId)) {
+        return {
+            allowed: false,
+            statusCode: 400,
+            message: 'Security Violation: You cannot perform bulk administrative operations on your own account.'
+        };
+    }
 
     if (permanent && !isCallerSuperAdmin) {
         return {
@@ -851,6 +1034,24 @@ const validateBulkUserOperation = async (targetUserIds = [], caller, { permanent
             statusCode: 403,
             message: 'Access denied: One or more selected users do not belong to any firm administered by you.'
         };
+    }
+
+    // Role hierarchy check for bulk operation: caller cannot manage peers or superiors
+    const callerHighestRoleId = await getUserHighestRoleId(caller.id);
+    if (callerHighestRoleId) {
+        for (const tId of targetUserIds) {
+            const targetRoleId = await getUserHighestRoleId(tId);
+            if (targetRoleId) {
+                const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, targetRoleId);
+                if (!isSubordinate) {
+                    return {
+                        allowed: false,
+                        statusCode: 403,
+                        message: 'Access denied: One or more selected users hold an equal or superior role rank.'
+                    };
+                }
+            }
+        }
     }
 
     return { allowed: true };
