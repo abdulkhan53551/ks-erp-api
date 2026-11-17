@@ -69,15 +69,15 @@ router.post('/forgot-password', authRateLimiter, validate(forgotPasswordValidati
 router.get('/validate-reset-token', validateResetToken)
 router.post('/reset-password', authRateLimiter, decryptAuthPayload, validate(resetPasswordValidationSchema), resetPassword)
 
-// Super Admin Approval Workflows
+// Super Admin & Administrator Approval Workflows
 router.get('/admin/roles', verifyAccessToken, checkPermission('users', 'read'), getRoles)
-router.get('/admin/approvals/registrations', verifyAccessToken, requireSuperAdmin, getPendingRegistrationsList)
-router.get('/admin/approvals/rejected-registrations', verifyAccessToken, requireSuperAdmin, getRejectedRegistrationsList)
-router.patch('/admin/approvals/registrations/:id/approve', verifyAccessToken, requireSuperAdmin, approveRegistration)
-router.patch('/admin/approvals/registrations/:id/reject', verifyAccessToken, requireSuperAdmin, rejectRegistration)
-router.get('/admin/approvals/password-resets', verifyAccessToken, requireSuperAdmin, getPendingPasswordResetsList)
-router.patch('/admin/approvals/password-resets/:id/approve', verifyAccessToken, requireSuperAdmin, approvePasswordResetRequest)
-router.patch('/admin/approvals/password-resets/:id/reject', verifyAccessToken, requireSuperAdmin, rejectPasswordResetRequest)
+router.get('/admin/approvals/registrations', verifyAccessToken, checkPermission('users', 'read'), getPendingRegistrationsList)
+router.get('/admin/approvals/rejected-registrations', verifyAccessToken, checkPermission('users', 'read'), getRejectedRegistrationsList)
+router.patch('/admin/approvals/registrations/:id/approve', verifyAccessToken, checkPermission('users', 'update'), approveRegistration)
+router.patch('/admin/approvals/registrations/:id/reject', verifyAccessToken, checkPermission('users', 'update'), rejectRegistration)
+router.get('/admin/approvals/password-resets', verifyAccessToken, checkPermission('users', 'read'), getPendingPasswordResetsList)
+router.patch('/admin/approvals/password-resets/:id/approve', verifyAccessToken, checkPermission('users', 'update'), approvePasswordResetRequest)
+router.patch('/admin/approvals/password-resets/:id/reject', verifyAccessToken, checkPermission('users', 'update'), rejectPasswordResetRequest)
 // router.post('/users', controller.createUser);
 router.post('/roles', createRole);
 router.post('/permissions', createPermission);

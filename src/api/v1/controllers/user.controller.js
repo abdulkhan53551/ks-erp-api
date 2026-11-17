@@ -30,7 +30,7 @@ const {
 } = require('../models/user.model.js');
 const { deleteRefreshTokenByUserID } = require('../models/auth.model.js');
 const { getContext } = require('../helpers/requestContext.js');
-const { getUserAllowedFirms, invalidateUserTenantCache } = require('../services/firmPermissionCache.js');
+const { getUserAllowedFirms, invalidateUserTenantCache, isStrictSubordinateRole, getUserHighestRoleId } = require('../services/firmPermissionCache.js');
 const { hashToken, generateToken } = require('../helpers/token.js');
 const { uploadOnCloudinary } = require('./../services/cloudinary.js');
 const { delay } = require('../services/common.js');
@@ -366,6 +366,20 @@ const changeUserRole = asyncHandler(async (req, res) => {
         throw new ApiError({ statusCode: check.statusCode, message: check.message });
     }
 
+    // Role hierarchy check on assigned roleId:
+    if (!isCallerSuperAdmin) {
+        const callerHighestRoleId = await getUserHighestRoleId(req.user.id);
+        if (callerHighestRoleId) {
+            const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, roleId);
+            if (!isSubordinate) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: 'Access denied: Your role rank does not permit assigning this role. You may only assign subordinate roles.'
+                });
+            }
+        }
+    }
+
     await updateUserRole(targetUserId, roleId);
     invalidateUserTenantCache(targetUserId);
 
@@ -397,6 +411,13 @@ const toggleUserStatus = asyncHandler(async (req, res) => {
     const check = await canManageTargetUser(targetUserId, req.user);
     if (!check.allowed) {
         throw new ApiError({ statusCode: check.statusCode, message: check.message });
+    }
+
+    if (check.targetUser?.approval_status !== 'APPROVED') {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Cannot toggle active status for an unapproved account. Please approve the user registration first.'
+        });
     }
 
     await updateUserActiveStatus(targetUserId, isActive);
@@ -511,10 +532,20 @@ const updateUserAssignments = asyncHandler(async (req, res) => {
     const { isSuperAdmin = false, assignments = [] } = req.body;
     const isCallerSuperAdmin = Boolean(req.user?.isSuperAdmin);
 
-    const user = await findUserById(targetUserId);
-    if (!user) {
-        throw new ApiError({ statusCode: 404, message: 'User not found.' });
+    // 1. Self-Assignment Lock
+    if (!isCallerSuperAdmin && targetUserId === req.user.id) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Security Violation: You cannot alter your own firm or role assignments.'
+        });
     }
+
+    // 2. Target User Authority Check via canManageTargetUser
+    const check = await canManageTargetUser(targetUserId, req.user);
+    if (!check.allowed) {
+        throw new ApiError({ statusCode: check.statusCode, message: check.message });
+    }
+    const user = check.targetUser;
 
     const superAdminRoleId = await getSuperAdminRoleId();
     const targetIsSuperAdmin = user.role_id && user.role_id === superAdminRoleId;
@@ -558,8 +589,10 @@ const updateUserAssignments = asyncHandler(async (req, res) => {
         }
         scopedFirmIds = Array.from(allowedFirmIds);
 
+        const callerHighestRoleId = await getUserHighestRoleId(req.user.id);
+
         // Verify that every assignment's firmId is within caller's allowed firms
-        // and cannot assign super-admin role
+        // and cannot assign super-admin role or any role equal to or higher than caller
         for (const a of assignments) {
             const firmId = parseInt(a.firmId, 10);
             if (!allowedFirmIds.has(firmId)) {
@@ -573,6 +606,15 @@ const updateUserAssignments = asyncHandler(async (req, res) => {
                     statusCode: 403,
                     message: 'Access denied: The Super Administrator role cannot be assigned at firm or branch level.'
                 });
+            }
+            if (callerHighestRoleId) {
+                const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, a.roleId);
+                if (!isSubordinate) {
+                    throw new ApiError({
+                        statusCode: 403,
+                        message: `Access denied: Your role rank does not permit assigning role #${a.roleId}. You may only assign strictly subordinate roles.`
+                    });
+                }
             }
         }
     }
