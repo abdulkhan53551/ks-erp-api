@@ -8,9 +8,8 @@ const ewaybillRoutes = require('./ewaybill.routes')
 const invoiceRoutes = require('./invoice.routes');
 const quotationRoutes = require('./quotation.routes');
 const proformaInvoiceRoutes = require('./proformaInvoice.routes');
-const mastersRoutes = require('./masters.routes')
-const userRoutes = require('./user.routes')
-const demoRoutes = require('./demo.routes')
+const mastersRoutes = require('./masters.routes');
+const userRoutes = require('./user.routes');
 const partyRoutes = require('./party.routes');
 const uploadRoutes = require('./upload.routes');
 const attachmentRoutes = require('./attachment.routes');
@@ -25,27 +24,14 @@ const leaveRoutes = require('./leave.routes');
 const payrollRoutes = require('./payroll.routes');
 const advanceRoutes = require('./advance.routes');
 const { verifyAccessToken } = require('../middlewares/auth.middleware');
-const { db } = require('../database');
-
-// const { customerRoutes } = require('./customer');
-// const { personRoutes } = require('./person');
-// const { productRoutes } = require('./product');
-// const { userRoutes } = require('./user');
-
 
 // 🔓 Public routes (no auth needed)
-router.use('/auth', authRoutes)
-router.get('/test', async (req, res) => {
-    const result = await db.raw("SELECT current_database(), current_user, version();");
-    console.log(result.rows);
-    return res.send("OK");
-});
+router.use('/auth', authRoutes);
 
 // 🔐 Protected routes (require valid access token)
 router.use(verifyAccessToken);
 
 router.use('/users', userRoutes);
-router.use('/demo', demoRoutes);
 router.use('/products', productRoutes);
 router.use('/firm', firmRoutes);
 router.use('/masters', mastersRoutes);
@@ -69,7 +55,3 @@ router.use('/payroll', payrollRoutes);
 router.use('/advances', advanceRoutes);
 
 module.exports = router;
-// exports.products = productRoutes;
-// exports.users = userRoutes;
-// exports.persons = personRoutes;
-// exports.customers = customerRoutes;

@@ -1,5 +1,4 @@
 const { projectPaths, errorCodes } = require("../../../config/constants");
-const { sampleInvoiceData } = require("./sampleInvoiceData");
 const path = require('path')
 const ejs = require('ejs')
 const puppeteer = require('puppeteer');
