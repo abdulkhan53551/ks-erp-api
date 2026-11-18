@@ -145,6 +145,20 @@ const createReceiptTransaction = async (receiptData) => {
 
         const unallocatedAmountDec = totalAmountDec.minus(allocatedSum);
 
+        // Guard: If partyId is missing/null, excess advance is strictly not permitted
+        if (!partyId && unallocatedAmountDec.gt(0.01)) {
+            throw new ApiError({
+                statusCode: 422,
+                message: `For walk-in/unregistered customers, payment amount cannot exceed invoice settlement amount. Excess advance of ₹${unallocatedAmountDec.toFixed(2)} is not allowed without a registered customer.`
+            });
+        }
+
+        // Snapshot customer name from allocated invoice if partyId is null
+        let resolvedCustomerName = null;
+        if (!partyId && processedAllocations.length > 0) {
+            resolvedCustomerName = processedAllocations[0].invoice.customer_name || 'Walk-in Customer';
+        }
+
         // 3. Generate sequential receipt number
         const paymentNo = await generateNextPaymentNumber(effectiveFirmId, 'INWARD', trx);
 
@@ -168,7 +182,8 @@ const createReceiptTransaction = async (receiptData) => {
             payment_no: paymentNo,
             payment_type: 'INWARD',
             payment_date: paymentDate,
-            party_id: partyId,
+            party_id: partyId || null,
+            customer_name: resolvedCustomerName,
             total_amount: totalAmountDec.toNumber(),
             allocated_amount: allocatedSum.toNumber(),
             unallocated_amount: unallocatedAmountDec.toNumber(),
@@ -720,7 +735,7 @@ const fetchAllReceipts = async (query = {}) => {
             'fb.branch_name as firmBranchName',
             'fb.branch_code as firmBranchCode',
             'f.firm_name as firmName',
-            db.raw('COALESCE(pt.display_name, pt.legal_name) as "customerName"'),
+            db.raw("COALESCE(pt.display_name, pt.legal_name, p.customer_name, 'Direct Customer') as \"customerName\""),
             'p.total_amount as totalAmount',
             'p.allocated_amount as allocatedAmount',
             'p.unallocated_amount as unallocatedAmount',
@@ -758,7 +773,8 @@ const fetchAllReceipts = async (query = {}) => {
             this.where('p.payment_no', 'ILIKE', `%${search}%`)
                 .orWhere('p.reference_no', 'ILIKE', `%${search}%`)
                 .orWhere('pt.legal_name', 'ILIKE', `%${search}%`)
-                .orWhere('pt.display_name', 'ILIKE', `%${search}%`);
+                .orWhere('pt.display_name', 'ILIKE', `%${search}%`)
+                .orWhere('p.customer_name', 'ILIKE', `%${search}%`);
         });
     }
 
@@ -820,7 +836,8 @@ const fetchReceiptsMeta = async (query = {}) => {
             this.where('p.payment_no', 'ILIKE', `%${search}%`)
                 .orWhere('p.reference_no', 'ILIKE', `%${search}%`)
                 .orWhere('pt.legal_name', 'ILIKE', `%${search}%`)
-                .orWhere('pt.display_name', 'ILIKE', `%${search}%`);
+                .orWhere('pt.display_name', 'ILIKE', `%${search}%`)
+                .orWhere('p.customer_name', 'ILIKE', `%${search}%`);
         });
     }
 
@@ -1040,7 +1057,8 @@ const fetchVendorPaymentsMeta = async (query = {}) => {
             this.where('p.payment_no', 'ILIKE', `%${search}%`)
                 .orWhere('p.reference_no', 'ILIKE', `%${search}%`)
                 .orWhere('pt.legal_name', 'ILIKE', `%${search}%`)
-                .orWhere('pt.display_name', 'ILIKE', `%${search}%`);
+                .orWhere('pt.display_name', 'ILIKE', `%${search}%`)
+                .orWhere('p.customer_name', 'ILIKE', `%${search}%`);
         });
     }
 
@@ -1144,9 +1162,9 @@ const fetchPaymentById = async (id) => {
             'p.payment_type as paymentType',
             'p.payment_date as paymentDate',
             'p.party_id as partyId',
-            db.raw('COALESCE(pt.display_name, pt.legal_name) as "partyName"'),
+            db.raw("COALESCE(pt.display_name, pt.legal_name, p.customer_name, 'Direct Customer') as \"partyName\""),
             'pt.legal_name as partyLegalName',
-            'pt.display_name as partyDisplayName',
+            db.raw("COALESCE(pt.display_name, p.customer_name) as partyDisplayName"),
             'pt.gstin as partyGstin',
             'p.total_amount as totalAmount',
             'p.allocated_amount as allocatedAmount',

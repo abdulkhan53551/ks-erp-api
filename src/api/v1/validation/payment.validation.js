@@ -6,8 +6,7 @@ const createReceiptSchema = {
             'any.required': 'Payment date is required',
             'date.base': 'Payment date must be a valid date'
         }),
-        partyId: Joi.number().integer().positive().required().messages({
-            'any.required': 'Customer party ID is required',
+        partyId: Joi.number().integer().positive().allow(null).optional().messages({
             'number.base': 'Customer party ID must be a number'
         }),
         totalAmount: Joi.number().positive().precision(2).required().messages({
@@ -33,6 +32,18 @@ const createReceiptSchema = {
                 writeOffReason: Joi.string().trim().max(255).allow('', null).optional()
             })
         ).default([])
+    }).custom((value, helpers) => {
+        // Direct walk-in / unregistered invoice settlement validation
+        if (!value.partyId) {
+            if (!value.allocations || value.allocations.length === 0) {
+                return helpers.message('At least one invoice allocation is required when recording payment for an unlinked/walk-in customer.');
+            }
+            const totalAllocated = value.allocations.reduce((sum, item) => sum + Number(item.allocatedAmount || 0), 0);
+            if (Number(value.totalAmount) > totalAllocated + 0.01) {
+                return helpers.message('For walk-in/unregistered customers, payment amount cannot exceed the invoice settlement amount (excess advance is not permitted without a registered customer).');
+            }
+        }
+        return value;
     })
 };
 
