@@ -18,7 +18,11 @@ const fetchAllInvoice = async (query) => {
             paymentStatus = '',
             startDate = '',
             endDate = '',
-            hasEwayBill = ''
+            hasEwayBill = '',
+            partyId = '',
+            isOverdue = '',
+            minAmount = '',
+            maxAmount = ''
         } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
@@ -104,6 +108,40 @@ const fetchAllInvoice = async (query) => {
             baseQuery.whereNull('EB.id');
         }
 
+        if (partyId) {
+            baseQuery.andWhere(function () {
+                this.where('I.party_id', partyId)
+                    .orWhereExists(function () {
+                        this.select('p_sub.id')
+                            .from('parties AS p_sub')
+                            .where('p_sub.id', partyId)
+                            .andWhere(function () {
+                                this.whereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."legal_name"))')
+                                    .orWhereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."display_name"))');
+                            });
+                    });
+            });
+        }
+
+        if (isOverdue === 'true' || isOverdue === true) {
+            baseQuery.andWhere('I.balance_amount', '>', 0)
+                .andWhere('I.due_date', '<', db.raw('CURRENT_DATE'));
+        }
+
+        if (minAmount !== undefined && minAmount !== null && minAmount !== '') {
+            const numMin = parseFloat(String(minAmount).replace(/,/g, ''));
+            if (!isNaN(numMin)) {
+                baseQuery.andWhere('I.total', '>=', numMin);
+            }
+        }
+
+        if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '') {
+            const numMax = parseFloat(String(maxAmount).replace(/,/g, ''));
+            if (!isNaN(numMax)) {
+                baseQuery.andWhere('I.total', '<=', numMax);
+            }
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
@@ -150,7 +188,11 @@ const fetchInvoiceMeta = async (query) => {
             paymentStatus = '',
             startDate = '',
             endDate = '',
-            hasEwayBill = ''
+            hasEwayBill = '',
+            partyId = '',
+            isOverdue = '',
+            minAmount = '',
+            maxAmount = ''
         } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
@@ -196,6 +238,40 @@ const fetchInvoiceMeta = async (query) => {
             baseQuery.whereNull('EB.id');
         }
 
+        if (partyId) {
+            baseQuery.andWhere(function () {
+                this.where('I.party_id', partyId)
+                    .orWhereExists(function () {
+                        this.select('p_sub.id')
+                            .from('parties AS p_sub')
+                            .where('p_sub.id', partyId)
+                            .andWhere(function () {
+                                this.whereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."legal_name"))')
+                                    .orWhereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."display_name"))');
+                            });
+                    });
+            });
+        }
+
+        if (isOverdue === 'true' || isOverdue === true) {
+            baseQuery.andWhere('I.balance_amount', '>', 0)
+                .andWhere('I.due_date', '<', db.raw('CURRENT_DATE'));
+        }
+
+        if (minAmount !== undefined && minAmount !== null && minAmount !== '') {
+            const numMin = parseFloat(String(minAmount).replace(/,/g, ''));
+            if (!isNaN(numMin)) {
+                baseQuery.andWhere('I.total', '>=', numMin);
+            }
+        }
+
+        if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '') {
+            const numMax = parseFloat(String(maxAmount).replace(/,/g, ''));
+            if (!isNaN(numMax)) {
+                baseQuery.andWhere('I.total', '<=', numMax);
+            }
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
@@ -236,7 +312,11 @@ const fetchInvoiceSummary = async (query = {}) => {
             paymentStatus = '',
             startDate = '',
             endDate = '',
-            hasEwayBill = ''
+            hasEwayBill = '',
+            partyId = '',
+            isOverdue = '',
+            minAmount = '',
+            maxAmount = ''
         } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
@@ -279,6 +359,40 @@ const fetchInvoiceSummary = async (query = {}) => {
             baseQuery.whereNotNull('EB.id');
         } else if (hasEwayBill === 'false' || hasEwayBill === false) {
             baseQuery.whereNull('EB.id');
+        }
+
+        if (partyId) {
+            baseQuery.andWhere(function () {
+                this.where('I.party_id', partyId)
+                    .orWhereExists(function () {
+                        this.select('p_sub.id')
+                            .from('parties AS p_sub')
+                            .where('p_sub.id', partyId)
+                            .andWhere(function () {
+                                this.whereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."legal_name"))')
+                                    .orWhereRaw('LOWER(TRIM("I"."customer_name")) = LOWER(TRIM("p_sub"."display_name"))');
+                            });
+                    });
+            });
+        }
+
+        if (isOverdue === 'true' || isOverdue === true) {
+            baseQuery.andWhere('I.balance_amount', '>', 0)
+                .andWhere('I.due_date', '<', db.raw('CURRENT_DATE'));
+        }
+
+        if (minAmount !== undefined && minAmount !== null && minAmount !== '') {
+            const numMin = parseFloat(String(minAmount).replace(/,/g, ''));
+            if (!isNaN(numMin)) {
+                baseQuery.andWhere('I.total', '>=', numMin);
+            }
+        }
+
+        if (maxAmount !== undefined && maxAmount !== null && maxAmount !== '') {
+            const numMax = parseFloat(String(maxAmount).replace(/,/g, ''));
+            if (!isNaN(numMax)) {
+                baseQuery.andWhere('I.total', '<=', numMax);
+            }
         }
 
         if (search) {

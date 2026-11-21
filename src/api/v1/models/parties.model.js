@@ -352,7 +352,7 @@ const fetchAllParties = async (firmId, query) => {
         }
 
         if (status) {
-            baseQuery.andWhere('p.status', status);
+            baseQuery.andWhere('p.status', 'ILIKE', status);
         }
 
         if (gstRegistered !== '' && gstRegistered !== null && gstRegistered !== undefined) {

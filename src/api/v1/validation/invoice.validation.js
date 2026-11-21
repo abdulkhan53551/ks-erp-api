@@ -409,12 +409,16 @@ const queryInvoicesSchema = {
     page: Joi.number().integer().min(1).default(1),
     pageSize: Joi.number().integer().min(1).max(100).default(10),
     search: Joi.string().trim().allow('', null).optional(),
-    trash: Joi.boolean().default(false),
+    trash: Joi.alternatives().try(Joi.boolean(), Joi.string().allow('', null)).default(false),
     paymentStatus: Joi.string().trim().allow('', null).optional(),
     startDate: Joi.string().trim().allow('', null).optional(),
     endDate: Joi.string().trim().allow('', null).optional(),
-    hasEwayBill: Joi.alternatives().try(Joi.boolean(), Joi.string().allow('', null)).optional()
-  })
+    hasEwayBill: Joi.alternatives().try(Joi.boolean(), Joi.string().allow('', null)).optional(),
+    partyId: Joi.alternatives().try(Joi.number().integer().positive(), Joi.string().trim().allow('', null)).optional(),
+    isOverdue: Joi.alternatives().try(Joi.boolean(), Joi.string().trim().allow('', null)).optional(),
+    minAmount: Joi.alternatives().try(Joi.number().min(0), Joi.string().trim().allow('', null)).optional(),
+    maxAmount: Joi.alternatives().try(Joi.number().min(0), Joi.string().trim().allow('', null)).optional()
+  }).unknown(true)
 };
 
 // Cancel invoice schema
