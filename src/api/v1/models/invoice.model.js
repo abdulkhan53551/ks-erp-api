@@ -5,12 +5,21 @@ const { getContext } = require("../helpers/requestContext");
 const { ApiError } = require("../services/ApiError");
 const { updateInvoiceEwayBillMapping } = require("./ewayBill.model");
 const { updateInvoiceChallanMapping } = require("./invoiceChallan.model");
-const { updateInvoicePurchaseOrderMapping } = require("./purchaseOrder.model");
+const { updateInvoicePurchaseOrderMapping, syncPurchaseOrderBillingProgress } = require("./purchaseOrder.model");
 
 // Fetch all invoices
 const fetchAllInvoice = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const {
+            page = 1,
+            pageSize = 10,
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
@@ -18,6 +27,8 @@ const fetchAllInvoice = async (query) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_date',
                 'I.party_id',
@@ -71,6 +82,28 @@ const fetchAllInvoice = async (query) => {
             baseQuery.andWhere('I.firm_branch_id', branchId);
         }
 
+        if (paymentStatus) {
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('I.invoice_no', 'ILIKE', `%${search}%`)
@@ -109,7 +142,16 @@ const fetchAllInvoice = async (query) => {
 // Fetch invoice meta data for pagination
 const fetchInvoiceMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const {
+            page = 1,
+            pageSize = 10,
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
         const isTrash = trash === true || trash === 'true';
         const { firmId = 0 } = getContext();
 
@@ -130,6 +172,28 @@ const fetchInvoiceMeta = async (query) => {
         const { branchId = null } = getContext();
         if (branchId) {
             baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
+
+        if (paymentStatus) {
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
         }
 
         if (search) {
@@ -163,8 +227,112 @@ const fetchInvoiceMeta = async (query) => {
     }
 };
 
+// Fetch financial summary across all matching invoices (respecting all active filters)
+const fetchInvoiceSummary = async (query = {}) => {
+    try {
+        const {
+            search = '',
+            trash = false,
+            paymentStatus = '',
+            startDate = '',
+            endDate = '',
+            hasEwayBill = ''
+        } = query;
+        const isTrash = trash === true || trash === 'true';
+        const { firmId = 0 } = getContext();
+
+        const baseQuery = db('invoices AS I')
+            .leftJoin('eway_bills AS EB', function () {
+                this.on('I.id', '=', 'EB.invoice_id')
+                    .andOn('EB.is_active', '=', db.raw('true'));
+            })
+            .leftJoin('payment_statuses AS PS', 'I.payment_status_id', 'PS.id')
+            .leftJoin('users AS u', 'I.created_by', 'u.id')
+            .where('I.is_active', !isTrash);
+
+        if (firmId) {
+            baseQuery.andWhere('I.firm_id', firmId);
+        }
+
+        const { branchId = null } = getContext();
+        if (branchId) {
+            baseQuery.andWhere('I.firm_branch_id', branchId);
+        }
+
+        if (paymentStatus) {
+            if (paymentStatus === 'PENDING' || paymentStatus === 'UNPAID') {
+                baseQuery.whereIn('PS.code', ['PENDING', 'FAILED', 'UNPAID']);
+            } else {
+                baseQuery.andWhere('PS.code', paymentStatus);
+            }
+        }
+
+        if (startDate) {
+            baseQuery.andWhere('I.invoice_date', '>=', startDate);
+        }
+
+        if (endDate) {
+            baseQuery.andWhere('I.invoice_date', '<=', endDate);
+        }
+
+        if (hasEwayBill === 'true' || hasEwayBill === true) {
+            baseQuery.whereNotNull('EB.id');
+        } else if (hasEwayBill === 'false' || hasEwayBill === false) {
+            baseQuery.whereNull('EB.id');
+        }
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('I.invoice_no', 'ILIKE', `%${search}%`)
+                    .orWhere('I.customer_name', 'ILIKE', `%${search}%`)
+                    .orWhereRaw(`CONCAT(u.first_name, ' ', u.last_name) ILIKE ?`, [`%${search}%`])
+                    .orWhereExists(function () {
+                        this.select('*')
+                            .from('purchase_order_invoices AS poi')
+                            .join('purchase_orders AS po', 'poi.purchase_order_id', 'po.id')
+                            .whereRaw('"poi"."invoice_id" = "I"."id"')
+                            .andWhere('poi.is_active', true)
+                            .andWhere('po.is_active', true)
+                            .andWhere('po.po_no', 'ILIKE', `%${search}%`);
+                    });
+            });
+        }
+
+        const summaryRow = await baseQuery
+            .clearSelect()
+            .clearOrder()
+            .select(
+                db.raw('COUNT(DISTINCT "I"."id") as total_count'),
+                db.raw('COALESCE(SUM("I"."total"), 0) as total_invoiced'),
+                db.raw('COALESCE(SUM("I"."paid_amount"), 0) as total_paid'),
+                db.raw('COALESCE(SUM("I"."balance_amount"), 0) as total_balance'),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" = 'PAID' THEN "I"."id" END) as paid_count`),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" = 'PARTIAL' THEN "I"."id" END) as partial_count`),
+                db.raw(`COUNT(DISTINCT CASE WHEN "PS"."code" IN ('PENDING', 'FAILED', 'UNPAID') OR "PS"."code" IS NULL THEN "I"."id" END) as unpaid_count`)
+            )
+            .first();
+
+        return {
+            totalCount: parseInt(summaryRow?.total_count || 0),
+            totalInvoiced: parseFloat(summaryRow?.total_invoiced || 0),
+            totalPaid: parseFloat(summaryRow?.total_paid || 0),
+            totalBalance: parseFloat(summaryRow?.total_balance || 0),
+            fullyPaidCount: parseInt(summaryRow?.paid_count || 0),
+            partialCount: parseInt(summaryRow?.partial_count || 0),
+            unpaidCount: parseInt(summaryRow?.unpaid_count || 0)
+        };
+    } catch (error) {
+        console.log('error in fetchInvoiceSummary => ', error);
+
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while fetching invoice financial summary.',
+        });
+    }
+};
+
 // Fetch invoice by ID
-const fetchInvoiceById = async (id) => {
+const fetchInvoiceById = async (id, includeInactive = false) => {
     try {
         const { firmId = 0 } = getContext();
 
@@ -173,6 +341,8 @@ const fetchInvoiceById = async (id) => {
             .select(
                 'I.id AS invoice_id',
                 'I.invoice_no',
+                'I.status',
+                'I.cancel_reason',
                 'I.invoice_date',
                 'I.due_days',
                 'I.due_date',
@@ -249,8 +419,12 @@ const fetchInvoiceById = async (id) => {
                     .andOn('UC.entity_type', '=', db.raw('?', ['firm']));
             })
             .leftJoin('firm_bank_accounts AS FBA', 'I.firm_id', 'FBA.firm_id')
-            .where('I.is_active', true)
-            .andWhere('I.id', id);
+            .where('I.id', id)
+            .modify((qb) => {
+                if (!includeInactive) {
+                    qb.where('I.is_active', true);
+                }
+            });
 
         if (firmId) {
             invQuery.andWhere('I.firm_id', firmId);
@@ -285,8 +459,12 @@ const fetchInvoiceById = async (id) => {
                 .innerJoin('invoices AS I', 'II.invoice_id', 'I.id')
                 .leftJoin('item_units AS IU', 'II.item_unit_id', 'IU.id')
                 .leftJoin('gst_slabs AS GS', 'II.gst_slab_id', 'GS.id')
-                .where('I.is_active', true)
                 .where('I.id', id)
+                .modify((qb) => {
+                    if (!includeInactive) {
+                        qb.where('I.is_active', true);
+                    }
+                })
                 .orderBy('II.id', 'ASC')
         ]);
 
@@ -322,7 +500,7 @@ const insertInvoice = async (data) => {
     const { masterData, items, billing, shipping, document = {} } = data;
     return await db.transaction(async trx => {
         // 1. Insert master data
-        const invoiceId = await insertInvoiceMaster(trx, masterData);
+        const { id: invoiceId, invoiceNo } = await insertInvoiceMaster(trx, masterData);
 
         const address = [billing, shipping]
 
@@ -335,38 +513,85 @@ const insertInvoice = async (data) => {
             updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
+        // Re-sync PO items billed quantities and statuses now that invoice items are inserted
+        const poIds = masterData.purchaseOrderIds || document.purchaseOrderIds || [];
+        if (poIds.length > 0) {
+            await syncPurchaseOrderBillingProgress(trx, poIds);
+        }
+
         // Update billing & shipping address id into invoice
         await updateAddressIdInInvoice(trx, invoiceId, addressResult)
-        return invoiceId;
+        return { invoiceId, invoiceNo };
     });
 }
 
-// Insert invoice master data
-const insertInvoiceMaster = async (trx, data) => {
-    // 1. Check if invoice_no already exists in active or trashed state
-    const existingInvoice = await trx('invoices')
-        .select('id', 'is_active', 'invoice_no')
-        .where({ firm_id: data.firm_id, invoice_no: data.invoice_no })
+// Helper to extract numeric suffix from invoice number string
+const extractInvoiceNumber = (invoiceNo) => {
+    const numberMatch = String(invoiceNo || '').match(/\d+$/);
+    return numberMatch ? parseInt(numberMatch[0], 10) : null;
+};
+
+// Calculate next sequential invoice number from existing invoice number string
+const calculateNextInvoiceNumber = (invoiceNo) => {
+    const numberMatch = String(invoiceNo || '').match(/\d+$/);
+    if (!numberMatch) {
+        return `${invoiceNo || ''}1`;
+    }
+    const number = numberMatch[0];
+    const prefix = invoiceNo.substring(0, invoiceNo.length - number.length);
+    const nextNumber = String(Number(number) + 1).padStart(number.length, "0");
+    return `${prefix}${nextNumber}`;
+};
+
+// Fetch next expected consecutive invoice number
+const fetchNextExpectedInvoiceNumber = async (firmId, trx = db) => {
+    const lastInvoice = await trx('invoices')
+        .select('invoice_no')
+        .where({ firm_id: firmId })
+        .orderBy('id', 'desc')
         .first();
 
-    if (existingInvoice) {
-        if (existingInvoice.is_active) {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Invoice number '${data.invoice_no}' already exists.`
-            });
-        } else {
-            throw new ApiError({
-                statusCode: 409,
-                message: `Invoice number '${data.invoice_no}' is currently in the Trash. Please restore it from the Recycle Bin or use a different invoice number.`
-            });
-        }
+    if (lastInvoice?.invoice_no) {
+        return calculateNextInvoiceNumber(lastInvoice.invoice_no);
     }
+
+    const firm = await trx('firms')
+        .select('invoice_prefix', 'invoice_start_number')
+        .where({ id: firmId, is_active: true })
+        .first();
+
+    const prefix = firm?.invoice_prefix || 'INV';
+    const startNum = firm?.invoice_start_number || '1';
+    return `${prefix}${startNum}`;
+};
+
+// Insert invoice master data
+const insertInvoiceMaster = async (trx, data) => {
+    // 1. Pessimistic Row Lock on Firm:
+    // Serializes concurrent invoice creations for the same firm.
+    // PostgreSQL queues them sequentially, guaranteeing 100% race-condition safety.
+    const firm = await trx('firms')
+        .where({ id: data.firm_id })
+        .forUpdate()
+        .first();
+
+    if (!firm) {
+        throw new ApiError({
+            statusCode: 404,
+            message: 'Firm not found.'
+        });
+    }
+
+    // 2. Pure Backend Auto-Assignment:
+    // Generate the true, guaranteed next consecutive invoice number under the lock
+    const nextInvoiceNo = await fetchNextExpectedInvoiceNumber(data.firm_id, trx);
+    data.invoice_no = nextInvoiceNo;
 
     try {
         const [{ id }] = await trx('invoices').insert(data).returning('id');
-        return id;
+        return { id, invoiceNo: nextInvoiceNo };
     } catch (error) {
+        console.error('CRITICAL: insertInvoiceMaster failed:', error);
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
                 statusCode: 409,
@@ -375,7 +600,7 @@ const insertInvoiceMaster = async (trx, data) => {
         }
         throw new ApiError({
             statusCode: 500,
-            message: 'Something went wrong while inserting invoice data.',
+            message: `Something went wrong while inserting invoice data: ${error.message || ''}`,
         });
     }
 };
@@ -386,6 +611,7 @@ const insertInvoiceItems = async (trx, invoiceId, items) => {
         const formattedItems = items.map(item => ({ ...item, invoice_id: invoiceId }));
         await trx('invoice_items').insert(formattedItems);
     } catch (error) {
+        console.error('CRITICAL: insertInvoiceItems failed:', error);
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while inserting invoice items.',
@@ -472,6 +698,16 @@ const updateInvoiceById = async (data) => {
             updateInvoiceEwayBillMapping(trx, invoiceId, masterData.ewayBillIds || document.ewayBillIds || [])
         ]);
 
+        // Re-sync PO items billed quantities and statuses
+        const poIds = document.purchaseOrderIds || masterData.purchaseOrderIds || [];
+        const linkedPos = await trx('purchase_order_invoices')
+            .select('purchase_order_id')
+            .where({ invoice_id: invoiceId });
+        const allPoIds = [...new Set([...poIds, ...linkedPos.map(p => p.purchase_order_id)])];
+        if (allPoIds.length > 0) {
+            await syncPurchaseOrderBillingProgress(trx, allPoIds);
+        }
+
         return invoiceId;
     });
 }
@@ -479,7 +715,9 @@ const updateInvoiceById = async (data) => {
 // Update invoice master data
 const updateInvoiceMaster = async (trx, invoiceId, data) => {
     try {
-        await trx('invoices').update(data).where({ id: invoiceId });
+        // Ensure invoice_no is immutable once created
+        const { invoice_no, ...safeData } = data;
+        await trx('invoices').update(safeData).where({ id: invoiceId });
     } catch (error) {
         if (error.code === '23505') { // Unique violation
             throw new ApiError({
@@ -538,16 +776,23 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
         return db.transaction(async trx => {
             let result;
 
+            // Fetch affected POs before delete
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .where({ invoice_id: invoiceId });
+            const affectedPoIds = linkedPos.map(p => p.purchase_order_id);
+
             const invWhere = firmId ? { id: invoiceId, firm_id: firmId } : { id: invoiceId };
             if (isPermanentDelete) {
-                // HARD DELETE - run in parallel
-                const [contacts, items, invoice] = await Promise.all([
+                // HARD DELETE - clean up foreign key references first
+                await Promise.all([
                     trx('invoice_contacts').where({ invoice_id: invoiceId }).del(),
                     trx('invoice_items').where({ invoice_id: invoiceId }).del(),
-                    trx('invoices').where(invWhere).del()
+                    trx('payment_allocations').where({ invoice_id: invoiceId }).del(),
+                    trx('purchase_order_invoices').where({ invoice_id: invoiceId }).del()
                 ]);
 
-                result = invoice; // number of affected invoice rows
+                result = await trx('invoices').where(invWhere).del(); // number of affected invoice rows
             } else {
                 // SOFT DELETE - run in parallel
                 const [contacts, items, mappings, challans, ewayBills, invoice] = await Promise.all([
@@ -560,6 +805,10 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
                 ]);
 
                 result = invoice;
+            }
+
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
             }
 
             return result > 0;
@@ -579,34 +828,55 @@ const deleteInvoiceById = async (invoiceId, isPermanentDelete) => {
 const bulkDeleteInvoices = async (invoiceIds = [], isPermanentDelete = false) => {
     if (!invoiceIds || !invoiceIds.length) return 0;
     try {
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, isSuperAdmin = false } = getContext();
 
         return db.transaction(async trx => {
-            const invQuery = trx('invoices').whereIn('id', invoiceIds);
-            if (firmId) {
-                invQuery.andWhere({ firm_id: firmId });
-            }
+            // Pre-filter strictly to invoices belonging to caller's firm (unless super-admin without firm filter)
+            const targetInvoices = await trx('invoices')
+                .whereIn('id', invoiceIds)
+                .modify(qb => {
+                    if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                        qb.where({ firm_id: firmId });
+                    }
+                })
+                .select('id');
+
+            const validIds = targetInvoices.map(r => r.id);
+            if (!validIds.length) return 0;
+
+            const invQuery = trx('invoices').whereIn('id', validIds);
+
+            // Fetch affected POs before delete
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .whereIn('invoice_id', validIds);
+            const affectedPoIds = [...new Set(linkedPos.map(p => p.purchase_order_id))];
 
             if (isPermanentDelete) {
                 await Promise.all([
-                    trx('invoice_contacts').whereIn('invoice_id', invoiceIds).del(),
-                    trx('invoice_items').whereIn('invoice_id', invoiceIds).del(),
-                    invQuery.del()
+                    trx('invoice_contacts').whereIn('invoice_id', validIds).del(),
+                    trx('invoice_items').whereIn('invoice_id', validIds).del(),
+                    trx('payment_allocations').whereIn('invoice_id', validIds).del(),
+                    trx('purchase_order_invoices').whereIn('invoice_id', validIds).del()
                 ]);
-                return invoiceIds.length;
+                await invQuery.del();
+            } else {
+                // Soft delete (bulk move to trash)
+                await Promise.all([
+                    trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: false }),
+                    trx('invoice_challans').whereIn('invoice_id', validIds).update({ invoice_id: null }),
+                    trx('eway_bills').whereIn('invoice_id', validIds).update({ invoice_id: null }),
+                    invQuery.update({ is_active: false })
+                ]);
             }
 
-            // Soft delete (bulk move to trash)
-            await Promise.all([
-                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('purchase_order_invoices').whereIn('invoice_id', invoiceIds).update({ is_active: false }),
-                trx('invoice_challans').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
-                trx('eway_bills').whereIn('invoice_id', invoiceIds).update({ invoice_id: null }),
-                invQuery.update({ is_active: false })
-            ]);
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
 
-            return invoiceIds.length;
+            return validIds.length;
         });
     } catch (error) {
         if (error instanceof ApiError) {
@@ -646,8 +916,17 @@ const restoreInvoiceById = async (invoiceId) => {
             await Promise.all([
                 trx('invoice_contacts').where({ invoice_id: invoiceId }).update({ is_active: true }),
                 trx('invoice_items').where({ invoice_id: invoiceId }).update({ is_active: true }),
+                trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: true }),
                 restoreQuery.update({ is_active: true })
             ]);
+
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .where({ invoice_id: invoiceId, is_active: true });
+            const affectedPoIds = linkedPos.map(p => p.purchase_order_id);
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
 
             return 1;
         });
@@ -666,21 +945,42 @@ const restoreInvoiceById = async (invoiceId) => {
 const bulkRestoreInvoices = async (invoiceIds = []) => {
     if (!invoiceIds || !invoiceIds.length) return 0;
     try {
-        const { firmId = 0 } = getContext();
+        const { firmId = 0, isSuperAdmin = false } = getContext();
 
         return db.transaction(async trx => {
-            const invQuery = trx('invoices').whereIn('id', invoiceIds).andWhere({ is_active: false });
-            if (firmId) {
-                invQuery.andWhere({ firm_id: firmId });
-            }
+            // Pre-filter strictly to invoices belonging to caller's firm (unless super-admin without firm filter)
+            const targetInvoices = await trx('invoices')
+                .whereIn('id', invoiceIds)
+                .andWhere({ is_active: false })
+                .modify(qb => {
+                    if (firmId && (!isSuperAdmin || firmId !== 'all')) {
+                        qb.where({ firm_id: firmId });
+                    }
+                })
+                .select('id');
+
+            const validIds = targetInvoices.map(r => r.id);
+            if (!validIds.length) return 0;
+
+            const invQuery = trx('invoices').whereIn('id', validIds).andWhere({ is_active: false });
 
             await Promise.all([
-                trx('invoice_contacts').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
-                trx('invoice_items').whereIn('invoice_id', invoiceIds).update({ is_active: true }),
+                trx('invoice_contacts').whereIn('invoice_id', validIds).update({ is_active: true }),
+                trx('invoice_items').whereIn('invoice_id', validIds).update({ is_active: true }),
+                trx('purchase_order_invoices').whereIn('invoice_id', validIds).update({ is_active: true }),
                 invQuery.update({ is_active: true })
             ]);
 
-            return invoiceIds.length;
+            const linkedPos = await trx('purchase_order_invoices')
+                .select('purchase_order_id')
+                .whereIn('invoice_id', validIds)
+                .where('is_active', true);
+            const affectedPoIds = [...new Set(linkedPos.map(p => p.purchase_order_id))];
+            if (affectedPoIds.length > 0) {
+                await syncPurchaseOrderBillingProgress(trx, affectedPoIds);
+            }
+
+            return validIds.length;
         });
     } catch (error) {
         if (error instanceof ApiError) {
@@ -689,6 +989,74 @@ const bulkRestoreInvoices = async (invoiceIds = []) => {
         throw new ApiError({
             statusCode: 500,
             message: 'Something went wrong while restoring invoices.',
+        });
+    }
+};
+
+// Cancel invoice by ID
+const cancelInvoiceById = async (invoiceId, userId = null, cancelReason = '') => {
+    try {
+        const { firmId = 0 } = getContext();
+
+        return await db.transaction(async (trx) => {
+            const invQuery = trx('invoices').where({ id: invoiceId });
+            if (firmId) {
+                invQuery.andWhere({ firm_id: firmId });
+            }
+
+            const invoice = await invQuery.forUpdate().first();
+
+            if (!invoice) {
+                throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
+            }
+
+            if (invoice.status === 'Cancelled') {
+                throw new ApiError({ statusCode: 400, message: 'This invoice is already cancelled.' });
+            }
+
+            // Check if invoice has actual active payment receipts attached in database
+            const activeAllocations = await trx('payment_allocations as pa')
+                .join('payments as p', 'pa.payment_id', 'p.id')
+                .where('pa.invoice_id', invoiceId)
+                .where('p.status', 'COMPLETED')
+                .where('p.is_active', true)
+                .select('pa.id', 'p.payment_no', 'pa.total_settled_amount');
+
+            if (activeAllocations.length > 0) {
+                const totalPaid = activeAllocations.reduce((sum, a) => sum + Number(a.total_settled_amount || 0), 0);
+                const receiptList = [...new Set(activeAllocations.map(a => a.payment_no).filter(Boolean))].join(', ');
+                throw new ApiError({
+                    statusCode: 400,
+                    message: `Cannot cancel invoice ${invoice.invoice_no} because active payment receipt(s) totaling ₹${totalPaid.toFixed(2)}${receiptList ? ` (${receiptList})` : ''} are active. Please cancel or roll back the attached payment receipts first in the Payments section.`
+                });
+            }
+
+            // 1. Mark status as Cancelled and record cancellation reason
+            await trx('invoices')
+                .where({ id: invoiceId })
+                .update({
+                    status: 'Cancelled',
+                    cancel_reason: cancelReason || null,
+                    updated_by: userId,
+                    updated_at: new Date()
+                });
+
+            // 2. Release linked dispatch documents (Challans, POs, E-Way bills)
+            await Promise.all([
+                trx('invoice_challans').where({ invoice_id: invoiceId }).update({ invoice_id: null }),
+                trx('purchase_order_invoices').where({ invoice_id: invoiceId }).update({ is_active: false }),
+                trx('eway_bills').where({ invoice_id: invoiceId }).update({ invoice_id: null })
+            ]);
+
+            return { invoiceId, invoiceNo: invoice.invoice_no };
+        });
+    } catch (error) {
+        if (error instanceof ApiError) {
+            throw error;
+        }
+        throw new ApiError({
+            statusCode: 500,
+            message: 'Something went wrong while cancelling invoice.',
         });
     }
 };
@@ -872,6 +1240,7 @@ const fetchInvoiceSettings = async () => {
 module.exports = {
     fetchAllInvoice,
     fetchInvoiceMeta,
+    fetchInvoiceSummary,
     fetchInvoiceById,
     insertInvoice,
     updateInvoiceById,
@@ -884,5 +1253,9 @@ module.exports = {
     // fetchEwayBillsForInvoice,
     fetchChallanPOEwayBillsForInvoice,
     fetchLastInvoiceNumber,
-    fetchInvoiceSettings
+    fetchInvoiceSettings,
+    fetchNextExpectedInvoiceNumber,
+    calculateNextInvoiceNumber,
+    extractInvoiceNumber,
+    cancelInvoiceById
 };

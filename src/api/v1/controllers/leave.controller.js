@@ -11,18 +11,8 @@ const {
     cancelLeave
 } = require('../models/leave.model');
 
-const getEffectiveFirmId = (req) => {
-    const context = getContext();
-    if (req.query.firmId !== undefined) {
-        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
-        const parsed = parseInt(req.query.firmId, 10);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return context.firmId || null;
-};
-
 const getLeaves = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
 
     const result = await fetchLeaves({
         ...req.query,

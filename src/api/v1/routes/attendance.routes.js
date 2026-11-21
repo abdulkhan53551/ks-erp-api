@@ -19,11 +19,14 @@ const { checkPermission, requireFirmContext } = require('../middlewares/authoriz
 
 const router = Router();
 
+// Enforce firm context perimeter defense
+router.use(requireFirmContext);
+
 router.get('/muster/export', checkPermission('attendance', 'read'), exportAttendanceMusterController);
 router.get('/summary', checkPermission('attendance', 'read'), validate(attendanceSummarySchema), getAttendanceSummaryController);
-router.post('/bulk-mark', requireFirmContext, checkPermission('attendance', 'create'), validate(bulkMarkAttendanceSchema), bulkMarkAttendanceController);
-router.post('/mark-date-status', requireFirmContext, checkPermission('attendance', 'create'), validate(markDateStatusSchema), markDateStatusController);
-router.post('/mark', requireFirmContext, checkPermission('attendance', 'create'), validate(markAttendanceSchema), markAttendanceController);
+router.post('/bulk-mark', checkPermission('attendance', 'create'), validate(bulkMarkAttendanceSchema), bulkMarkAttendanceController);
+router.post('/mark-date-status', checkPermission('attendance', 'create'), validate(markDateStatusSchema), markDateStatusController);
+router.post('/mark', checkPermission('attendance', 'create'), validate(markAttendanceSchema), markAttendanceController);
 router.get('/', checkPermission('attendance', 'read'), validate(queryAttendanceSchema), getAttendance);
 
 module.exports = router;

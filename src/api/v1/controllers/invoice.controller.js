@@ -8,7 +8,7 @@ const moment = require("moment");
 const { ApiError } = require('./../services/ApiError');
 const { asyncHandler } = require("../services/asyncHandler");
 const { ApiResponse } = require("../services/ApiResponse");
-const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings } = require("../models/invoice.model");
+const { fetchAllInvoice, fetchInvoiceMeta, fetchInvoiceSummary, fetchInvoiceById, insertInvoice, updateInvoiceById, deleteInvoiceById, bulkDeleteInvoices: bulkDeleteInvoicesModel, restoreInvoiceById, bulkRestoreInvoices: bulkRestoreInvoicesModel, fetchChallanPOEwayBillsForInvoice, fetchLastInvoiceNumber, fetchInvoiceSettings, fetchNextExpectedInvoiceNumber, cancelInvoiceById } = require("../models/invoice.model");
 const { ERROR_CODES } = require("../../../config/constants/statusCodeMap");
 const Decimal = require('decimal.js');
 const { fetchGSTSlabs, fetchStates, fetchAllCities } = require("../models/masters.model");
@@ -21,9 +21,7 @@ const TOLERANCE = 0.01; // ₹0.01 = 1 paise
 
 // Fetch all invoice
 const getAllInvoice = asyncHandler(async (req, res) => {
-    const { page = 1, pageSize = 10, search = '', trash = false } = req.query;
-
-    const result = await fetchAllInvoice({ page, pageSize, search, trash });
+    const result = await fetchAllInvoice(req.query);
 
     return res.status(200).json(
         new ApiResponse({
@@ -43,6 +41,15 @@ const getInvoiceMeta = asyncHandler(async (req, res) => {
         .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice pagination fetch successfully.' }));
 });
 
+// Fetch invoice financial KPI summary (database-wide, all pages matching active filters)
+const getInvoiceSummary = asyncHandler(async (req, res) => {
+    const result = await fetchInvoiceSummary(req.query);
+
+    return res
+        .status(200)
+        .json(new ApiResponse({ statusCode: 200, data: result, message: 'Invoice summary fetched successfully.' }));
+});
+
 // Fetch invoice by ID
 const getInvoiceById = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
@@ -52,6 +59,8 @@ const getInvoiceById = asyncHandler(async (req, res) => {
     if (!result) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found.' });
     }
+
+    verifyRecordOwnership(req.user, result, 'Invoice');
 
     return res.status(200).json(
         new ApiResponse({
@@ -64,22 +73,22 @@ const getInvoiceById = asyncHandler(async (req, res) => {
 
 // Create a new invoice
 const createInvoice = asyncHandler(async (req, res) => {
-    const { firmId = 0, branchId = null } = getContext();
+    const { firmId, branchId } = getContext();
     const invoice = req.body;
     const { items, billingAddress, shippingAddress } = invoice;
 
-    const effectiveFirmId = invoice.firmId ? Number(invoice.firmId) : (firmId || null);
-    if (!effectiveFirmId) {
+    if (!firmId) {
         throw new ApiError({
             statusCode: 400,
             message: 'Firm context is required to create an invoice. Please select an issuing firm.'
         });
     }
+    invoice.firmId = firmId;
 
     // Resolve internal firm branch
     let resolvedFirmBranchId = invoice.firmBranchId ? Number(invoice.firmBranchId) : (branchId ? Number(branchId) : null);
-    if (!resolvedFirmBranchId && effectiveFirmId) {
-        const defaultBranch = await db('firm_branches').where({ firm_id: effectiveFirmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+    if (!resolvedFirmBranchId && firmId) {
+        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true, is_deleted: false }).first();
         if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
     }
 
@@ -98,10 +107,10 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     // Create invoice
     const statusMap = await getPaymentStatusIds();
-    const isPaid = Number(invoice.paymentStatusId) === statusMap['PAID'];
+    const pendingStatusId = statusMap['PENDING'];
 
     const invoiceMaster = {
-        invoice_no: invoice.invoiceNo,
+        invoice_no: invoice.invoiceNo || null,
         invoice_date: invoice.invoiceDate,
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
@@ -122,14 +131,14 @@ const createInvoice = asyncHandler(async (req, res) => {
         sgst: new Decimal(invoice.sgst).toDecimalPlaces(2).toNumber(),
         igst: new Decimal(invoice.igst).toDecimalPlaces(2).toNumber(),
         total: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
-        paid_amount: isPaid ? new Decimal(invoice.total).toDecimalPlaces(2).toNumber() : 0.00,
-        balance_amount: isPaid ? 0.00 : new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
+        paid_amount: 0.00,
+        balance_amount: new Decimal(invoice.total).toDecimalPlaces(2).toNumber(),
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
-        payment_status_id: invoice.paymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_status_id: invoice.paymentStatusId ? Number(invoice.paymentStatusId) : pendingStatusId,
+        payment_mode_id: null,
         status: 'Final',
-        firm_id: effectiveFirmId
+        firm_id: firmId
     };
 
     // Prepare invoice items
@@ -187,13 +196,16 @@ const createInvoice = asyncHandler(async (req, res) => {
     };
 
     // Insert invoice
-    const invoiceId = await insertInvoice({
+    const result = await insertInvoice({
         masterData: invoiceMaster,
         items: invoiceItems,
         billing,
         shipping,
         document: invoiceDocument
     });
+
+    const invoiceId = result?.invoiceId || result;
+    const finalInvoiceNo = result?.invoiceNo || invoiceMaster.invoice_no;
 
     // If invoiceId is not returned, throw an error
     if (!invoiceId) {
@@ -202,10 +214,11 @@ const createInvoice = asyncHandler(async (req, res) => {
 
     const response = {
         id: invoiceId,
+        invoiceNo: finalInvoiceNo
     }
 
     return res.status(200).json(
-        new ApiResponse({ statusCode: 200, data: response, message: 'Invoice created successfully.' })
+        new ApiResponse({ statusCode: 200, data: response, message: `Invoice created successfully with Invoice No. ${finalInvoiceNo}.` })
     )
 })
 
@@ -279,7 +292,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
 
     // Update invoice
     const invoiceMaster = {
-        invoice_no: invoice.invoiceNo,
+        invoice_no: existingInvoice.invoice_no, // Immutable! Preserve original invoice_no
         invoice_date: invoice.invoiceDate,
         due_days: invoice.dueDays,
         due_date: invoice.dueDate,
@@ -305,7 +318,7 @@ const updateInvoice = asyncHandler(async (req, res) => {
         round_off: new Decimal(invoice.roundOff).toDecimalPlaces(2).toNumber(),
         other: new Decimal(invoice.other).toDecimalPlaces(2).toNumber(),
         payment_status_id: autoPaymentStatusId,
-        payment_mode_id: invoice.paymentModeId,
+        payment_mode_id: (existingInvoice.payment_mode_id && existingInvoice.payment_mode_id !== 0) ? existingInvoice.payment_mode_id : null,
         status: 'Final',
         firm_id: firmId
     };
@@ -515,18 +528,28 @@ const deleteInvoice = asyncHandler(async (req, res) => {
     const { isPermanentDelete = false } = req.query;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
-    // Guard: Check if invoice has active payments attached
-    const invoice = await fetchInvoiceById(invoiceId);
+    // Guard: Check if invoice has actual active payment receipts attached in database
+    // Pass permanent flag as includeInactive so trashed invoices can be looked up for permanent deletion
+    const invoice = await fetchInvoiceById(invoiceId, permanent);
     if (!invoice) {
         throw new ApiError({ statusCode: 404, message: 'Invoice not found or already deleted' });
     }
 
     verifyRecordOwnership(req.user, invoice, 'Invoice');
 
-    if (Number(invoice.paid_amount || 0) > 0) {
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .where('pa.invoice_id', invoiceId)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('pa.id', 'p.payment_no', 'pa.total_settled_amount');
+
+    if (activeAllocations.length > 0) {
+        const totalPaid = activeAllocations.reduce((sum, a) => sum + Number(a.total_settled_amount || 0), 0);
+        const receiptList = [...new Set(activeAllocations.map(a => a.payment_no).filter(Boolean))].join(', ');
         throw new ApiError({
             statusCode: 422,
-            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipts totaling ₹${Number(invoice.paid_amount).toFixed(2)} are attached to it. Please cancel or adjust the payment receipts first.`
+            message: `Cannot delete invoice ${invoice.invoice_no} because active payment receipt(s) totaling ₹${totalPaid.toFixed(2)}${receiptList ? ` (${receiptList})` : ''} are attached to it. Please cancel or roll back the payment receipts first in the Payments section.`
         });
     }
 
@@ -553,6 +576,13 @@ const deleteInvoice = asyncHandler(async (req, res) => {
 const restoreInvoice = asyncHandler(async (req, res) => {
     const invoiceId = req.params.id;
 
+    // Fetch existing invoice to verify ownership before restoring
+    const existing = await fetchInvoiceById(invoiceId, true);
+    if (!existing) {
+        throw new ApiError({ statusCode: 404, message: 'Invoice not found in Trash or already active.' });
+    }
+    verifyRecordOwnership(req.user, existing, 'Invoice');
+
     const restored = await restoreInvoiceById(invoiceId);
 
     if (!restored) {
@@ -568,19 +598,39 @@ const restoreInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+// Cancel invoice by ID
+const cancelInvoice = asyncHandler(async (req, res) => {
+    const invoiceId = req.params.id;
+    const { cancelReason = '' } = req.body || {};
+    const userId = req.user?.id || null;
+
+    const result = await cancelInvoiceById(Number(invoiceId), userId, cancelReason);
+
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: `Invoice ${result.invoiceNo} cancelled successfully. Linked Challans, POs, and E-Way Bills have been released.`
+        })
+    );
+});
+
 // Bulk delete invoices
 const bulkDeleteInvoices = asyncHandler(async (req, res) => {
     const { ids = [], isPermanentDelete = false } = req.body;
     const permanent = isPermanentDelete === true || isPermanentDelete === 'true';
 
     // Guard: Check if any target invoice has active payments
-    const paidInvoices = await db('invoices')
-        .select('invoice_no', 'paid_amount')
-        .whereIn('id', ids)
-        .where('paid_amount', '>', 0);
+    const activeAllocations = await db('payment_allocations as pa')
+        .join('payments as p', 'pa.payment_id', 'p.id')
+        .join('invoices as i', 'pa.invoice_id', 'i.id')
+        .whereIn('pa.invoice_id', ids)
+        .where('p.status', 'COMPLETED')
+        .where('p.is_active', true)
+        .select('i.invoice_no', 'p.payment_no', 'pa.total_settled_amount');
 
-    if (paidInvoices.length > 0) {
-        const list = paidInvoices.map(i => `${i.invoice_no} (₹${Number(i.paid_amount).toFixed(2)})`).join(', ');
+    if (activeAllocations.length > 0) {
+        const list = [...new Set(activeAllocations.map(a => `${a.invoice_no} [${a.payment_no}]`))].join(', ');
         throw new ApiError({
             statusCode: 422,
             message: `Cannot delete invoice(s) with active payment receipts: ${list}. Please cancel the payment receipts first.`
@@ -617,26 +667,16 @@ const bulkRestoreInvoices = asyncHandler(async (req, res) => {
 
 // Generate next invoice number
 const getNextInvoiceNumber = asyncHandler(async (req, res) => {
-    let invoiceNo;
+    const { firmId } = getContext();
 
-    // Get last invoice number
-    const lastInvoiceNo = await fetchLastInvoiceNumber();
-
-    if (lastInvoiceNo) {
-        invoiceNo = calculateNextInvoiceNumber(lastInvoiceNo);
-    } else {
-        // Get invoice settings
-        const settings = await fetchInvoiceSettings();
-
-        if (!settings) {
-            throw new ApiError({
-                statusCode: 404,
-                message: 'Invoice settings not found. Unable to generate invoice number.',
-            });
-        }
-
-        invoiceNo = `${settings.invoicePrefix}${settings.invoiceStartNumber}`;
+    if (!firmId || firmId <= 0) {
+        throw new ApiError({
+            statusCode: 400,
+            message: 'Active firm context is required to determine the next invoice number. Please select a firm.',
+        });
     }
+
+    const invoiceNo = await fetchNextExpectedInvoiceNumber(firmId);
 
     if (!invoiceNo) {
         throw new ApiError({
@@ -681,6 +721,9 @@ const getInvoicePdf = asyncHandler(async (req, res) => {
     if (!invoiceData) {
         throw new ApiError({ statusCode: 404, errorCode: ERROR_CODES.NOT_FOUND, message: 'Invoice not found' });
     }
+
+    // Verify ownership before processing attachments or launching Puppeteer
+    verifyRecordOwnership(req.user, invoiceData, 'Invoice');
 
     // Fetch challan, PO, ewaybill data
     const invoiceChallanPOEwaybillData = await fetchChallanPOEwayBillsForInvoice(invoiceId);
@@ -793,8 +836,23 @@ const prepareInvoicePdfJsonData = async (invoice) => {
         totalAmountInWords: amountToWords(invoice.total || 0)
     };
 
+    // Determine professional Mode/Term of Payment (Standard Credit Terms when payment is pending)
+    const dueDays = Number(invoice.due_days);
+    let modeOfPayment = '';
+    if (!isNaN(dueDays) && dueDays > 0) {
+        modeOfPayment = `Credit (${dueDays} Days)`;
+    } else if (invoice.payment_label) {
+        modeOfPayment = invoice.payment_label;
+    } else if (!isNaN(dueDays) && dueDays === 0) {
+        modeOfPayment = 'Immediate / Due on Receipt';
+    } else {
+        modeOfPayment = 'Due on Receipt';
+    }
+
     const invoiceData = {
         id: invoice.id,
+        status: invoice.status || 'Final',
+        cancelReason: invoice.cancel_reason || '',
         customerName: invoice.customerName,
         isInterState: isInterState,
         company: {
@@ -826,7 +884,7 @@ const prepareInvoicePdfJsonData = async (invoice) => {
             poNumber: invoice.po || 'NA',
             poDate: poDate,
             ewayBillNo: invoice.ewaybill || 'NA',
-            modeOfPayment: invoice.payment_label || ''
+            modeOfPayment: modeOfPayment
         },
         items: invoice.items?.map(item => ({
             id: item.id,
@@ -1101,14 +1159,15 @@ const getCityAndStateMapping = async () => {
 
 let browserInstance = null;
 
-const getBrowser = async (puppeteer) => {
+const getBrowser = async (customPuppeteer) => {
+    const p = customPuppeteer || puppeteer;
     if (browserInstance && browserInstance.connected) {
         return browserInstance;
     }
 
     let executablePath;
     try {
-        const defaultPath = await puppeteer.executablePath();
+        const defaultPath = await p.executablePath();
         if (fs.existsSync(defaultPath)) {
             executablePath = defaultPath;
         }
@@ -1145,7 +1204,7 @@ const getBrowser = async (puppeteer) => {
         }
     }
 
-    browserInstance = await puppeteer.launch({
+    browserInstance = await p.launch({
         executablePath,
         headless: true,
         args: [
@@ -1276,11 +1335,13 @@ process.on("SIGTERM", async () => {
 module.exports = {
     getAllInvoice,
     getInvoiceMeta,
+    getInvoiceSummary,
     getInvoiceById,
     createInvoice,
     updateInvoice,
     deleteInvoice,
     restoreInvoice,
+    cancelInvoice,
     bulkDeleteInvoices,
     bulkRestoreInvoices,
     getNextInvoiceNumber,

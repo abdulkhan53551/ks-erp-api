@@ -10,18 +10,8 @@ const {
     fetchAttendanceSummary
 } = require('../models/attendance.model');
 
-const getEffectiveFirmId = (req) => {
-    const context = getContext();
-    if (req.query.firmId !== undefined) {
-        if (req.query.firmId === 'all' || req.query.firmId === '') return null;
-        const parsed = parseInt(req.query.firmId, 10);
-        return isNaN(parsed) ? null : parsed;
-    }
-    return context.firmId || null;
-};
-
 const getAttendance = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
 
     const records = await fetchAttendance({
         ...req.query,
@@ -97,7 +87,7 @@ const markDateStatusController = asyncHandler(async (req, res) => {
 });
 
 const getAttendanceSummaryController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
     const { month, year, branchId } = req.query;
 
     const summary = await fetchAttendanceSummary({ firmId, month, year, branchId });
@@ -117,7 +107,7 @@ const {
 } = require('../services/musterExport.service');
 
 const exportAttendanceMusterController = asyncHandler(async (req, res) => {
-    const firmId = getEffectiveFirmId(req);
+    const { firmId } = getContext();
     const { month, year, branchId, includeOt, format = 'xlsx' } = req.query;
 
     if (!month || !year) {

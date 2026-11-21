@@ -11,7 +11,8 @@ const {
     updatePartyBankAccountSchema, deletePartyBankAccountSchema, createPartyRolesSchema, getPartyRolesSchema, 
     updatePartyRolesSchema, deletePartyRolesSchema, restorePartyRolesSchema, bulkDeletePartyRolesSchema, 
     bulkRestorePartyRolesSchema, searchPartiesSchema, getPartyDetailsSchema, createPartyBranchSchema, 
-    getPartyBranchSchema, updatePartyBranchSchema, deletePartyBranchSchema, setDefaultPartyBranchSchema 
+    getPartyBranchSchema, updatePartyBranchSchema, deletePartyBranchSchema, setDefaultPartyBranchSchema,
+    getPartyLedgerSchema 
 } = require('../validation/parties.validation');
 const { 
     getAllPartyRoles, getPartyRolesMeta, createPartyRole, getPartyRoleById, updatePartyRole, 
@@ -23,6 +24,7 @@ const {
     searchParties, getPartyDetails, getAllPartyBranches, getPartyBranchById, createPartyBranch, 
     updatePartyBranch, deletePartyBranch, setDefaultPartyBranch 
 } = require('../controllers/parties.controller');
+const { getPartyLedger } = require('../controllers/partyLedger.controller');
 
 const router = Router();
 
@@ -44,6 +46,7 @@ router.delete('/party-roles/:id', checkPermission('parties', 'delete'), validate
 router.get('/pagination', checkPermission('parties', 'read'), getPartyMeta);
 router.get('/search', checkPermission('parties', 'read'), validate(searchPartiesSchema), searchParties);
 router.get('/:partyId/details', checkPermission('parties', 'read'), validate(getPartyDetailsSchema), getPartyDetails);
+router.get('/:partyId/ledger', checkPermission('parties', 'read'), validate(getPartyLedgerSchema), getPartyLedger);
 router.get('/', checkPermission('parties', 'read'), getAllParties);
 router.post('/', checkPermission('parties', 'create'), validate(createPartySchema), createParty);
 router.post('/bulk-delete', checkPermission('parties', 'delete'), validate(bulkDeletePartiesSchema), bulkDeleteParties);

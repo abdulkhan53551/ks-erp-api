@@ -307,7 +307,7 @@ const bulkRestorePartyRoles = async (partyRoleIds = []) => {
 // Fetch all parties for a given firm
 const fetchAllParties = async (firmId, query) => {
     try {
-        const { page = 1, pageSize = 10, trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', gstRegistered = '', trash = false } = query;
         const isTrash = trash === true || trash === 'true';
 
         const baseQuery = db('parties as p')
@@ -330,6 +330,9 @@ const fetchAllParties = async (firmId, query) => {
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
                 'p.credit_period_days',
+                'p.opening_balance as openingBalance',
+                'p.opening_balance_type as openingBalanceType',
+                'p.opening_balance_date as openingBalanceDate',
                 'p.status',
                 db.raw(`CONCAT(u.first_name, ' ', u.last_name) AS created_by`),
                 'p.created_at',
@@ -346,6 +349,27 @@ const fetchAllParties = async (firmId, query) => {
 
         if (firmId) {
             baseQuery.andWhere('p.firm_id', firmId);
+        }
+
+        if (status) {
+            baseQuery.andWhere('p.status', status);
+        }
+
+        if (gstRegistered !== '' && gstRegistered !== null && gstRegistered !== undefined) {
+            const isGst = gstRegistered === true || gstRegistered === 'true';
+            baseQuery.andWhere('p.gst_registered', isGst);
+        }
+
+        if (search) {
+            baseQuery.where(function () {
+                this.where('p.party_code', 'ILIKE', `%${search}%`)
+                    .orWhere('p.legal_name', 'ILIKE', `%${search}%`)
+                    .orWhere('p.display_name', 'ILIKE', `%${search}%`)
+                    .orWhere('p.mobile', 'ILIKE', `%${search}%`)
+                    .orWhere('p.email', 'ILIKE', `%${search}%`)
+                    .orWhere('p.gstin', 'ILIKE', `%${search}%`)
+                    .orWhere('p.pan_number', 'ILIKE', `%${search}%`);
+            });
         }
 
         if (isTrash) {
@@ -368,7 +392,7 @@ const fetchAllParties = async (firmId, query) => {
 // Fetch party pagination
 const fetchPartyMeta = async (query) => {
     try {
-        const { page = 1, pageSize = 10, search = '', trash = false } = query;
+        const { page = 1, pageSize = 10, search = '', status = '', gstRegistered = '', trash = false } = query;
         const isTrash = trash === true || trash === 'true';
 
         const { firmId = 0 } = getContext();
@@ -380,13 +404,24 @@ const fetchPartyMeta = async (query) => {
             baseQuery.andWhere('P.firm_id', firmId);
         }
 
+        if (status) {
+            baseQuery.andWhere('P.status', status);
+        }
+
+        if (gstRegistered !== '' && gstRegistered !== null && gstRegistered !== undefined) {
+            const isGst = gstRegistered === true || gstRegistered === 'true';
+            baseQuery.andWhere('P.gst_registered', isGst);
+        }
+
         if (search) {
             baseQuery.where(function () {
                 this.where('P.party_code', 'ILIKE', `%${search}%`)
                     .orWhere('P.legal_name', 'ILIKE', `%${search}%`)
                     .orWhere('P.display_name', 'ILIKE', `%${search}%`)
                     .orWhere('P.mobile', 'ILIKE', `%${search}%`)
-                    .orWhere('P.email', 'ILIKE', `%${search}%`);
+                    .orWhere('P.email', 'ILIKE', `%${search}%`)
+                    .orWhere('P.gstin', 'ILIKE', `%${search}%`)
+                    .orWhere('P.pan_number', 'ILIKE', `%${search}%`);
             });
         }
 
@@ -430,6 +465,9 @@ const fetchPartyById = async (partyId, firmId) => {
                 'p.logo_public_id as logoPublicId',
                 'p.remarks',
                 'p.credit_period_days',
+                'p.opening_balance as openingBalance',
+                'p.opening_balance_type as openingBalanceType',
+                'p.opening_balance_date as openingBalanceDate',
                 'p.status'
             )
             .leftJoin('firms as f', 'p.firm_id', 'f.id')
@@ -1705,11 +1743,11 @@ const fetchPartiesByName = async (firmId, search) => {
         let partiesQuery = db('parties')
             .select(
                 'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
-                'credit_period_days'
+                'firm_id as firmId',
+                'party_code as partyCode',
+                'legal_name as legalName',
+                'display_name as displayName',
+                'credit_period_days as creditPeriodDays'
             )
             .where('is_active', true);
 
@@ -1744,20 +1782,23 @@ const fetchPartyDetails = async (partyId) => {
         const party = await db('parties')
             .select(
                 'id',
-                'firm_id',
-                'party_code',
-                'legal_name',
-                'display_name',
+                'firm_id as firmId',
+                'party_code as partyCode',
+                'legal_name as legalName',
+                'display_name as displayName',
                 'mobile',
                 'email',
-                'gst_registered',
+                'gst_registered as gstRegistered',
                 'gstin',
-                'cin_number',
-                'tan_number',
-                'pan_number',
+                'cin_number as cinNumber',
+                'tan_number as tanNumber',
+                'pan_number as panNumber',
                 'website',
                 'remarks',
-                'credit_period_days',
+                'credit_period_days as creditPeriodDays',
+                'opening_balance as openingBalance',
+                'opening_balance_type as openingBalanceType',
+                'opening_balance_date as openingBalanceDate',
                 'status'
             )
             .where({ id: partyId, is_active: true })

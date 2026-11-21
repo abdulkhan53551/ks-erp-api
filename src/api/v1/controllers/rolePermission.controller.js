@@ -1,6 +1,6 @@
 const { MODULES_REGISTRY } = require('../config/modules.registry');
 const { syncPoliciesTable } = require('../services/permissionBootstrapper');
-const { invalidateFirmPermissionCache, isAncestorRole, getUserAllowedFirms } = require('../services/firmPermissionCache');
+const { invalidateFirmPermissionCache, isAncestorRole, isStrictSubordinateRole, getUserHighestRoleId, getUserAllowedFirms } = require('../services/firmPermissionCache');
 const { ApiResponse } = require('../services/ApiResponse');
 const { ApiError } = require('../services/ApiError');
 const { asyncHandler } = require('../services/asyncHandler');
@@ -143,6 +143,20 @@ const updateRolePermissions = asyncHandler(async (req, res) => {
             statusCode: 400,
             message: 'Super Admin has universal system access and cannot be modified.'
         });
+    }
+
+    // Role hierarchy check: Non-super-admin can only alter permissions for strictly subordinate roles
+    if (!isSuperAdmin) {
+        const callerHighestRoleId = await getUserHighestRoleId(req.user?.id);
+        if (callerHighestRoleId) {
+            const isSubordinate = await isStrictSubordinateRole(callerHighestRoleId, roleId);
+            if (!isSubordinate) {
+                throw new ApiError({
+                    statusCode: 403,
+                    message: `Access denied: You cannot alter permissions for role '${role.name}'. You may only configure permissions for strictly subordinate roles.`
+                });
+            }
+        }
     }
 
     let targetFirmIds = [];
