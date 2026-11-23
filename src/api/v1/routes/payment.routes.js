@@ -12,7 +12,8 @@ const {
     deletePaymentSchema,
     restorePaymentSchema,
     bulkDeletePaymentsSchema,
-    bulkRestorePaymentsSchema
+    bulkRestorePaymentsSchema,
+    updatePaymentMetadataSchema
 } = require('../validation/payment.validation');
 const {
     createReceipt,
@@ -26,6 +27,7 @@ const {
     getVendorPaymentsMeta,
     getVendorPaymentsSummary,
     getPaymentById,
+    updatePaymentMetadataHandler,
     cancelPaymentHandler,
     deletePaymentController,
     restorePaymentController,
@@ -86,6 +88,7 @@ router.delete(['/:id', '/receipts/:id', '/vendor-payments/:id'], checkPermission
 // ==========================================
 router.get(['/', '/receipts'], checkPermission('payments', 'read'), validate(queryPaymentsSchema), getAllReceipts);
 router.post(['/', '/receipts'], checkPermission('payments', 'create'), validate(createReceiptSchema), createReceipt);
+router.patch(['/:id', '/receipts/:id', '/vendor-payments/:id'], checkPermission('payments', 'update'), validate(updatePaymentMetadataSchema), updatePaymentMetadataHandler);
 router.get(['/:id', '/receipts/:id', '/vendor-payments/:id'], checkPermission('payments', 'read'), validate(paymentIdParamSchema), getPaymentById);
 
 module.exports = router;

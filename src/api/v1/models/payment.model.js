@@ -89,13 +89,6 @@ const createReceiptTransaction = async (receiptData) => {
                 continue; // Skip zero-amount rows
             }
 
-            if (writeOffAmount.gt(0) && (!item.writeOffReason || !item.writeOffReason.trim())) {
-                throw new ApiError({
-                    statusCode: 400,
-                    message: `Write-off reason is required for invoice #${item.invoiceId} when a write-off amount is specified.`
-                });
-            }
-
             allocatedSum = allocatedSum.plus(allocAmount);
 
             // 2. Lock invoice row and verify balance
@@ -130,7 +123,7 @@ const createReceiptTransaction = async (receiptData) => {
                 allocAmount,
                 tdsAmount,
                 writeOffAmount,
-                writeOffReason: item.writeOffReason?.trim() || null,
+                writeOffReason: item.writeOffReason ?? null,
                 totalSettled
             });
         }
@@ -188,11 +181,11 @@ const createReceiptTransaction = async (receiptData) => {
             allocated_amount: allocatedSum.toNumber(),
             unallocated_amount: unallocatedAmountDec.toNumber(),
             payment_mode_id: paymentModeId,
-            reference_no: referenceNo?.trim() || null,
-            reference_date: referenceDate || null,
-            bank_name: bankName?.trim() || null,
+            reference_no: referenceNo ?? null,
+            reference_date: referenceDate ?? null,
+            bank_name: bankName ?? null,
             status: 'COMPLETED',
-            notes: notes?.trim() || null
+            notes: notes ?? null
         }).returning('*');
 
         // 5. Insert allocations and update invoice balances & statuses
@@ -279,13 +272,6 @@ const createVendorPaymentTransaction = async (paymentData) => {
                 continue; // Skip zero-amount rows
             }
 
-            if (writeOffAmount.gt(0) && (!item.writeOffReason || !item.writeOffReason.trim())) {
-                throw new ApiError({
-                    statusCode: 400,
-                    message: `Write-off reason is required for bill #${item.vendorBillId} when a write-off amount is specified.`
-                });
-            }
-
             allocatedSum = allocatedSum.plus(allocAmount);
 
             // Lock vendor bill row and verify balance
@@ -320,7 +306,7 @@ const createVendorPaymentTransaction = async (paymentData) => {
                 allocAmount,
                 tdsAmount,
                 writeOffAmount,
-                writeOffReason: item.writeOffReason?.trim() || null,
+                writeOffReason: item.writeOffReason ?? null,
                 totalSettled
             });
         }
@@ -363,11 +349,11 @@ const createVendorPaymentTransaction = async (paymentData) => {
             allocated_amount: allocatedSum.toNumber(),
             unallocated_amount: unallocatedAmountDec.toNumber(),
             payment_mode_id: paymentModeId,
-            reference_no: referenceNo?.trim() || null,
-            reference_date: referenceDate || null,
-            bank_name: bankName?.trim() || null,
+            reference_no: referenceNo ?? null,
+            reference_date: referenceDate ?? null,
+            bank_name: bankName ?? null,
             status: 'COMPLETED',
-            notes: notes?.trim() || null
+            notes: notes ?? null
         }).returning('*');
 
         // Insert allocations and update vendor bill balances & statuses
@@ -447,13 +433,6 @@ const applyCustomerAdvanceTransaction = async ({ paymentId, allocations = [] }) 
 
             if (totalSettled.lte(0)) continue;
 
-            if (writeOffAmount.gt(0) && (!item.writeOffReason || !item.writeOffReason.trim())) {
-                throw new ApiError({
-                    statusCode: 400,
-                    message: `Write-off reason is required for invoice #${item.invoiceId}.`
-                });
-            }
-
             totalAllocatedCash = totalAllocatedCash.plus(allocAmount);
 
             // Lock invoice and verify it belongs to same customer
@@ -492,7 +471,7 @@ const applyCustomerAdvanceTransaction = async ({ paymentId, allocations = [] }) 
                 allocAmount,
                 tdsAmount,
                 writeOffAmount,
-                writeOffReason: item.writeOffReason?.trim() || null,
+                writeOffReason: item.writeOffReason ?? null,
                 totalSettled
             });
         }
@@ -1575,6 +1554,86 @@ const bulkRestorePayments = async (paymentIds = []) => {
     });
 };
 
+/**
+ * Update non-financial metadata for a payment (receipt or vendor payment).
+ * Strictly forbids altering total_amount, party_id, firm_id, allocations, or status
+ * to preserve ledger balances and invoice settlement integrity.
+ */
+const updatePaymentMetadata = async (paymentId, payload = {}) => {
+    const { firmId = 0 } = getContext();
+
+    return await db.transaction(async (trx) => {
+        const payment = await trx('payments')
+            .where({ id: paymentId })
+            .andWhere(function () {
+                if (firmId) this.where({ firm_id: firmId });
+            })
+            .andWhere({ is_active: true })
+            .first();
+
+        if (!payment) {
+            throw new ApiError({
+                statusCode: 404,
+                message: 'Payment record not found or inactive.'
+            });
+        }
+
+        if (payment.status === 'CANCELLED') {
+            throw new ApiError({
+                statusCode: 400,
+                message: 'Cannot edit details of a cancelled payment record.'
+            });
+        }
+
+        const updateFields = {
+            payment_date: payload.paymentDate,
+            bank_name: payload.bankName,
+            reference_no: payload.referenceNo,
+            reference_date: payload.referenceDate,
+            notes: payload.notes
+        };
+
+        if (payload.paymentModeId !== undefined) {
+            const mode = await trx('payment_modes')
+                .where({ id: payload.paymentModeId, is_active: true })
+                .first();
+            if (!mode) {
+                throw new ApiError({ statusCode: 400, message: 'Invalid payment mode selected.' });
+            }
+            updateFields.payment_mode_id = payload.paymentModeId;
+        }
+
+        await trx('payments').where({ id: paymentId }).update(updateFields);
+
+        // Fetch refreshed record
+        const updatedPayment = await trx('payments as p')
+            .select(
+                'p.id',
+                'p.payment_no as paymentNo',
+                'p.payment_type as paymentType',
+                'p.payment_date as paymentDate',
+                'p.party_id as partyId',
+                'p.customer_name as customerName',
+                'p.total_amount as totalAmount',
+                'p.allocated_amount as allocatedAmount',
+                'p.unallocated_amount as unallocatedAmount',
+                'p.payment_mode_id as paymentModeId',
+                'pm.label as paymentMode',
+                'p.reference_no as referenceNo',
+                'p.reference_date as referenceDate',
+                'p.bank_name as bankName',
+                'p.status',
+                'p.notes',
+                'p.updated_at as updatedAt'
+            )
+            .leftJoin('payment_modes as pm', 'p.payment_mode_id', 'pm.id')
+            .where('p.id', paymentId)
+            .first();
+
+        return updatedPayment;
+    });
+};
+
 module.exports = {
     getPaymentStatusIds,
     generateNextPaymentNumber,
@@ -1589,6 +1648,7 @@ module.exports = {
     restorePaymentById,
     bulkDeletePayments,
     bulkRestorePayments,
+    updatePaymentMetadata,
     fetchAllReceipts,
     fetchReceiptsMeta,
     fetchReceiptsSummary,

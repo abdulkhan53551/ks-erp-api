@@ -24,6 +24,7 @@ const {
     restorePaymentById,
     bulkDeletePayments,
     bulkRestorePayments,
+    updatePaymentMetadata,
     fetchAllReceipts,
     fetchReceiptsMeta,
     fetchReceiptsSummary,
@@ -592,6 +593,22 @@ const bulkRestorePaymentsController = asyncHandler(async (req, res) => {
     );
 });
 
+/**
+ * Update non-financial payment metadata (paymentDate, bankName, referenceNo, referenceDate, paymentModeId, notes).
+ * Strictly preserves totalAmount, partyId, and allocation balances.
+ */
+const updatePaymentMetadataHandler = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const result = await updatePaymentMetadata(id, req.body);
+    return res.status(200).json(
+        new ApiResponse({
+            statusCode: 200,
+            data: result,
+            message: `Payment ${result.paymentNo} details updated successfully.`
+        })
+    );
+});
+
 module.exports = {
     createReceipt,
     createVendorPayment,
@@ -605,6 +622,7 @@ module.exports = {
     getVendorPaymentsSummary,
     getPaymentById,
     getReceiptById,
+    updatePaymentMetadataHandler,
     cancelPaymentHandler,
     cancelReceiptHandler,
     deletePaymentController,

@@ -1,5 +1,86 @@
 const Joi = require('joi');
 
+/**
+ * Helper: Trims string fields and converts empty strings / whitespace to null
+ */
+const sanitizeEmptyStringsToNull = (obj, fields = []) => {
+    const sanitized = { ...obj };
+    fields.forEach((field) => {
+        if (sanitized[field] !== undefined) {
+            if (sanitized[field] === '' || (typeof sanitized[field] === 'string' && sanitized[field].trim() === '')) {
+                sanitized[field] = null;
+            }
+        }
+    });
+    return sanitized;
+};
+
+/**
+ * Reusable Customer Receipt Allocation Item Schema
+ */
+const receiptAllocationItemSchema = Joi.object({
+    invoiceId: Joi.number().integer().positive().required().messages({
+        'any.required': 'Invoice ID is required for allocation',
+        'number.base': 'Invoice ID must be a valid number'
+    }),
+    allocatedAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'Allocated amount cannot be negative'
+    }),
+    tdsAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'TDS deduction cannot be negative'
+    }),
+    writeOffAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'Write-off discount cannot be negative'
+    }),
+    writeOffReason: Joi.when('writeOffAmount', {
+        is: Joi.number().greater(0),
+        then: Joi.string().trim().min(2).max(255).required().messages({
+            'any.required': 'Write-off reason is required when write-off discount is applied.',
+            'string.empty': 'Write-off reason is required when write-off discount is applied.',
+            'string.min': 'Write-off reason must be at least 2 characters long.'
+        }),
+        otherwise: Joi.string().trim().max(255).allow('', null).optional()
+    })
+}).custom((value) => {
+    if (value.writeOffReason === '' || (typeof value.writeOffReason === 'string' && !value.writeOffReason.trim())) {
+        value.writeOffReason = null;
+    }
+    return value;
+});
+
+/**
+ * Reusable Vendor Payment Allocation Item Schema
+ */
+const vendorPaymentAllocationItemSchema = Joi.object({
+    vendorBillId: Joi.number().integer().positive().required().messages({
+        'any.required': 'Vendor bill ID is required for allocation',
+        'number.base': 'Vendor bill ID must be a valid number'
+    }),
+    allocatedAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'Allocated amount cannot be negative'
+    }),
+    tdsAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'TDS deduction cannot be negative'
+    }),
+    writeOffAmount: Joi.number().min(0).precision(2).default(0).messages({
+        'number.min': 'Write-off discount cannot be negative'
+    }),
+    writeOffReason: Joi.when('writeOffAmount', {
+        is: Joi.number().greater(0),
+        then: Joi.string().trim().min(2).max(255).required().messages({
+            'any.required': 'Write-off reason is required when write-off discount is applied.',
+            'string.empty': 'Write-off reason is required when write-off discount is applied.',
+            'string.min': 'Write-off reason must be at least 2 characters long.'
+        }),
+        otherwise: Joi.string().trim().max(255).allow('', null).optional()
+    })
+}).custom((value) => {
+    if (value.writeOffReason === '' || (typeof value.writeOffReason === 'string' && !value.writeOffReason.trim())) {
+        value.writeOffReason = null;
+    }
+    return value;
+});
+
 const createReceiptSchema = {
     body: Joi.object({
         paymentDate: Joi.date().iso().required().messages({
@@ -21,17 +102,7 @@ const createReceiptSchema = {
         bankName: Joi.string().trim().max(150).allow('', null).optional(),
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         notes: Joi.string().trim().max(1000).allow('', null).optional(),
-        allocations: Joi.array().items(
-            Joi.object({
-                invoiceId: Joi.number().integer().positive().required().messages({
-                    'any.required': 'Invoice ID is required for allocation'
-                }),
-                allocatedAmount: Joi.number().min(0).precision(2).default(0),
-                tdsAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffReason: Joi.string().trim().max(255).allow('', null).optional()
-            })
-        ).default([])
+        allocations: Joi.array().items(receiptAllocationItemSchema).default([])
     }).custom((value, helpers) => {
         // Direct walk-in / unregistered invoice settlement validation
         if (!value.partyId) {
@@ -43,7 +114,7 @@ const createReceiptSchema = {
                 return helpers.message('For walk-in/unregistered customers, payment amount cannot exceed the invoice settlement amount (excess advance is not permitted without a registered customer).');
             }
         }
-        return value;
+        return sanitizeEmptyStringsToNull(value, ['bankName', 'referenceNo', 'referenceDate', 'notes']);
     })
 };
 
@@ -69,18 +140,8 @@ const createVendorPaymentSchema = {
         bankName: Joi.string().trim().max(150).allow('', null).optional(),
         firmBranchId: Joi.number().integer().positive().allow(null).optional(),
         notes: Joi.string().trim().max(1000).allow('', null).optional(),
-        allocations: Joi.array().items(
-            Joi.object({
-                vendorBillId: Joi.number().integer().positive().required().messages({
-                    'any.required': 'Vendor bill ID is required for allocation'
-                }),
-                allocatedAmount: Joi.number().min(0).precision(2).default(0),
-                tdsAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffReason: Joi.string().trim().max(255).allow('', null).optional()
-            })
-        ).default([])
-    })
+        allocations: Joi.array().items(vendorPaymentAllocationItemSchema).default([])
+    }).custom((value) => sanitizeEmptyStringsToNull(value, ['bankName', 'referenceNo', 'referenceDate', 'notes']))
 };
 
 const applyCustomerAdvanceSchema = {
@@ -90,17 +151,7 @@ const applyCustomerAdvanceSchema = {
         })
     }),
     body: Joi.object({
-        allocations: Joi.array().items(
-            Joi.object({
-                invoiceId: Joi.number().integer().positive().required().messages({
-                    'any.required': 'Invoice ID is required'
-                }),
-                allocatedAmount: Joi.number().min(0).precision(2).default(0),
-                tdsAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffAmount: Joi.number().min(0).precision(2).default(0),
-                writeOffReason: Joi.string().trim().max(255).allow('', null).optional()
-            })
-        ).min(1).required().messages({
+        allocations: Joi.array().items(receiptAllocationItemSchema).min(1).required().messages({
             'any.required': 'At least one invoice allocation is required.',
             'array.min': 'At least one invoice allocation is required.'
         })
@@ -192,6 +243,29 @@ const bulkRestorePaymentsSchema = {
     })
 };
 
+const updatePaymentMetadataSchema = {
+    params: Joi.object({
+        id: Joi.number().integer().positive().required().messages({
+            'any.required': 'Payment ID is required',
+            'number.base': 'Payment ID must be a valid number'
+        })
+    }),
+    body: Joi.object({
+        paymentDate: Joi.date().iso().optional().messages({
+            'date.base': 'Payment date must be a valid date'
+        }),
+        paymentModeId: Joi.number().integer().positive().optional().messages({
+            'number.base': 'Payment mode must be a valid ID'
+        }),
+        bankName: Joi.string().trim().max(150).allow('', null).optional(),
+        referenceNo: Joi.string().trim().max(100).allow('', null).optional(),
+        referenceDate: Joi.date().iso().allow('', null).optional(),
+        notes: Joi.string().trim().max(1000).allow('', null).optional()
+    }).min(1).messages({
+        'object.min': 'At least one field must be provided to update payment metadata'
+    }).custom((value) => sanitizeEmptyStringsToNull(value, ['bankName', 'referenceNo', 'referenceDate', 'notes']))
+};
+
 module.exports = {
     createReceiptSchema,
     createVendorPaymentSchema,
@@ -205,5 +279,6 @@ module.exports = {
     deletePaymentSchema,
     restorePaymentSchema,
     bulkDeletePaymentsSchema,
-    bulkRestorePaymentsSchema
+    bulkRestorePaymentsSchema,
+    updatePaymentMetadataSchema
 };
