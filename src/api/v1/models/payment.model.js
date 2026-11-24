@@ -70,8 +70,8 @@ const createReceiptTransaction = async (receiptData) => {
     } = receiptData;
 
     const totalAmountDec = new Decimal(totalAmount || 0);
-    if (totalAmountDec.lte(0)) {
-        throw new ApiError({ statusCode: 400, message: 'Total receipt amount must be greater than 0.' });
+    if (totalAmountDec.lt(0)) {
+        throw new ApiError({ statusCode: 400, message: 'Total receipt amount cannot be negative.' });
     }
 
     return await db.transaction(async (trx) => {
@@ -132,6 +132,13 @@ const createReceiptTransaction = async (receiptData) => {
                 writeOffAmount,
                 writeOffReason: item.writeOffReason?.trim() || null,
                 totalSettled
+            });
+        }
+
+        if (totalAmountDec.lte(0) && processedAllocations.length === 0) {
+            throw new ApiError({
+                statusCode: 400,
+                message: 'Either a positive received amount or at least one settled invoice deduction/adjustment is required.'
             });
         }
 
@@ -240,8 +247,8 @@ const createVendorPaymentTransaction = async (paymentData) => {
     } = paymentData;
 
     const totalAmountDec = new Decimal(totalAmount || 0);
-    if (totalAmountDec.lte(0)) {
-        throw new ApiError({ statusCode: 400, message: 'Total payment amount must be greater than 0.' });
+    if (totalAmountDec.lt(0)) {
+        throw new ApiError({ statusCode: 400, message: 'Total payment amount cannot be negative.' });
     }
 
     // Verify vendor exists
@@ -307,6 +314,13 @@ const createVendorPaymentTransaction = async (paymentData) => {
                 writeOffAmount,
                 writeOffReason: item.writeOffReason?.trim() || null,
                 totalSettled
+            });
+        }
+
+        if (totalAmountDec.lte(0) && processedAllocations.length === 0) {
+            throw new ApiError({
+                statusCode: 400,
+                message: 'Either a positive payment amount or at least one settled vendor bill deduction/adjustment is required.'
             });
         }
 
