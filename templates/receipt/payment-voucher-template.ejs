@@ -384,7 +384,7 @@
             <th class="num" style="width: 15%;">Bill Total (₹)</th>
             <th class="num" style="width: 15%;">Paid Amount (₹)</th>
             <% if (hasTds) { %><th class="num" style="width: 10%;">TDS Deducted (₹)</th><% } %>
-            <% if (hasWriteOff) { %><th class="num" style="width: 10%;">Discount (₹)</th><% } %>
+            <% if (hasWriteOff) { %><th class="num" style="width: 12%;">Deductions / Adj (₹)</th><% } %>
             <th class="num" style="width: 15%;">Remaining Balance (₹)</th>
           </tr>
         </thead>
@@ -432,7 +432,7 @@
           <% } %>
           <% if (payment.rawWriteOff > 0) { %>
             <div class="total-row" style="color: #d97706;">
-              <span>Settlement Discount / Write-Off:</span>
+              <span>Commercial Deductions &amp; Adj:</span>
               <strong>₹<%= payment.writeOffAmount %></strong>
             </div>
           <% } %>
