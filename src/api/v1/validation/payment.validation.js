@@ -10,9 +10,9 @@ const createReceiptSchema = {
             'any.required': 'Customer party ID is required',
             'number.base': 'Customer party ID must be a number'
         }),
-        totalAmount: Joi.number().positive().precision(2).required().messages({
+        totalAmount: Joi.number().min(0).precision(2).default(0).required().messages({
             'any.required': 'Total amount received is required',
-            'number.positive': 'Total amount must be greater than 0'
+            'number.min': 'Total amount cannot be negative'
         }),
         paymentModeId: Joi.number().integer().positive().required().messages({
             'any.required': 'Payment mode is required'
@@ -46,9 +46,9 @@ const createVendorPaymentSchema = {
             'any.required': 'Vendor party ID is required',
             'number.base': 'Vendor party ID must be a number'
         }),
-        totalAmount: Joi.number().positive().precision(2).required().messages({
+        totalAmount: Joi.number().min(0).precision(2).default(0).required().messages({
             'any.required': 'Total payment amount is required',
-            'number.positive': 'Total payment amount must be greater than 0'
+            'number.min': 'Total payment amount cannot be negative'
         }),
         paymentModeId: Joi.number().integer().positive().required().messages({
             'any.required': 'Payment mode is required'
