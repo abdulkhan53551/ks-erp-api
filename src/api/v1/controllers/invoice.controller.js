@@ -88,7 +88,10 @@ const createInvoice = asyncHandler(async (req, res) => {
     // Resolve internal firm branch
     let resolvedFirmBranchId = invoice.firmBranchId ? Number(invoice.firmBranchId) : (branchId ? Number(branchId) : null);
     if (!resolvedFirmBranchId && firmId) {
-        const defaultBranch = await db('firm_branches').where({ firm_id: firmId, is_head_office: true, is_active: true, is_deleted: false }).first();
+        const defaultBranch = await db('firm_branches')
+            .where({ firm_id: firmId, is_head_office: true, is_active: true })
+            .whereNull('deleted_at')
+            .first();
         if (defaultBranch) resolvedFirmBranchId = defaultBranch.id;
     }
 
