@@ -340,7 +340,8 @@ const insertQuotation = async (data) => {
         let firmBranchId = data.firm_branch_id ? Number(data.firm_branch_id) : (contextBranchId ? Number(contextBranchId) : null);
         if (!firmBranchId && firmId) {
             const defaultBranch = await trx('firm_branches')
-                .where({ firm_id: firmId, is_active: true, is_deleted: false })
+                .where({ firm_id: firmId, is_active: true })
+                .whereNull('deleted_at')
                 .orderByRaw('is_head_office DESC, id ASC')
                 .first();
             if (defaultBranch) firmBranchId = defaultBranch.id;
@@ -516,7 +517,8 @@ const updateQuotation = async (id, data) => {
         let firmBranchId = data.firm_branch_id !== undefined ? (data.firm_branch_id ? Number(data.firm_branch_id) : null) : existing.firm_branch_id;
         if (!firmBranchId && firmId) {
             const defaultBranch = await trx('firm_branches')
-                .where({ firm_id: firmId, is_active: true, is_deleted: false })
+                .where({ firm_id: firmId, is_active: true })
+                .whereNull('deleted_at')
                 .orderByRaw('is_head_office DESC, id ASC')
                 .first();
             if (defaultBranch) firmBranchId = defaultBranch.id;
